@@ -15,6 +15,7 @@
 	},
 	"scripts": {
 		"build": "rm -rf dist && node ../../../node_modules/typescript/bin/tsc",
+		"test": "bun test src",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {

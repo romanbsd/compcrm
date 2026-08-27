@@ -43,9 +43,17 @@ export function createEveExportSend(
 			title: request.title,
 		} as const;
 		const session = await send(payload, options);
-		const cancel = () => void session.cancel();
+		let cancellation: ReturnType<ExportSession["cancel"]> | undefined;
+		const cancel = () =>
+			(cancellation ??= session.cancel().catch(() => ({
+				status: "no_active_turn" as const,
+			})));
 		abortSignal.addEventListener("abort", cancel, { once: true });
 		try {
+			if (abortSignal.aborted) {
+				await cancel();
+				throw new ExportCancelledError();
+			}
 			return await collectAgentResult(session, request.outputSchema);
 		} finally {
 			abortSignal.removeEventListener("abort", cancel);
@@ -87,6 +95,7 @@ export async function collectAgentResult<T>(
 			}
 		}
 	} finally {
+		await reader.cancel().catch(() => undefined);
 		reader.releaseLock();
 	}
 	throw new ExportAgentRunError("Eve session ended without a result");

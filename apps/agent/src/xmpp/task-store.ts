@@ -6,6 +6,8 @@ import type {
 import { db, Prisma, type XmppAgentTaskState } from "@crm/db";
 import { z } from "zod";
 
+import { XMPP_EXPORT } from "./config";
+
 const storedTaskResult = z.object({
 	content: z.array(z.object({ type: z.literal("text"), text: z.string() })),
 	structuredContent: z.record(z.string(), z.unknown()).optional(),
@@ -48,7 +50,11 @@ export class XmppTaskConflictError extends Error {
 }
 
 export class PostgresXmppTaskStore {
-	constructor(readonly organizationId: string) {}
+	constructor(
+		readonly organizationId: string,
+		readonly ownerId = crypto.randomUUID(),
+		readonly leaseMs = XMPP_EXPORT.task.leaseMs,
+	) {}
 
 	async admit(
 		input: AdmitXmppTask,
@@ -70,7 +76,12 @@ export class PostgresXmppTaskStore {
 		if (existing) return this.replay(existing, input.fingerprint);
 		try {
 			const created = await db.xmppAgentTask.create({
-				data: { ...input, organizationId: this.organizationId },
+				data: {
+					...input,
+					organizationId: this.organizationId,
+					ownerId: this.ownerId,
+					leaseUntil: this.leaseUntil(),
+				},
 			});
 			return { task: taskRecord(created), replay: false };
 		} catch (error) {
@@ -123,6 +134,11 @@ export class PostgresXmppTaskStore {
 			},
 			data: {
 				...transition,
+				leaseUntil:
+					transition.state !== undefined &&
+					terminalDatabaseStates.has(transition.state)
+						? null
+						: this.leaseUntil(),
 				revision: { increment: 1 },
 			},
 		});
@@ -134,14 +150,17 @@ export class PostgresXmppTaskStore {
 		);
 	}
 
-	async failInterrupted(): Promise<number> {
+	async failInterrupted(now = new Date()): Promise<number> {
 		const result = await db.xmppAgentTask.updateMany({
 			where: {
 				organizationId: this.organizationId,
 				state: { in: ["ACCEPTED", "RUNNING", "CANCELLING"] },
+				OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
 			},
 			data: {
 				state: "FAILED",
+				ownerId: null,
+				leaseUntil: null,
 				revision: { increment: 1 },
 				error: {
 					code: "gateway-restarted",
@@ -149,6 +168,18 @@ export class PostgresXmppTaskStore {
 					retryable: true,
 				},
 			},
+		});
+		return result.count;
+	}
+
+	async renewLeases(now = new Date()): Promise<number> {
+		const result = await db.xmppAgentTask.updateMany({
+			where: {
+				organizationId: this.organizationId,
+				ownerId: this.ownerId,
+				state: { in: ["ACCEPTED", "RUNNING", "CANCELLING"] },
+			},
+			data: { leaseUntil: this.leaseUntil(now) },
 		});
 		return result.count;
 	}
@@ -170,7 +201,17 @@ export class PostgresXmppTaskStore {
 		}
 		return { task: taskRecord(task), replay: true };
 	}
+
+	private leaseUntil(now = new Date()): Date {
+		return new Date(now.getTime() + this.leaseMs);
+	}
 }
+
+const terminalDatabaseStates = new Set<XmppAgentTaskState>([
+	"COMPLETED",
+	"FAILED",
+	"CANCELLED",
+]);
 
 const taskStates = {
 	ACCEPTED: "accepted",

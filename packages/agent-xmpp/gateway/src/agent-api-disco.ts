@@ -15,9 +15,11 @@ import {
   type RegisteredTool,
   parseStrictJson,
 } from '@agent-xmpp/protocol';
+import { canonicalJson, validateManifest } from '@agent-xmpp/core';
 import { xml, type Element } from '@xmpp/xml';
 
 import { buildHash, parseHash } from './hash-codec.js';
+import { ProtocolError } from './protocol-error.js';
 import { buildRsm, pageRsm, parseRsm } from './rsm-codec.js';
 import { VCARD_TEMP_NS } from './xep-plugins/vcard.js';
 
@@ -348,7 +350,7 @@ export function buildSchemaResult(
   const schema = direction === 'input' ? tool.inputSchema : tool.outputSchema;
   const schemaHash = direction === 'input' ? tool.inputSchemaHash : tool.outputSchemaHash;
   if (!schema || !schemaHash) throw new Error('schema not found');
-  const canonicalSchema = canonicalWireJson(schema);
+  const canonicalSchema = canonicalJson(schema);
   return resultIq(
     request,
     agent.manifest.agent.jid,
@@ -437,9 +439,13 @@ export function parseManifestRegistration(
   namespaces: AgentXmppNamespaces = DEFAULT_PROTOCOL_NAMESPACES,
 ): AgentApiManifest | null {
   if (request.name !== 'iq' || request.attrs.type !== 'set') return null;
-  const manifest = request.getChild('register', namespaces.api)?.getChild('manifest');
+  const manifest = request.getChild('register', namespaces.api)?.getChild('manifest', namespaces.api);
   if (!manifest || manifest.attrs['media-type'] !== JSON_MEDIA_TYPE) return null;
-  return parseStrictJson(manifest.getText(), { maxBytes: 1_048_576 }) as AgentApiManifest;
+  try {
+    return validateManifest(parseStrictJson(manifest.getText(), { maxBytes: 1_048_576 }));
+  } catch (error) {
+    throw new ProtocolError('bad-request', error instanceof Error ? error.message : 'Invalid manifest');
+  }
 }
 
 export function buildManifestRegistrationResult(
@@ -456,16 +462,4 @@ export function buildManifestRegistrationResult(
       buildHash(agent.manifestHash),
     ),
   );
-}
-
-function canonicalWireJson(value: unknown): string {
-  if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalWireJson).join(',')}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalWireJson(object[key])}`)
-    .join(',')}}`;
 }

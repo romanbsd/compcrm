@@ -133,6 +133,7 @@
       },
       "devDependencies": {
         "@types/node": "^22.10.0",
+        "tsx": "4.23.12",
         "typescript": "^5.7.0",
       },
     },
@@ -140,6 +141,7 @@
       "name": "@agent-xmpp/gateway",
       "version": "0.1.0",
       "dependencies": {
+        "@agent-xmpp/core": "workspace:*",
         "@agent-xmpp/protocol": "workspace:*",
         "@xmpp/component": "0.14.0",
         "@xmpp/xml": "0.14.0",

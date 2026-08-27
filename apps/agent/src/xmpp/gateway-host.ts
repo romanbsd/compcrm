@@ -145,7 +145,11 @@ export async function startXmppGatewayHost(): Promise<{
 		store,
 		allowedCallerDomains: config.allowedCallerDomains,
 		destructiveCallers: config.destructiveCallers,
-		onAccepted: (task) => void run(task),
+		onAccepted: (task) => {
+			void run(task).catch((error) => {
+				console.error(`[xmpp-gateway] task ${task.taskId} failed:`, error);
+			});
+		},
 		onCancel: async (task) => {
 			controllers.get(task.taskId)?.abort();
 		},
@@ -167,10 +171,11 @@ export async function startXmppGatewayHost(): Promise<{
 	});
 	await store.failInterrupted();
 	await gateway.start();
-	const sweep = setInterval(
-		() => void store.deleteExpired(),
-		XMPP_EXPORT.gateway.sweepMs,
-	);
+	const maintain = () =>
+		Promise.all([store.renewLeases(), store.deleteExpired()]).catch((error) => {
+			console.error("[xmpp-gateway] task maintenance failed:", error);
+		});
+	const sweep = setInterval(() => void maintain(), XMPP_EXPORT.gateway.sweepMs);
 	sweep.unref?.();
 	return {
 		async close() {
@@ -205,6 +210,7 @@ async function* readNdjson(
 			yield exportStreamEventSchema.parse(JSON.parse(pending));
 		}
 	} finally {
+		await reader.cancel().catch(() => undefined);
 		reader.releaseLock();
 	}
 }

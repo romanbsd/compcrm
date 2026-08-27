@@ -75,7 +75,15 @@ describe("PostgreSQL XMPP task state", () => {
 		);
 		await store.transition(expired.task.taskId, 0, { state: "COMPLETED" });
 
-		expect(await store.failInterrupted()).toBeGreaterThanOrEqual(1);
+		const recoveringStore = new PostgresXmppTaskStore(
+			organizationId,
+			"recovering-owner",
+		);
+		expect(await recoveringStore.failInterrupted()).toBe(0);
+		expect((await store.get(interrupted.task.taskId))?.state).toBe("accepted");
+		expect(
+			await recoveringStore.failInterrupted(new Date(Date.now() + 60_000)),
+		).toBeGreaterThanOrEqual(1);
 		expect((await store.get(interrupted.task.taskId))?.state).toBe("failed");
 		expect(await store.deleteExpired()).toBe(1);
 		expect(await store.get(expired.task.taskId)).toBeNull();

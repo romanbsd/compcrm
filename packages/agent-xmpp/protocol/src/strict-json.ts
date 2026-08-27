@@ -15,6 +15,7 @@ export const DEFAULT_JSON_LIMITS: Readonly<StrictJsonLimits> = Object.freeze({
 export class JsonResourceLimitError extends Error {}
 
 const utf8Length = (value: string): number => new TextEncoder().encode(value).length;
+const NUMBER_PATTERN = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
 
 /** A bounded JSON parser that detects duplicate object names before information is lost. */
 export function parseStrictJson(text: string, limits: Partial<StrictJsonLimits> = {}): unknown {
@@ -68,9 +69,10 @@ export function parseStrictJson(text: string, limits: Partial<StrictJsonLimits> 
     return fail('unterminated string');
   };
   const parseNumber = (): number => {
-    const match = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/.exec(text.slice(offset));
+    NUMBER_PATTERN.lastIndex = offset;
+    const match = NUMBER_PATTERN.exec(text);
     if (!match) return fail('invalid number');
-    offset += match[0].length;
+    offset = NUMBER_PATTERN.lastIndex;
     const number = Number(match[0]);
     if (!Number.isFinite(number)) fail('number is not finite');
     if (/^-?[0-9]+$/.test(match[0])) {

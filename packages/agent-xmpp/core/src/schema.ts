@@ -58,6 +58,7 @@ ajv.addFormat("date-time", isXep0082DateTime);
 const manifestValidator = ajv.compile(MANIFEST_SCHEMA);
 const validatorCache = new Map<string, ValidateFunction>();
 const SCHEMA_WORKER_COUNT = 2;
+const SCHEMA_WORKER_FAILURE_LIMIT = 3;
 const DEFAULT_SCHEMA_TIMEOUT_MS = 500;
 
 interface WorkerRequest {
@@ -87,6 +88,7 @@ interface SchemaWorkerSlot {
 }
 
 let nextValidationId = 1;
+let consecutiveWorkerFailures = 0;
 const validationQueue: PendingValidation[] = [];
 const schemaWorkers: SchemaWorkerSlot[] = [];
 
@@ -352,8 +354,22 @@ export async function closeSchemaWorkers(): Promise<void> {
 }
 
 function ensureSchemaWorkers(): void {
-	while (schemaWorkers.length < SCHEMA_WORKER_COUNT)
-		schemaWorkers.push(createSchemaWorker());
+	while (schemaWorkers.length < SCHEMA_WORKER_COUNT) {
+		try {
+			schemaWorkers.push(createSchemaWorker());
+		} catch (error) {
+			consecutiveWorkerFailures++;
+			if (consecutiveWorkerFailures >= SCHEMA_WORKER_FAILURE_LIMIT) {
+				rejectValidationQueue(
+					error instanceof Error
+						? error
+						: new Error("schema validator worker failed"),
+				);
+				consecutiveWorkerFailures = 0;
+				return;
+			}
+		}
+	}
 }
 
 function createSchemaWorker(): SchemaWorkerSlot {
@@ -409,6 +425,7 @@ function settleWorker(slot: SchemaWorkerSlot, response: WorkerResponse): void {
 	if (slot.timer) clearTimeout(slot.timer);
 	slot.timer = undefined;
 	slot.pending = undefined;
+	consecutiveWorkerFailures = 0;
 	if (response.failure)
 		pending.reject(new Error(`schema validation failed: ${response.failure}`));
 	else pending.resolve(response.errors ?? []);
@@ -422,8 +439,21 @@ function replaceWorker(slot: SchemaWorkerSlot, error: Error): void {
 	slot.pending?.reject(error);
 	slot.pending = undefined;
 	void slot.worker.terminate();
-	schemaWorkers[index] = createSchemaWorker();
-	dispatchValidationQueue();
+	schemaWorkers.splice(index, 1);
+	consecutiveWorkerFailures++;
+	if (consecutiveWorkerFailures >= SCHEMA_WORKER_FAILURE_LIMIT) {
+		rejectValidationQueue(error);
+		consecutiveWorkerFailures = 0;
+		return;
+	}
+	if (validationQueue.length > 0) {
+		ensureSchemaWorkers();
+		dispatchValidationQueue();
+	}
+}
+
+function rejectValidationQueue(error: Error): void {
+	while (validationQueue.length) validationQueue.shift()!.reject(error);
 }
 
 export function preflightSchema(schema: JsonSchema, label: string): void {

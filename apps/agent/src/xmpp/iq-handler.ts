@@ -280,7 +280,7 @@ async function acceptInvocation(
 		{
 			requestId: admitted.task.requestId,
 			taskId: admitted.task.taskId,
-			revision: 0,
+			revision: admitted.task.revision,
 			created: admitted.task.createdAt,
 			retainUntil: admitted.task.retainUntil,
 		},

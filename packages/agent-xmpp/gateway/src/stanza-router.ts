@@ -145,7 +145,12 @@ export class StanzaRouter {
       console.error('[xmpp-gateway] composing notification send failed:', err);
     });
 
-    await pushInboundToBridge(this.config, this.mailbox, ctx);
+    try {
+      await pushInboundToBridge(this.config, this.mailbox, ctx);
+    } catch (err) {
+      console.error('[xmpp-gateway] inbound delivery failed:', err instanceof Error ? err.message : err);
+      return;
+    }
 
     // XEP-0184: ack only 1:1 messages that explicitly requested a receipt.
     // Groupchat receipts are not used (§5.5) and unsolicited ones spam the sender.

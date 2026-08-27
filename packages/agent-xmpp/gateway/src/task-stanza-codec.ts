@@ -65,7 +65,7 @@ export interface TaskWireEvent {
 export interface AcceptedTask {
   requestId: string;
   taskId: string;
-  revision: 0;
+  revision: number;
   created: string;
   retainUntil: string;
 }
@@ -267,7 +267,7 @@ export function buildAcceptedResult(
       xmlns: namespaces.task,
       'request-id': accepted.requestId,
       'task-id': accepted.taskId,
-      revision: '0',
+      revision: String(accepted.revision),
       created: accepted.created,
       'retain-until': accepted.retainUntil,
     }),
@@ -282,11 +282,11 @@ export function parseAcceptedResult(
   const accepted = stanza.getChild('accepted', namespaces.task);
   if (!accepted) return null;
   const revision = Number(accepted.attrs.revision);
-  if (revision !== 0) throw new Error('accepted task must start at revision 0');
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('accepted task has invalid revision');
   const parsed: AcceptedTask = {
     requestId: String(accepted.attrs['request-id'] ?? ''),
     taskId: String(accepted.attrs['task-id'] ?? ''),
-    revision: 0,
+    revision,
     created: String(accepted.attrs.created ?? ''),
     retainUntil: String(accepted.attrs['retain-until'] ?? ''),
   };
@@ -520,7 +520,7 @@ export function parseTaskResult(stanza: Element): TaskResultSnapshot | null {
   ) {
     throw new Error('invalid task-result');
   }
-  const payload = parseStrictJson(result.getText() || '{}') as Record<string, unknown>;
+  const payload = parseTaskPayload(result.getText() || '{}', 'invalid task-result payload');
   return {
     taskId,
     state,
@@ -560,7 +560,7 @@ export function parseTaskEvent(
     type,
     from: String(stanza.attrs.from ?? ''),
     to: String(stanza.attrs.to ?? ''),
-    payload: parseStrictJson(event.getText() || '{}') as Record<string, unknown>,
+    payload: parseTaskPayload(event.getText() || '{}', 'invalid task event payload'),
   };
 }
 
@@ -621,4 +621,10 @@ function assertOnlyAttributes(element: Element, allowed: readonly string[]): voi
   if (Object.keys(element.attrs).some((name) => !allowedNames.has(name))) {
     throw new Error(`${element.name} has unsupported attributes`);
   }
+}
+
+function parseTaskPayload(text: string, errorMessage: string): Record<string, unknown> {
+  const value = parseStrictJson(text);
+  if (value === null || Array.isArray(value) || typeof value !== 'object') throw new Error(errorMessage);
+  return value as Record<string, unknown>;
 }

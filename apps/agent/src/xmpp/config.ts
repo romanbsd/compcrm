@@ -9,6 +9,7 @@ const HOUR_MS = 60 * MINUTE_MS;
 
 export const XMPP_EXPORT = {
 	task: {
+		leaseMs: 30 * SECOND_MS,
 		retentionMs: 24 * HOUR_MS,
 	},
 	gateway: {

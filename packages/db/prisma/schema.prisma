@@ -525,6 +525,8 @@ model XmppAgentTask {
   error          Json?
   summary        String?
   eveSessionId   String?
+  ownerId        String?
+  leaseUntil     DateTime?
   deadline       DateTime?
   retainUntil    DateTime
   createdAt      DateTime           @default(now())
@@ -532,6 +534,7 @@ model XmppAgentTask {
 
   @@unique([organizationId, callerJid, targetJid, requestId])
   @@index([organizationId, state, updatedAt])
+  @@index([organizationId, state, leaseUntil])
   @@index([retainUntil])
   @@map("xmppAgentTask")
 }
