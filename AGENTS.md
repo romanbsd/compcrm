@@ -260,6 +260,6 @@ IDs to commits or pull requests.
 
 Use conventional commit messages and pull request titles.
 
-```
+```shell
 git commit -m "fix: resolve auth token expiry"
 ```
