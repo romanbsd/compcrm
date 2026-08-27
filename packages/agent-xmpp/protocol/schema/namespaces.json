@@ -1,0 +1,10 @@
+[
+  "urn:xmpp:agent-directory:0",
+  "urn:xmpp:agent-api:0",
+  "urn:xmpp:agent-tools:0",
+  "urn:xmpp:agent-tool:0",
+  "urn:xmpp:agent-endpoint:0",
+  "urn:xmpp:agent-endpoint-info:0",
+  "urn:xmpp:agent-tool-info:0",
+  "urn:xmpp:agent-task:0"
+]

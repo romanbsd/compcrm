@@ -15,21 +15,29 @@
 		"check-types": "tsc --noEmit",
 		"test": "CRM_TELEMETRY_DISABLED=1 bun test",
 		"eval": "CRM_TELEMETRY_DISABLED=1 eve eval",
+		"e2e:xmpp": "bun test/e2e/xmpp-export.e2e.ts",
 		"lint": "biome check .",
 		"clean": "rm -rf .turbo .eve node_modules"
 	},
 	"dependencies": {
+		"@agent-xmpp/core": "workspace:*",
+		"@agent-xmpp/gateway": "workspace:*",
+		"@agent-xmpp/protocol": "workspace:*",
 		"@crm/db": "workspace:*",
 		"@crm/env": "workspace:*",
 		"@crm/telemetry": "workspace:*",
 		"@crm/validation": "workspace:*",
 		"context.dev": "2.10.0",
 		"eve": "^0.29.4",
+		"ai": "7.0.47",
+		"ulid": "3.0.2",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@crm/typescript-config": "workspace:*",
+		"@types/bun": "^1.3.14",
 		"@types/node": "^24.0.0",
+		"@xmpp/client": "0.14.0",
 		"just-bash": "^3.2.0",
 		"microsandbox": "^0.6.8",
 		"typescript": "^5.9.2"

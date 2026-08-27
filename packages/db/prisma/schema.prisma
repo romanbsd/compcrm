@@ -209,6 +209,15 @@ enum AgentConversationKind {
   BUILDER
 }
 
+enum XmppAgentTaskState {
+  ACCEPTED
+  RUNNING
+  CANCELLING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 enum AgentDefinitionStatus {
   DRAFT
   DEPLOYING
@@ -494,6 +503,37 @@ model AgentTask {
   @@index([dealId])
   @@index([kind, subject], where: { finishedAt: null })
   @@map("agentTask")
+}
+
+model XmppAgentTask {
+  id             String             @id
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestId      String
+  callerJid      String
+  notificationJid String
+  targetJid      String
+  tool           String
+  apiVersion     String
+  manifestHash   String
+  fingerprint    String
+  arguments      Json
+  state          XmppAgentTaskState @default(ACCEPTED)
+  revision       Int                @default(0)
+  progress       Json?
+  result         Json?
+  error          Json?
+  summary        String?
+  eveSessionId   String?
+  deadline       DateTime?
+  retainUntil    DateTime
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([organizationId, callerJid, targetJid, requestId])
+  @@index([organizationId, state, updatedAt])
+  @@index([retainUntil])
+  @@map("xmppAgentTask")
 }
 
 model AgentEvent {
@@ -1486,6 +1526,7 @@ model Organization {
   website     String?
   members     Member[]
   invitations Invitation[]
+  xmppAgentTasks XmppAgentTask[]
 
   @@unique([slug])
   @@map("organization")

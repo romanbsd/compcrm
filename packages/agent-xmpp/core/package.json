@@ -1,0 +1,26 @@
+{
+	"name": "@agent-xmpp/core",
+	"version": "0.1.0",
+	"description": "ProtoXEP schema validation and canonicalization",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "rm -rf dist && node ../../../node_modules/typescript/bin/tsc",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@agent-xmpp/protocol": "workspace:*",
+		"ajv": "8.17.1"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.0",
+		"typescript": "^5.7.0"
+	}
+}

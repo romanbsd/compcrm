@@ -1,0 +1,28 @@
+{
+	"name": "@agent-xmpp/protocol",
+	"version": "0.1.0",
+	"description": "Shared XMPP agent gateway protocol types",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./schema/event.schema.json": "./schema/event.schema.json",
+		"./schema/manifest.schema.json": "./schema/manifest.schema.json"
+	},
+	"scripts": {
+		"build": "rm -rf dist && node ../../../node_modules/typescript/bin/tsc",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.0",
+		"typescript": "^5.7.0"
+	},
+	"dependencies": {
+		"idn-hostname": "15.1.10",
+		"precis-wasm": "0.1.0"
+	}
+}
