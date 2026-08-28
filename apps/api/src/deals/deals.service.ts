@@ -371,8 +371,9 @@ export class DealsService {
 		if (input.expectedCloseDate !== undefined) {
 			data.expectedCloseDate = parseDate(input.expectedCloseDate);
 		}
-		for (const [field, value] of Object.entries(gcTextInput(input))) {
-			if (value !== undefined) data[field as GcTextField] = value;
+		const gc = gcTextInput(input);
+		for (const field of GC_TEXT_FIELDS) {
+			if (gc[field] !== undefined) data[field] = gc[field];
 		}
 
 		if (input.amountCents !== undefined || input.currency !== undefined) {
@@ -682,10 +683,8 @@ export class DealsService {
 						},
 					},
 					data: {
-						...(role === null ? {} : { role }),
-						...(input.isPrimary === undefined
-							? {}
-							: { isPrimary: input.isPrimary }),
+						role: role ?? undefined,
+						isPrimary: input.isPrimary ?? undefined,
 					},
 					select: { dealId: true, contactId: true, isPrimary: true },
 				});
@@ -755,9 +754,7 @@ export class DealsService {
 				where: { dealId: input.dealId, contactId: input.contactId },
 				data: {
 					role,
-					...(input.isPrimary === undefined
-						? {}
-						: { isPrimary: input.isPrimary }),
+					isPrimary: input.isPrimary ?? undefined,
 				},
 			});
 
@@ -1022,10 +1019,12 @@ function textOrNull(
 			: blankToNull(value);
 }
 
+type GcTextFields = Record<GcTextField, string | null | undefined>;
+
 function gcTextInput(
 	input: Pick<DealCreateInput | DealUpdateInput, GcTextField>,
-): Record<GcTextField, string | null | undefined> {
-	const out = {} as Record<GcTextField, string | null | undefined>;
+): GcTextFields {
+	const out = {} as GcTextFields;
 	for (const field of GC_TEXT_FIELDS) {
 		out[field] = textOrNull(input[field]);
 	}
