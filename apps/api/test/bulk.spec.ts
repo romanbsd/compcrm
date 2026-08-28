@@ -247,10 +247,7 @@ describe("moving a selection of deals to a stage", () => {
 
 		let refused: Error | null = null;
 		try {
-			await deals.bulkSetStage(
-				{ ids: [deal.id], stage: "LOST" },
-				ownerId,
-			);
+			await deals.bulkSetStage({ ids: [deal.id], stage: "LOST" }, ownerId);
 		} catch (cause) {
 			refused = cause as Error;
 		}

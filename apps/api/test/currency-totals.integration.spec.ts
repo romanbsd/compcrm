@@ -450,7 +450,9 @@ describe("the dashboard only values what it can convert", () => {
 
 	afterAll(async () => {
 		await db.deal.deleteMany({ where: { ownerId: analystId } });
-		await db.contact.deleteMany({ where: { email: `dashboard-contact@${domain}` } });
+		await db.contact.deleteMany({
+			where: { email: `dashboard-contact@${domain}` },
+		});
 		await db.user.deleteMany({ where: { id: analystId } });
 	});
 
@@ -546,7 +548,9 @@ describe("the dashboard only values what it can convert", () => {
 		});
 
 		const summary = await dashboard.summary(analystId, { scope: "me" });
-		expect(summary.biggestOpen.find((deal) => deal.id === project.id)).toMatchObject({
+		expect(
+			summary.biggestOpen.find((deal) => deal.id === project.id),
+		).toMatchObject({
 			company: null,
 			primaryContact: {
 				id: contact.id,

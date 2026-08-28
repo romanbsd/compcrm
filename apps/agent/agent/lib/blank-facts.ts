@@ -6,7 +6,7 @@ import {
 	factColumn,
 	fillsBlank,
 } from "./facts";
-import { splitName } from "./names";
+import { contactName, splitName } from "./names";
 
 const SCAN = 2000;
 
@@ -117,9 +117,7 @@ export async function sweepBlankFacts(
 		sweep.settled += group.length - 1;
 		sweep.fills.push({
 			contactId: best.contactId,
-			contact:
-				best.contact.displayName ||
-				[contact.firstName, contact.lastName].filter(Boolean).join(" "),
+			contact: contactName(best.contact),
 			field,
 			value: best.value,
 			score: best.score,

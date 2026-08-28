@@ -138,7 +138,9 @@ export class DealsRouter {
 	@Mutation({
 		input: dealDetachContactInput,
 		output: dealContactLinkOutput,
-		meta: restMeta("DELETE", "/deals/{dealId}/contacts/{contactId}", ["Projects"]),
+		meta: restMeta("DELETE", "/deals/{dealId}/contacts/{contactId}", [
+			"Projects",
+		]),
 	})
 	async detachContact(@Input() input: z.infer<typeof dealDetachContactInput>) {
 		return this.deals.detachContact(input);

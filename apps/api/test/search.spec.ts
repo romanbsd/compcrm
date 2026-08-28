@@ -54,8 +54,8 @@ describe("SearchService", () => {
 	it("keeps first and last name fallback behavior", async () => {
 		const result = await search.quick("Legacy");
 
-		expect(
-			result.hits.find((hit) => hit.kind === "contact")?.label,
-		).toBe("Legacy Contact");
+		expect(result.hits.find((hit) => hit.kind === "contact")?.label).toBe(
+			"Legacy Contact",
+		);
 	});
 });

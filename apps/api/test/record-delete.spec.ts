@@ -284,9 +284,9 @@ describe("purging a company", () => {
 		expect(await db.agentTask.count({ where: { companyId: company.id } })).toBe(
 			0,
 		);
-		expect(await db.agentTask.findUnique({ where: { id: companyTask.id } })).toBe(
-			null,
-		);
+		expect(
+			await db.agentTask.findUnique({ where: { id: companyTask.id } }),
+		).toBe(null);
 		expect(
 			await db.agentTask.findUnique({
 				where: { id: projectTask.id },

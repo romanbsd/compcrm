@@ -256,10 +256,7 @@ const OPEN_STAGES = [
 	DealStage.IN_PROGRESS,
 ] as const;
 
-const CLOSED_STAGES = [
-	DealStage.COMPLETE,
-	DealStage.LOST,
-] as const;
+const CLOSED_STAGES = [DealStage.COMPLETE, DealStage.LOST] as const;
 
 const DEAL_DESCRIPTIONS = [
 	"Replacing a spreadsheet-and-Drive evidence process before their first SOC 2 audit. Security owns the decision, finance signs.",

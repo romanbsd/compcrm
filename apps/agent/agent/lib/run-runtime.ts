@@ -13,6 +13,7 @@ import { AGENT_ACTION_EXECUTORS, isAgentActionType } from "./agent-actions";
 import { readCrmHistory } from "./crm";
 import { DISPATCH } from "./dispatch-config";
 import { searchCrm } from "./lookup";
+import { contactName } from "./names";
 import {
 	type LockedAgentRun,
 	lockAgentRun,
@@ -1118,9 +1119,7 @@ async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 		});
 		return contact
 			? {
-					label:
-						contact.displayName ||
-						[contact.firstName, contact.lastName].filter(Boolean).join(" "),
+					label: contactName(contact),
 					companyId: contact.companyId,
 					contactId: contact.id,
 					dealId: null,

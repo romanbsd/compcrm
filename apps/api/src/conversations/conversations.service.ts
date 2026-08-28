@@ -1,5 +1,6 @@
 import { WORKSPACE_ID } from "@crm/auth";
 import { type Db, type Prisma, Prisma as PrismaNamespace } from "@crm/db";
+import { contactName } from "@crm/db/contact-name";
 import { readAgentManifestSummary } from "@crm/validation/agent-manifest";
 import {
 	type BuilderQuestion,
@@ -230,9 +231,7 @@ export class ConversationsService {
 			...contacts.map((contact) => ({
 				kind: "contact" as const,
 				id: contact.id,
-				label:
-					contact.displayName ||
-					[contact.firstName, contact.lastName].filter(Boolean).join(" "),
+				label: contactName(contact),
 				detail: contact.company?.name ?? contact.email,
 				imageUrl: contact.imageUrl,
 			})),

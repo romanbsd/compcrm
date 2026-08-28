@@ -7,6 +7,7 @@ import {
 	Prisma as PrismaNamespace,
 	type RecordSource,
 } from "@crm/db";
+import { contactName } from "@crm/db/contact-name";
 import type { FieldDefinitionWithOptions } from "@crm/db/fields";
 import {
 	ConflictException,
@@ -268,9 +269,11 @@ export class ContactsService {
 		const email = normalizeEmail(input.email ?? "");
 		const firstName = input.firstName.trim();
 		const lastName = blankToNull(input.lastName ?? "");
-		const displayName =
-			blankToNull(input.displayName ?? "") ??
-			[firstName, lastName].filter(Boolean).join(" ");
+		const displayName = contactName({
+			firstName,
+			lastName,
+			displayName: blankToNull(input.displayName ?? "") ?? undefined,
+		});
 
 		if (email) {
 			const existing = await this.db.contact.findFirst({
@@ -282,7 +285,7 @@ export class ContactsService {
 			});
 			if (existing) {
 				throw new ConflictException(
-					`${[existing.firstName, existing.lastName].filter(Boolean).join(" ")} already uses ${email}.`,
+					`${contactName(existing)} already uses ${email}.`,
 				);
 			}
 		}
@@ -370,7 +373,7 @@ export class ContactsService {
 
 			this.logger.log({ message: "Contact archived", contactId: id });
 
-			return { id, name: nameOf(contact) };
+			return { id, name: contactName(contact) };
 		} catch (error) {
 			throw this.translate(error, id);
 		}
@@ -386,7 +389,7 @@ export class ContactsService {
 
 			this.logger.log({ message: "Contact restored", contactId: id });
 
-			return { id, name: nameOf(contact) };
+			return { id, name: contactName(contact) };
 		} catch (error) {
 			throw this.translate(error, id);
 		}
@@ -434,7 +437,7 @@ export class ContactsService {
 					select: { firstName: true, lastName: true, email: true },
 				});
 
-				const name = nameOf(contact);
+				const name = contactName(contact);
 				const suppress = normalizeEmail(contact.email ?? "");
 
 				if (suppress) {
@@ -524,7 +527,12 @@ export class ContactsService {
 				const updated = await tx.contact.update({
 					where: { id },
 					data,
-					select: { id: true, displayName: true, firstName: true, lastName: true },
+					select: {
+						id: true,
+						displayName: true,
+						firstName: true,
+						lastName: true,
+					},
 				});
 
 				if (email !== null) {
@@ -681,9 +689,7 @@ export class ContactsService {
 				: null,
 			colleagues: colleagues.map((colleague) => ({
 				id: colleague.id,
-				name:
-					colleague.displayName ||
-					[colleague.firstName, colleague.lastName].filter(Boolean).join(" "),
+				name: contactName(colleague),
 				title: colleague.title,
 			})),
 		};
@@ -938,11 +944,4 @@ export class ContactsService {
 		}
 		throw cause;
 	}
-}
-
-function nameOf(contact: {
-	firstName: string;
-	lastName: string | null;
-}): string {
-	return [contact.firstName, contact.lastName].filter(Boolean).join(" ");
 }

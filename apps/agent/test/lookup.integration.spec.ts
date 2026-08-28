@@ -267,7 +267,9 @@ describe("listDeals", () => {
 			},
 			owner: { image: "https://cdn.example.test/rep-one.png" },
 		});
-		expect(result.deals.find((deal) => deal.id === noCompanyDealId)).toMatchObject({
+		expect(
+			result.deals.find((deal) => deal.id === noCompanyDealId),
+		).toMatchObject({
 			company: null,
 			primaryContact: { id: paulaId, name: `Paula Customer ${suffix}` },
 		});

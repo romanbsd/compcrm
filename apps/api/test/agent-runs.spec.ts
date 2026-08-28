@@ -367,12 +367,12 @@ describe("manual agent runs", () => {
 					select: { versionId: true },
 				}),
 			).toEqual({ versionId });
-		expect(
+			expect(
 				await db.agentRun.findUniqueOrThrow({
 					where: { id: retried.id },
 					select: { dealId: true },
 				}),
-		).toEqual({ dealId });
+			).toEqual({ dealId });
 			expect(
 				await db.agentAuditEvent.findFirstOrThrow({
 					where: { agentId, type: "run.requested", requestId: clientRequestId },

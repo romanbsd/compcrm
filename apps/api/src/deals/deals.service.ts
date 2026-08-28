@@ -27,6 +27,11 @@ import {
 } from "../crm/activity-stamp.service";
 import { type BulkResult, requireOwner, runBulk } from "../crm/bulk";
 import {
+	CONTACT_SELECT,
+	PRIMARY_CONTACT_SELECT,
+	primaryContactOf,
+} from "../crm/selects";
+import {
 	blankToNull,
 	decimalFromCents,
 	fromCents,
@@ -76,18 +81,18 @@ const COMPANY_SELECT = {
 	logoUrl: true,
 } as const;
 
-const CONTACT_SELECT = {
-	id: true,
-	displayName: true,
-	firstName: true,
-	lastName: true,
-	email: true,
-	title: true,
-	businessName: true,
-	imageUrl: true,
-} as const;
-
 const LOSING = new Set<DealStage>(LOSING_DEAL_STAGES);
+
+const GC_TEXT_FIELDS = [
+	"leadSource",
+	"projectType",
+	"addressLine1",
+	"addressLine2",
+	"city",
+	"state",
+	"postalCode",
+] as const;
+type GcTextField = (typeof GC_TEXT_FIELDS)[number];
 
 const SORTABLE: OrderByColumns<Prisma.DealOrderByWithRelationInput[]> = {
 	name: (dir) => [{ name: dir }],
@@ -145,14 +150,7 @@ export class DealsService {
 						expectedCloseDate: true,
 						closedAt: true,
 						company: { select: COMPANY_SELECT },
-						contacts: {
-							where: { isPrimary: true },
-							take: 1,
-							select: {
-								isPrimary: true,
-								contact: { select: CONTACT_SELECT },
-							},
-						},
+						...PRIMARY_CONTACT_SELECT,
 						owner: { select: OWNER_SELECT },
 						lastActivityAt: true,
 						createdAt: true,
@@ -187,7 +185,7 @@ export class DealsService {
 					...row
 				}) => ({
 					...row,
-					primaryContact: contacts[0]?.contact ?? null,
+					primaryContact: primaryContactOf({ contacts }),
 					amountCents: toCents(amount),
 					baseAmountCents: toCents(baseAmount),
 					expectedCloseDate: expectedCloseDate?.toISOString() ?? null,
@@ -317,13 +315,7 @@ export class DealsService {
 						currency,
 						...fx,
 						expectedCloseDate: parseDate(input.expectedCloseDate),
-						leadSource: textOrNull(input.leadSource),
-						projectType: textOrNull(input.projectType),
-						addressLine1: textOrNull(input.addressLine1),
-						addressLine2: textOrNull(input.addressLine2),
-						city: textOrNull(input.city),
-						state: textOrNull(input.state),
-						postalCode: textOrNull(input.postalCode),
+						...gcTextInput(input),
 					},
 					select: { id: true, name: true, companyId: true },
 				});
@@ -379,18 +371,9 @@ export class DealsService {
 		if (input.expectedCloseDate !== undefined) {
 			data.expectedCloseDate = parseDate(input.expectedCloseDate);
 		}
-		if (input.leadSource !== undefined)
-			data.leadSource = textOrNull(input.leadSource);
-		if (input.projectType !== undefined)
-			data.projectType = textOrNull(input.projectType);
-		if (input.addressLine1 !== undefined)
-			data.addressLine1 = textOrNull(input.addressLine1);
-		if (input.addressLine2 !== undefined)
-			data.addressLine2 = textOrNull(input.addressLine2);
-		if (input.city !== undefined) data.city = textOrNull(input.city);
-		if (input.state !== undefined) data.state = textOrNull(input.state);
-		if (input.postalCode !== undefined)
-			data.postalCode = textOrNull(input.postalCode);
+		for (const [field, value] of Object.entries(gcTextInput(input))) {
+			if (value !== undefined) data[field as GcTextField] = value;
+		}
 
 		if (input.amountCents !== undefined || input.currency !== undefined) {
 			const current = await this.db.deal.findUnique({
@@ -666,7 +649,8 @@ export class DealsService {
 				where: { id: input.dealId },
 				select: { id: true },
 			});
-			if (!deal) throw new NotFoundException(`No project with id ${input.dealId}.`);
+			if (!deal)
+				throw new NotFoundException(`No project with id ${input.dealId}.`);
 
 			const contact = await tx.contact.findFirst({
 				where: { id: input.contactId, archivedAt: null },
@@ -677,14 +661,7 @@ export class DealsService {
 			}
 
 			if (input.isPrimary === true) {
-				await tx.dealContact.updateMany({
-					where: {
-						dealId: input.dealId,
-						contactId: { not: input.contactId },
-						isPrimary: true,
-					},
-					data: { isPrimary: false },
-				});
+				await demoteOtherPrimaries(tx, input.dealId, input.contactId);
 			}
 
 			const existing = await tx.dealContact.findUnique({
@@ -771,14 +748,7 @@ export class DealsService {
 			}
 
 			if (input.isPrimary === true) {
-				await tx.dealContact.updateMany({
-					where: {
-						dealId: input.dealId,
-						contactId: { not: input.contactId },
-						isPrimary: true,
-					},
-					data: { isPrimary: false },
-				});
+				await demoteOtherPrimaries(tx, input.dealId, input.contactId);
 			}
 
 			await tx.dealContact.update({
@@ -1031,12 +1001,35 @@ function roleOrNull(value: string | null): string | null {
 	return value === null ? null : blankToNull(value);
 }
 
-function textOrNull(value: string | null | undefined): string | null | undefined {
+async function demoteOtherPrimaries(
+	tx: Prisma.TransactionClient,
+	dealId: string,
+	contactId: string,
+): Promise<void> {
+	await tx.dealContact.updateMany({
+		where: { dealId, contactId: { not: contactId }, isPrimary: true },
+		data: { isPrimary: false },
+	});
+}
+
+function textOrNull(
+	value: string | null | undefined,
+): string | null | undefined {
 	return value === undefined
 		? undefined
 		: value === null
 			? null
 			: blankToNull(value);
+}
+
+function gcTextInput(
+	input: Pick<DealCreateInput | DealUpdateInput, GcTextField>,
+): Record<GcTextField, string | null | undefined> {
+	const out = {} as Record<GcTextField, string | null | undefined>;
+	for (const field of GC_TEXT_FIELDS) {
+		out[field] = textOrNull(input[field]);
+	}
+	return out;
 }
 
 function parseDate(value: string | null | undefined): Date | null {

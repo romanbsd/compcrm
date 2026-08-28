@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { ActivityType, db } from "@crm/db";
-import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { ActivitiesService } from "../src/activities/activities.service";
+import { ActivityStampService } from "../src/crm/activity-stamp.service";
 
 const suffix = process.env.TEST_RUN_ID ?? "activities-spec";
 const userId = `activities-user-${suffix}`;

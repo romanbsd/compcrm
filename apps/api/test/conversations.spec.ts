@@ -95,15 +95,15 @@ describe("ConversationsService", () => {
 	});
 
 	it("finds a builder contact by display name and renders it", async () => {
-		expect(await service.builderResources("Conversation Alias", userId)).toContainEqual(
-			{
-				kind: "contact",
-				id: contactId,
-				label: "Conversation Alias",
-				detail: email,
-				imageUrl: null,
-			},
-		);
+		expect(
+			await service.builderResources("Conversation Alias", userId),
+		).toContainEqual({
+			kind: "contact",
+			id: contactId,
+			label: "Conversation Alias",
+			detail: email,
+			imageUrl: null,
+		});
 	});
 
 	it("saves a cursor and titles the thread from the opening question", async () => {

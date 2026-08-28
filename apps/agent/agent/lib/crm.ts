@@ -1,5 +1,5 @@
 import { db, EnrichmentStatus, type Prisma } from "@crm/db";
-import { domainOf, isDerivedName } from "./names";
+import { contactName, domainOf, isDerivedName } from "./names";
 import type { Person } from "./socials";
 
 export type WorkItem = {
@@ -387,15 +387,4 @@ export async function writeTimelineNote(
 	});
 
 	return activity.id;
-}
-
-function contactName(person: {
-	displayName: string;
-	firstName: string;
-	lastName: string | null;
-}): string {
-	return (
-		person.displayName ||
-		[person.firstName, person.lastName].filter(Boolean).join(" ")
-	);
 }

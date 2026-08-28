@@ -1,7 +1,7 @@
 import { ActivityType, type DealStage, db, EmailDirection } from "@crm/db";
-import { isClosedStage } from "@crm/db/deal-stage";
+import { isOpenStage } from "@crm/db/deal-stage";
 import { z } from "zod";
-import { isDerivedName } from "./names";
+import { contactName, isDerivedName, primaryFirst } from "./names";
 
 const BODY_LIMIT = 4000;
 
@@ -274,7 +274,7 @@ export async function readCompanyHistory(
 		},
 		people: people.map((person) => ({
 			id: person.id,
-			name: fullName(person),
+			name: contactName(person),
 			title: person.title,
 			email: person.email,
 			linkedinUrl: person.linkedinUrl,
@@ -399,9 +399,7 @@ export async function readDealHistory(
 	const includeEmail = options.includeEmail ?? true;
 	const includeCalendar = options.includeCalendar ?? true;
 
-	const contacts = [...deal.contacts].sort(
-		(a, b) => Number(b.isPrimary) - Number(a.isPrimary),
-	);
+	const contacts = [...deal.contacts].sort(primaryFirst);
 	const contactIds = contacts.map(({ contact }) => contact.id);
 
 	const relatedThreads = {
@@ -509,7 +507,7 @@ export async function readDealHistory(
 		company: deal.company,
 		people: contacts.map(({ role, isPrimary, contact }) => ({
 			id: contact.id,
-			name: fullName(contact),
+			name: contactName(contact),
 			title: contact.title,
 			email: contact.email,
 			role,
@@ -551,7 +549,7 @@ export async function readDealHistory(
 }
 
 function isOpen(stage: string): boolean {
-	return !isClosedStage(stage as DealStage);
+	return isOpenStage(stage as DealStage);
 }
 
 async function recentNotes(
@@ -610,7 +608,7 @@ function toAccountThread(thread: {
 	return {
 		subject: thread.subject,
 		contact: thread.contact
-			? { id: thread.contact.id, name: fullName(thread.contact) }
+			? { id: thread.contact.id, name: contactName(thread.contact) }
 			: null,
 		messageCount: thread.messageCount,
 		lastMessageAt: thread.lastMessageAt.toISOString(),
@@ -669,19 +667,10 @@ function toCompanyDeal(deal: {
 		lastActivityAt: deal.lastActivityAt?.toISOString() ?? null,
 		contacts: deal.contacts.map(({ role, contact }) => ({
 			id: contact.id,
-			name: fullName(contact),
+			name: contactName(contact),
 			role,
 		})),
 	};
-}
-
-function fullName(person: {
-	displayName?: string;
-	firstName: string;
-	lastName: string | null;
-}): string {
-	if (person.displayName) return person.displayName;
-	return [person.firstName, person.lastName].filter(Boolean).join(" ");
 }
 
 function daysSince(date: Date, now: Date): number {

@@ -2,6 +2,7 @@ import { ActivityType, type Db, DealStage } from "@crm/db";
 import { OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
 import { activityMeta } from "@crm/validation/activity-meta";
 import { Injectable } from "@nestjs/common";
+import { PRIMARY_CONTACT_SELECT, primaryContactOf } from "../crm/selects";
 import { toCents } from "../crm/values";
 import { ConversionService } from "../currency/conversion.service";
 import { InjectDatabase } from "../database/database.constants";
@@ -129,24 +130,7 @@ export class DashboardService {
 							iconTone: true,
 						},
 					},
-					contacts: {
-						where: { isPrimary: true },
-						take: 1,
-						select: {
-							contact: {
-								select: {
-									id: true,
-									displayName: true,
-									firstName: true,
-									lastName: true,
-									email: true,
-									title: true,
-									businessName: true,
-									imageUrl: true,
-								},
-							},
-						},
-					},
+					...PRIMARY_CONTACT_SELECT,
 					owner: { select: OWNER_SELECT },
 				},
 			}),
@@ -288,7 +272,7 @@ export class DashboardService {
 						...deal
 					}) => ({
 						...deal,
-						primaryContact: contacts[0]?.contact ?? null,
+						primaryContact: primaryContactOf({ contacts }),
 						amountCents: toCents(amount),
 						baseAmountCents: baseCurrency === base ? toCents(baseAmount) : null,
 						expectedCloseDate: expectedCloseDate?.toISOString() ?? null,

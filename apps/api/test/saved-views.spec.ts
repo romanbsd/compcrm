@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { db } from "@crm/db";
 import { SavedViewsService } from "../src/saved-views/saved-views.service";
 
 const userId = `saved-view-migration-${crypto.randomUUID()}`;

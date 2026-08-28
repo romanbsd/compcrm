@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { db } from "@crm/db";
-import type { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { AgentQueueService } from "../src/agent/agent-queue.service";
-import { ActivityStampService } from "../src/crm/activity-stamp.service";
+import type { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { CompanyDirectoryService } from "../src/companies/company-directory.service";
-import { ContactsService } from "../src/contacts/contacts.service";
 import { contactListInput } from "../src/contacts/contacts.contracts";
+import { ContactsService } from "../src/contacts/contacts.service";
+import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { FieldsService } from "../src/fields/fields.service";
 
 const suffix = process.env.TEST_RUN_ID ?? "contacts-search-spec";
