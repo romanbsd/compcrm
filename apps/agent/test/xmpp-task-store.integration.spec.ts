@@ -7,6 +7,7 @@ const suffix = crypto.randomUUID();
 const organizationId = `xmpp-store-${suffix}`;
 const otherOrganizationId = `xmpp-store-other-${suffix}`;
 const store = new PostgresXmppTaskStore(organizationId);
+const LEASE_EXPIRATION_MARGIN_MS = 1;
 
 beforeAll(async () => {
 	await db.organization.createMany({
@@ -84,7 +85,9 @@ describe("PostgreSQL XMPP task state", () => {
 		expect((await store.get(interrupted.task.taskId))?.state).toBe("accepted");
 		expect(
 			await recoveringStore.failInterrupted(
-				new Date(Date.now() + XMPP_EXPORT.task.leaseMs),
+				new Date(
+					Date.now() + XMPP_EXPORT.task.leaseMs + LEASE_EXPIRATION_MARGIN_MS,
+				),
 			),
 		).toBeGreaterThanOrEqual(1);
 		expect((await store.get(interrupted.task.taskId))?.state).toBe("failed");
