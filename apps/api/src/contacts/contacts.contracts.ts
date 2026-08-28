@@ -26,11 +26,13 @@ export const contactListInput = listInput.extend({
 export type ContactListInput = z.infer<typeof contactListInput>;
 
 export const contactCreateInput = z.object({
+	displayName: z.string().trim().optional(),
 	firstName: z.string().trim().min(1, "A contact needs a first name."),
 	lastName: z.string().trim().optional(),
 	email: z.email("That is not an email address.").optional().or(z.literal("")),
 	phone: z.string().trim().optional(),
 	title: z.string().trim().optional(),
+	businessName: z.string().trim().optional(),
 	companyId: z.string().nullable().optional(),
 	ownerId: z.string().nullable().optional(),
 });
@@ -38,11 +40,13 @@ export const contactCreateInput = z.object({
 export type ContactCreateInput = z.infer<typeof contactCreateInput>;
 
 const contactUpdateInput = z.object({
+	displayName: z.string().trim().optional(),
 	firstName: z.string().trim().min(1).optional(),
 	lastName: z.string().optional(),
 	email: z.string().optional(),
 	phone: z.string().optional(),
 	title: z.string().optional(),
+	businessName: z.string().optional(),
 	linkedinUrl: z.string().optional(),
 	twitterUrl: z.string().optional(),
 	githubUrl: z.string().optional(),
@@ -132,10 +136,12 @@ const contactOwnerOutput = z.object({
 
 export const contactRowOutput = z.object({
 	id: z.string(),
+	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),
 	title: z.string().nullable(),
+	businessName: z.string().nullable(),
 	imageUrl: z.string().nullable(),
 	source: z.enum(
 		Object.values(RecordSource) as [RecordSource, ...RecordSource[]],
@@ -225,11 +231,13 @@ const contactDealOutput = z.object({
 
 export const contactByIdOutput = z.object({
 	id: z.string(),
+	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),
 	phone: z.string().nullable(),
 	title: z.string().nullable(),
+	businessName: z.string().nullable(),
 	linkedinUrl: z.string().nullable(),
 	twitterUrl: z.string().nullable(),
 	githubUrl: z.string().nullable(),
@@ -261,6 +269,7 @@ export const contactByIdOutput = z.object({
 
 export const contactBasicOutput = z.object({
 	id: z.string(),
+	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 });

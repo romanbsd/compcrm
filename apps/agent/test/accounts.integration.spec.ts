@@ -9,6 +9,7 @@ let companyId: string;
 let dealId: string;
 let paulaId: string;
 let placeholderId: string;
+let noCompanyDealId: string;
 let userId: string;
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
@@ -41,6 +42,7 @@ beforeAll(async () => {
 
 	const paula = await db.contact.create({
 		data: {
+			displayName: "Paula Customer",
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -69,13 +71,15 @@ beforeAll(async () => {
 			name: `Fernhill platform ${suffix}`,
 			companyId,
 			ownerId: userId,
-			stage: DealStage.CONTRACT_SENT,
+			stage: DealStage.CONTRACTED,
 			stageChangedAt: daysAgo(42),
 			amount: 48_000,
 			currency: "USD",
 			expectedCloseDate: daysAhead(14),
 			lastActivityAt: daysAgo(3),
-			contacts: { create: [{ contactId: paulaId, role: "Champion" }] },
+			contacts: {
+				create: [{ contactId: paulaId, role: "Champion", isPrimary: true }],
+			},
 		},
 		select: { id: true },
 	});
@@ -90,7 +94,7 @@ beforeAll(async () => {
 				dealId,
 				createdById: userId,
 				createdAt: daysAgo(60),
-				meta: { from: "DEMO_BOOKED", to: "QUALIFIED_TO_BUY" },
+				meta: { from: "LEAD", to: "ESTIMATING" },
 			},
 			{
 				type: ActivityType.STAGE_CHANGE,
@@ -99,7 +103,7 @@ beforeAll(async () => {
 				dealId,
 				createdById: userId,
 				createdAt: daysAgo(42),
-				meta: { from: "QUALIFIED_TO_BUY", to: "CONTRACT_SENT" },
+				meta: { from: "ESTIMATING", to: "CONTRACTED" },
 			},
 			{
 				type: ActivityType.NOTE,
@@ -176,6 +180,15 @@ beforeAll(async () => {
 			},
 		},
 	});
+
+	const noCompanyDeal = await db.deal.create({
+		data: {
+			name: `Fernhill unassigned project ${suffix}`,
+			ownerId: userId,
+		},
+		select: { id: true },
+	});
+	noCompanyDealId = noCompanyDeal.id;
 });
 
 afterAll(cleanup);
@@ -193,6 +206,10 @@ async function cleanup(): Promise<void> {
 		await db.deal.deleteMany({ where: { companyId: company.id } });
 		await db.contact.deleteMany({ where: { companyId: company.id } });
 		await db.company.delete({ where: { id: company.id } });
+	}
+
+	if (noCompanyDealId) {
+		await db.deal.delete({ where: { id: noCompanyDealId } });
 	}
 
 	await db.user.deleteMany({ where: { email: `rep.${suffix}@example.test` } });
@@ -227,11 +244,11 @@ describe("readCompanyHistory", () => {
 		const history = await readCompanyHistory(companyId);
 		const deal = history?.deals.find((row) => row.id === dealId);
 
-		expect(deal?.stage).toBe("CONTRACT_SENT");
+		expect(deal?.stage).toBe("CONTRACTED");
 		expect(deal?.open).toBe(true);
 		expect(deal?.amount).toBe(48_000);
 		expect(deal?.contacts).toEqual([
-			{ id: paulaId, name: "Paula Marchetti", role: "Champion" },
+			{ id: paulaId, name: "Paula Customer", role: "Champion" },
 		]);
 		expect(history?.stats.openDeals).toBe(1);
 	});
@@ -285,7 +302,7 @@ describe("readDealHistory", () => {
 	it("reports the stage clock, not just the stage", async () => {
 		const history = await readDealHistory(dealId);
 
-		expect(history?.deal.stage).toBe("CONTRACT_SENT");
+		expect(history?.deal.stage).toBe("CONTRACTED");
 		expect(history?.deal.open).toBe(true);
 		expect(history?.deal.daysInStage).toBeGreaterThanOrEqual(41);
 	});
@@ -294,9 +311,18 @@ describe("readDealHistory", () => {
 		const history = await readDealHistory(dealId);
 
 		expect(history?.stageHistory.map((change) => change.to)).toEqual([
-			"QUALIFIED_TO_BUY",
-			"CONTRACT_SENT",
+			"ESTIMATING",
+			"CONTRACTED",
 		]);
+	});
+
+	it("reads a project history without a company", async () => {
+		const history = await readDealHistory(noCompanyDealId);
+
+		expect(history?.company).toBeNull();
+		expect(history?.deal.open).toBe(true);
+		expect(history?.threads).toEqual([]);
+		expect(history?.meetings).toEqual([]);
 	});
 
 	it("names who is on it, with ids and roles", async () => {
@@ -305,10 +331,11 @@ describe("readDealHistory", () => {
 		expect(history?.people).toEqual([
 			{
 				id: paulaId,
-				name: "Paula Marchetti",
+				name: "Paula Customer",
 				title: "Growth Specialist",
 				email: `paula.marchetti@${domain}`,
 				role: "Champion",
+				isPrimary: true,
 			},
 		]);
 		expect(history?.company.id).toBe(companyId);
@@ -319,7 +346,7 @@ describe("readDealHistory", () => {
 
 		expect(history?.threads).toHaveLength(1);
 		expect(history?.stats.theyReplied).toBe(true);
-		expect(history?.note).toContain("never against a deal");
+		expect(history?.note).toContain("never against a project");
 	});
 
 	it("omits deal correspondence when connected sources are not approved", async () => {

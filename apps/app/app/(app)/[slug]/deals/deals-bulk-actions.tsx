@@ -38,7 +38,7 @@ import { useCrmCache } from "@/lib/trpc/cache";
 import { useTRPC } from "@/lib/trpc/client";
 
 function deals(count: number): string {
-	return formatCount(count, "deal");
+	return formatCount(count, "project");
 }
 
 export function DealsBulkActions({
@@ -145,7 +145,7 @@ export function DealsBulkActions({
 					open={confirming}
 					onOpenChange={setConfirming}
 					title={`Delete ${deals(ids.length)} forever?`}
-					description="Everything filed against them — activity, notes, the amounts in your pipeline — goes too. This cannot be undone."
+					description="Everything filed against them, including activity, notes, and project amounts, goes too. This cannot be undone."
 					onConfirm={() => purge.mutate({ ids })}
 				/>
 			</>
@@ -165,7 +165,7 @@ export function DealsBulkActions({
 					}
 				/>
 				<DropdownMenuSub>
-					<DropdownMenuSubTrigger>Change stage</DropdownMenuSubTrigger>
+					<DropdownMenuSubTrigger>Change status</DropdownMenuSubTrigger>
 					<DropdownMenuSubContent className="max-h-72 overflow-y-auto">
 						<DropdownMenuGroup>
 							{DEAL_STAGE_OPTIONS.map((option) => (
@@ -204,11 +204,7 @@ export function DealsBulkActions({
 			>
 				<DialogContent>
 					<DialogHeader>
-						<DialogTitle>
-							{closing === "CLOSED_LOST"
-								? `Close ${deals(ids.length)} as lost`
-								: `Mark ${deals(ids.length)} as unqualified`}
-						</DialogTitle>
+						<DialogTitle>Mark {deals(ids.length)} as lost</DialogTitle>
 						<DialogDescription>
 							The same reason goes on every one of them, so keep it to what they
 							have in common.

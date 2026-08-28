@@ -1,4 +1,5 @@
 import { DealStage } from "@crm/db";
+import { OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
 import { FIELD_ENTITIES, FIELD_TYPES } from "@crm/db/fields";
 import { z } from "zod";
 import { bulkIdsInput } from "../crm/bulk";
@@ -41,14 +42,31 @@ const stageEnum = z.enum(
 	Object.values(DealStage) as [DealStage, ...DealStage[]],
 );
 
+const projectCreateStageEnum = stageEnum.superRefine((stage, context) => {
+	if (!OPEN_DEAL_STAGES.includes(stage as (typeof OPEN_DEAL_STAGES)[number])) {
+		context.addIssue({
+			code: "custom",
+			message: "A new project must start in an open status.",
+		});
+	}
+});
+
 export const dealCreateInput = z.object({
-	name: z.string().trim().min(1, "A deal needs a name."),
-	companyId: z.string().min(1, "A deal belongs to a company."),
-	ownerId: z.string().min(1, "A deal needs an owner."),
-	stage: stageEnum.optional(),
+	name: z.string().trim().min(1, "A project needs a name."),
+	companyId: z.string().min(1).nullable().optional(),
+	ownerId: z.string().min(1, "A project needs an owner."),
+	stage: projectCreateStageEnum.optional(),
+	description: z.string().nullable().optional(),
 	amountCents,
 	currency: currencyCode.optional(),
 	expectedCloseDate: z.string().nullable().optional(),
+	leadSource: z.string().trim().nullable().optional(),
+	projectType: z.string().trim().nullable().optional(),
+	addressLine1: z.string().trim().nullable().optional(),
+	addressLine2: z.string().trim().nullable().optional(),
+	city: z.string().trim().nullable().optional(),
+	state: z.string().trim().nullable().optional(),
+	postalCode: z.string().trim().nullable().optional(),
 });
 
 export type DealCreateInput = z.infer<typeof dealCreateInput>;
@@ -56,11 +74,18 @@ export type DealCreateInput = z.infer<typeof dealCreateInput>;
 const dealUpdateInput = z.object({
 	name: z.string().trim().min(1).optional(),
 	description: z.string().nullable().optional(),
-	companyId: z.string().optional(),
+	companyId: z.string().nullable().optional(),
 	ownerId: z.string().optional(),
 	amountCents,
 	currency: currencyCode.optional(),
 	expectedCloseDate: z.string().nullable().optional(),
+	leadSource: z.string().trim().nullable().optional(),
+	projectType: z.string().trim().nullable().optional(),
+	addressLine1: z.string().trim().nullable().optional(),
+	addressLine2: z.string().trim().nullable().optional(),
+	city: z.string().trim().nullable().optional(),
+	state: z.string().trim().nullable().optional(),
+	postalCode: z.string().trim().nullable().optional(),
 	fields: recordFieldValues.optional(),
 });
 
@@ -91,8 +116,9 @@ export const dealContactsInput = z.object({ dealId: z.string() });
 
 export const dealAttachContactInput = z.object({
 	dealId: z.string(),
-	contactId: z.string().min(1, "Choose somebody to bring onto the deal."),
+	contactId: z.string().min(1, "Choose somebody to bring onto the project."),
 	role: dealContactRole.optional(),
+	isPrimary: z.boolean().optional(),
 });
 
 export type DealAttachContactInput = z.infer<typeof dealAttachContactInput>;
@@ -108,6 +134,7 @@ export const dealContactRoleInput = z.object({
 	dealId: z.string(),
 	contactId: z.string(),
 	role: dealContactRole,
+	isPrimary: z.boolean().optional(),
 });
 
 export type DealContactRoleInput = z.infer<typeof dealContactRoleInput>;
@@ -115,7 +142,7 @@ export type DealContactRoleInput = z.infer<typeof dealContactRoleInput>;
 export const dealBulkInput = bulkIdsInput;
 
 export const dealBulkOwnerInput = bulkIdsInput.extend({
-	ownerId: z.string().min(1, "A deal needs an owner."),
+	ownerId: z.string().min(1, "A project needs an owner."),
 });
 
 export type DealBulkOwnerInput = z.infer<typeof dealBulkOwnerInput>;
@@ -182,15 +209,18 @@ const dealCompanyDetailOutput = dealCompanyOutput.extend({
 
 const dealContactSummaryOutput = z.object({
 	id: z.string(),
+	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),
 	title: z.string().nullable(),
+	businessName: z.string().nullable(),
 	imageUrl: z.string().nullable(),
 });
 
 const dealContactOutput = dealContactSummaryOutput.extend({
 	role: z.string().nullable(),
+	isPrimary: z.boolean(),
 });
 
 const dealListRowOutput = z.object({
@@ -198,8 +228,16 @@ const dealListRowOutput = z.object({
 	name: z.string(),
 	stage: stageEnum,
 	currency: z.string(),
-	company: dealCompanyOutput,
+	company: dealCompanyOutput.nullable(),
+	primaryContact: dealContactSummaryOutput.nullable(),
 	owner: dealOwnerOutput,
+	leadSource: z.string().nullable(),
+	projectType: z.string().nullable(),
+	addressLine1: z.string().nullable(),
+	addressLine2: z.string().nullable(),
+	city: z.string().nullable(),
+	state: z.string().nullable(),
+	postalCode: z.string().nullable(),
 	amountCents: z.number().nullable(),
 	baseAmountCents: z.number().nullable(),
 	expectedCloseDate: z.string().nullable(),
@@ -231,8 +269,15 @@ export const dealDetailOutput = z.object({
 	stage: stageEnum,
 	currency: z.string(),
 	closedReason: z.string().nullable(),
-	company: dealCompanyDetailOutput,
+	company: dealCompanyDetailOutput.nullable(),
 	owner: dealOwnerOutput,
+	leadSource: z.string().nullable(),
+	projectType: z.string().nullable(),
+	addressLine1: z.string().nullable(),
+	addressLine2: z.string().nullable(),
+	city: z.string().nullable(),
+	state: z.string().nullable(),
+	postalCode: z.string().nullable(),
 	fields: z.array(recordFieldOutput),
 	amountCents: z.number().nullable(),
 	baseAmountCents: z.number().nullable(),
@@ -252,7 +297,7 @@ export type DealDetail = z.infer<typeof dealDetailOutput>;
 export const dealCreateOutput = z.object({
 	id: z.string(),
 	name: z.string(),
-	companyId: z.string(),
+	companyId: z.string().nullable(),
 });
 
 export type DealCreated = z.infer<typeof dealCreateOutput>;
@@ -283,10 +328,15 @@ export const dealContactLinkOutput = z.object({
 
 export type DealContactLink = z.infer<typeof dealContactLinkOutput>;
 
+export const dealContactAttachOutput = dealContactLinkOutput.extend({
+	isPrimary: z.boolean(),
+});
+
 export const dealContactRoleOutput = z.object({
 	dealId: z.string(),
 	contactId: z.string(),
 	role: z.string().nullable(),
+	isPrimary: z.boolean(),
 });
 
 export type DealContactRoleResult = z.infer<typeof dealContactRoleOutput>;

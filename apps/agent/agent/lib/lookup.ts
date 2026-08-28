@@ -31,7 +31,8 @@ export type DealHit = {
 	stage: string;
 	amount: number | null;
 	currency: string;
-	company: { id: string; name: string };
+	company: { id: string; name: string } | null;
+	primaryContact: { id: string; name: string } | null;
 };
 
 export type SearchHit = ContactHit | CompanyHit | DealHit;
@@ -70,7 +71,7 @@ export async function listDeals(options: DealListOptions = {}) {
 		status === "open"
 			? [...OPEN_DEAL_STAGES]
 			: status === "won"
-				? [DealStage.CLOSED_WON]
+				? [DealStage.COMPLETE]
 				: status === "lost"
 					? [...LOSING_DEAL_STAGES]
 					: null;
@@ -115,6 +116,20 @@ export async function listDeals(options: DealListOptions = {}) {
 					logoUrl: true,
 				},
 			},
+			contacts: {
+				where: { isPrimary: true },
+				take: 1,
+				select: {
+					contact: {
+						select: {
+							id: true,
+							displayName: true,
+							firstName: true,
+							lastName: true,
+						},
+					},
+				},
+			},
 			owner: { select: { id: true, name: true, email: true, image: true } },
 		},
 	});
@@ -138,6 +153,16 @@ export async function listDeals(options: DealListOptions = {}) {
 				amount: deal.amount === null ? null : Number(deal.amount),
 				currency: deal.currency,
 				company: deal.company,
+				primaryContact: deal.contacts[0]?.contact
+					? {
+						id: deal.contacts[0].contact.id,
+						name:
+							deal.contacts[0].contact.displayName ||
+							[deal.contacts[0].contact.firstName, deal.contacts[0].contact.lastName]
+								.filter(Boolean)
+								.join(" "),
+					}
+					: null,
 				owner: deal.owner,
 				createdAt: deal.createdAt.toISOString(),
 				lastActivityAt: deal.lastActivityAt?.toISOString() ?? null,
@@ -193,6 +218,7 @@ async function searchContacts(
 	limit: number,
 ): Promise<ContactHit[]> {
 	const contains = words.flatMap((word) => [
+		{ displayName: { contains: word, mode: "insensitive" as const } },
 		{ firstName: { contains: word, mode: "insensitive" as const } },
 		{ lastName: { contains: word, mode: "insensitive" as const } },
 		{ email: { contains: word, mode: "insensitive" as const } },
@@ -212,6 +238,7 @@ async function searchContacts(
 		take: limit * 3,
 		select: {
 			id: true,
+			displayName: true,
 			firstName: true,
 			lastName: true,
 			title: true,
@@ -223,9 +250,17 @@ async function searchContacts(
 
 	return rows
 		.map((row) => {
-			const name = [row.firstName, row.lastName].filter(Boolean).join(" ");
+			const name =
+				row.displayName ||
+				[row.firstName, row.lastName].filter(Boolean).join(" ");
 			return {
-				score: score(term, [name, row.email ?? "", row.company?.name ?? ""]),
+				score: score(term, [
+					name,
+					row.firstName,
+					row.lastName ?? "",
+					row.email ?? "",
+					row.company?.name ?? "",
+				]),
 				hit: {
 					kind: "contact" as const,
 					id: row.id,
@@ -313,12 +348,26 @@ async function searchDeals(
 			amount: true,
 			currency: true,
 			company: { select: { id: true, name: true } },
+			contacts: {
+				where: { isPrimary: true },
+				take: 1,
+				select: {
+					contact: {
+						select: {
+							id: true,
+							displayName: true,
+							firstName: true,
+							lastName: true,
+						},
+					},
+				},
+			},
 		},
 	});
 
 	return rows
 		.map((row) => ({
-			score: score(term, [row.name, row.company.name]),
+			score: score(term, [row.name, row.company?.name ?? ""]),
 			hit: {
 				kind: "deal" as const,
 				id: row.id,
@@ -327,6 +376,16 @@ async function searchDeals(
 				amount: row.amount === null ? null : Number(row.amount),
 				currency: row.currency,
 				company: row.company,
+				primaryContact: row.contacts[0]?.contact
+					? {
+						id: row.contacts[0].contact.id,
+						name:
+							row.contacts[0].contact.displayName ||
+							[row.contacts[0].contact.firstName, row.contacts[0].contact.lastName]
+								.filter(Boolean)
+								.join(" "),
+					}
+					: null,
 			},
 		}))
 		.sort((a, b) => b.score - a.score)

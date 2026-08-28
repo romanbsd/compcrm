@@ -1108,13 +1108,19 @@ async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 	if (kind === "contact") {
 		const contact = await db.contact.findUnique({
 			where: { id },
-			select: { id: true, firstName: true, lastName: true, companyId: true },
+			select: {
+				id: true,
+				displayName: true,
+				firstName: true,
+				lastName: true,
+				companyId: true,
+			},
 		});
 		return contact
 			? {
-					label: [contact.firstName, contact.lastName]
-						.filter(Boolean)
-						.join(" "),
+					label:
+						contact.displayName ||
+						[contact.firstName, contact.lastName].filter(Boolean).join(" "),
 					companyId: contact.companyId,
 					contactId: contact.id,
 					dealId: null,

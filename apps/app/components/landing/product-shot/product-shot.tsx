@@ -13,7 +13,7 @@ const RAIL = [
 	{ icon: Dashboard, label: "Overview", active: false },
 	{ icon: Building, label: "Companies", active: true },
 	{ icon: Group, label: "Contacts", active: false },
-	{ icon: Partnership, label: "Deals", active: false },
+	{ icon: Partnership, label: "Projects", active: false },
 	{ icon: Settings, label: "Settings", active: false },
 ];
 

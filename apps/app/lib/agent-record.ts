@@ -53,7 +53,7 @@ const COPY: RecordCopyByKind = {
 	deal: {
 		header: "x-crm-deal",
 		field: "dealId",
-		title: "Ask about this deal",
+		title: "Ask about this project",
 		blurb:
 			"It can read the thread, the meetings and the people on both sides of it.",
 		placeholder: "Where has this stalled?",

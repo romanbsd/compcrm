@@ -36,8 +36,8 @@ const ENRICHMENT_ROWS = [
 ];
 
 const SUGGESTED_AGENTS = [
-	"Brief every deal owner before a renewal call",
-	"Flag deals with no activity for 14 days",
+	"Brief every project owner before a renewal call",
+	"Flag projects with no activity for 14 days",
 	"Hand new customers from Sales to Onboarding",
 ];
 

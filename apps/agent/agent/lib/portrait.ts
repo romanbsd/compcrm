@@ -109,6 +109,7 @@ export async function runPortrait({
 		where: { id: contactId },
 		select: {
 			id: true,
+			displayName: true,
 			firstName: true,
 			lastName: true,
 			imageUrl: true,
@@ -134,7 +135,9 @@ export async function runPortrait({
 		{
 			id: contact.id,
 			name:
-				[contact.firstName, contact.lastName].filter(Boolean).join(" ") || null,
+				contact.displayName ||
+				[contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
+				null,
 			linkedinUrl: contact.linkedinUrl,
 			githubUrl: contact.githubUrl,
 			companyName: contact.company?.name ?? null,

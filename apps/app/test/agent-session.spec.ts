@@ -110,7 +110,7 @@ describe("record context", () => {
 	it("asks about the thing you are actually looking at", () => {
 		expect(recordCopy("contact").title).toBe("Ask about this person");
 		expect(recordCopy("company").title).toBe("Ask about this company");
-		expect(recordCopy("deal").title).toBe("Ask about this deal");
+		expect(recordCopy("deal").title).toBe("Ask about this project");
 	});
 
 	it("offers questions that suit the record", () => {

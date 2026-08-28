@@ -208,7 +208,7 @@ describe("purging a selection", () => {
 		).toBeNull();
 	});
 
-	it("takes a company's deals with it", async () => {
+	it("keeps a company's projects without their company", async () => {
 		const doomed = await companies.create({
 			name: `Doomed Co ${suffix}`,
 			domain: `doomed-${domain}`,
@@ -227,7 +227,13 @@ describe("purging a selection", () => {
 			message: null,
 		});
 
-		expect(await db.deal.findUnique({ where: { id: deal.id } })).toBeNull();
+		expect(
+			await db.deal.findUnique({
+				where: { id: deal.id },
+				select: { companyId: true },
+			}),
+		).toEqual({ companyId: null });
+		await db.deal.delete({ where: { id: deal.id } });
 	});
 });
 
@@ -242,7 +248,7 @@ describe("moving a selection of deals to a stage", () => {
 		let refused: Error | null = null;
 		try {
 			await deals.bulkSetStage(
-				{ ids: [deal.id], stage: "CLOSED_LOST" },
+				{ ids: [deal.id], stage: "LOST" },
 				ownerId,
 			);
 		} catch (cause) {
@@ -255,7 +261,7 @@ describe("moving a selection of deals to a stage", () => {
 				where: { id: deal.id },
 				select: { stage: true },
 			}),
-		).toEqual({ stage: "DEMO_BOOKED" });
+		).toEqual({ stage: "LEAD" });
 	});
 
 	it("writes the one reason onto every deal's timeline", async () => {
@@ -274,7 +280,7 @@ describe("moving a selection of deals to a stage", () => {
 			await deals.bulkSetStage(
 				{
 					ids: [first.id, second.id],
-					stage: "CLOSED_LOST",
+					stage: "LOST",
 					closedReason: "Budget pulled",
 				},
 				ownerId,
@@ -292,7 +298,7 @@ describe("moving a selection of deals to a stage", () => {
 			select: { stage: true, closedReason: true, closedAt: true },
 		});
 
-		expect(closed.every((deal) => deal.stage === "CLOSED_LOST")).toBe(true);
+		expect(closed.every((deal) => deal.stage === "LOST")).toBe(true);
 		expect(closed.every((deal) => deal.closedReason === "Budget pulled")).toBe(
 			true,
 		);

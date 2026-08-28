@@ -74,9 +74,9 @@ const DATE_OPTIONS: Intl.DateTimeFormatOptions = {
 };
 
 const DEAL_COLUMNS = [
-	{ id: "deal", header: "Deal", width: "w-[32%]", className: "pl-5" },
+	{ id: "deal", header: "Project", width: "w-[32%]", className: "pl-5" },
 	{ id: "role", header: "Role", width: "w-[16%]" },
-	{ id: "stage", header: "Stage", width: "w-[22%]" },
+	{ id: "stage", header: "Status", width: "w-[22%]" },
 	{
 		id: "amount",
 		header: "Amount",
@@ -121,7 +121,7 @@ export function ContactSheet({ contactId }: { contactId: string }) {
 				},
 				{
 					value: "deals",
-					label: "Deals",
+					label: "Projects",
 					count: contact.deals.length,
 					content: <ContactDeals contact={contact} />,
 				},
@@ -336,6 +336,20 @@ function ContactOverview({ contact }: { contact: Contact }) {
 						value={contact.lastName}
 						saving={isSaving("lastName")}
 						onSave={(lastName) => save({ lastName })}
+					/>
+					<InlineField
+						label="Display name"
+						value={contact.displayName}
+						placeholder="Shown across the CRM"
+						saving={isSaving("displayName")}
+						onSave={(displayName) => save({ displayName })}
+					/>
+					<InlineField
+						label="Business name"
+						value={contact.businessName}
+						placeholder="Customer business"
+						saving={isSaving("businessName")}
+						onSave={(businessName) => save({ businessName })}
 					/>
 					<InlineField
 						label="Title"
@@ -597,8 +611,8 @@ function ContactDeals({ contact }: { contact: Contact }) {
 		return (
 			<DetailSheetEmpty
 				icon={Partnership}
-				title="Not on any deals"
-				description={`${contactName(contact)} is not attached to anything being sold yet. Deals are opened on the company, then people are added to them.`}
+				title="Not on any projects"
+				description={`${contactName(contact)} is not attached to a project yet. Projects can include people from any company.`}
 			/>
 		);
 	}

@@ -15,6 +15,7 @@ const MAX_FILLS = 500;
 const CONTACT_SELECT = {
 	id: true,
 	email: true,
+	displayName: true,
 	firstName: true,
 	lastName: true,
 	title: true,
@@ -116,7 +117,9 @@ export async function sweepBlankFacts(
 		sweep.settled += group.length - 1;
 		sweep.fills.push({
 			contactId: best.contactId,
-			contact: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+			contact:
+				best.contact.displayName ||
+				[contact.firstName, contact.lastName].filter(Boolean).join(" "),
 			field,
 			value: best.value,
 			score: best.score,
@@ -135,6 +138,7 @@ type Proposal = {
 	score: number;
 	contact: {
 		id: string;
+		displayName: string;
 		email: string | null;
 		firstName: string;
 		lastName: string | null;

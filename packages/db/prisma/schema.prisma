@@ -169,13 +169,12 @@ model RateLimit {
 }
 
 enum DealStage {
-  DEMO_BOOKED
-  QUALIFIED_TO_BUY
-  UNQUALIFIED_TO_BUY
-  DECISION_MAKER_BOUGHT_IN
-  CONTRACT_SENT
-  CLOSED_WON
-  CLOSED_LOST
+  LEAD
+  ESTIMATING
+  CONTRACTED
+  IN_PROGRESS
+  COMPLETE
+  LOST
 }
 
 enum ActivityType {
@@ -359,18 +358,20 @@ model CompanyEnrichment {
 }
 
 model Contact {
-  id          String  @id @default(cuid())
-  firstName   String
-  lastName    String?
-  email       String?
-  phone       String?
-  title       String?
-  seniority   String?
-  function    String?
-  linkedinUrl String?
-  twitterUrl  String?
-  githubUrl   String?
-  imageUrl    String?
+  id           String  @id @default(cuid())
+  displayName  String  @default("")
+  firstName    String
+  lastName     String?
+  email        String?
+  phone        String?
+  title        String?
+  businessName String?
+  seniority    String?
+  function     String?
+  linkedinUrl  String?
+  twitterUrl   String?
+  githubUrl    String?
+  imageUrl     String?
 
   socialsCheckedAt DateTime?
 
@@ -506,31 +507,31 @@ model AgentTask {
 }
 
 model XmppAgentTask {
-  id             String             @id
-  organizationId String
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  requestId      String
-  callerJid      String
+  id              String             @id
+  organizationId  String
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestId       String
+  callerJid       String
   notificationJid String
-  targetJid      String
-  tool           String
-  apiVersion     String
-  manifestHash   String
-  fingerprint    String
-  arguments      Json
-  state          XmppAgentTaskState @default(ACCEPTED)
-  revision       Int                @default(0)
-  progress       Json?
-  result         Json?
-  error          Json?
-  summary        String?
-  eveSessionId   String?
-  ownerId        String?
-  leaseUntil     DateTime?
-  deadline       DateTime?
-  retainUntil    DateTime
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  targetJid       String
+  tool            String
+  apiVersion      String
+  manifestHash    String
+  fingerprint     String
+  arguments       Json
+  state           XmppAgentTaskState @default(ACCEPTED)
+  revision        Int                @default(0)
+  progress        Json?
+  result          Json?
+  error           Json?
+  summary         String?
+  eveSessionId    String?
+  ownerId         String?
+  leaseUntil      DateTime?
+  deadline        DateTime?
+  retainUntil     DateTime
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   @@unique([organizationId, callerJid, targetJid, requestId])
   @@index([organizationId, state, updatedAt])
@@ -834,6 +835,9 @@ model AgentRun {
   initiatedById String?
   initiatedBy   User?   @relation("AgentRunInitiator", fields: [initiatedById], references: [id], onDelete: SetNull)
 
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
   triggerType    AgentTriggerType
   status         AgentRunStatus   @default(QUEUED)
   principalId    String?
@@ -870,6 +874,7 @@ model AgentRun {
   @@index([versionId, createdAt])
   @@index([status, createdAt])
   @@index([triggerId, createdAt])
+  @@index([dealId, createdAt])
   @@map("agentRun")
 }
 
@@ -959,14 +964,15 @@ model AgentAuditEvent {
 model Deal {
   id            String              @id @default(cuid())
   conversations AgentConversation[]
+  agentRuns     AgentRun[]
   name          String
   description   String?
-  companyId     String
-  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId     String?
+  company       Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
   ownerId       String
   owner         User                @relation("DealOwner", fields: [ownerId], references: [id])
 
-  stage             DealStage @default(DEMO_BOOKED)
+  stage             DealStage @default(LEAD)
   stageChangedAt    DateTime  @default(now())
   amount            Decimal?  @db.Decimal(14, 2)
   currency          String    @default("USD")
@@ -979,12 +985,22 @@ model Deal {
   fxRate       Decimal?  @db.Decimal(20, 10)
   fxRateAt     DateTime?
 
+  leadSource   String?
+  projectType  String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+
   lastActivityAt DateTime?
   archivedAt     DateTime?
 
   contacts    DealContact[]
   activities  Activity[]
   fieldValues FieldValue[]
+  artifacts   Artifact[]
+  documents   Document[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -1026,10 +1042,63 @@ model DealContact {
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   role      String?
+  isPrimary Boolean @default(false)
 
   @@id([dealId, contactId])
+  @@unique([dealId], map: "dealContact_one_primary_per_deal_key", where: { isPrimary: true })
   @@index([contactId])
   @@map("dealContact")
+}
+
+model Artifact {
+  id         String   @id @default(cuid())
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type       String
+  fileName   String
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  @@index([dealId, createdAt])
+  @@map("artifact")
+}
+
+model Document {
+  id                 String             @id @default(cuid())
+  dealId             String
+  deal               Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type               String
+  number             String
+  status             String
+  currency           String             @default("USD")
+  issuedAt           DateTime?
+  dueAt              DateTime?
+  recipientSnapshot  Json
+  contractorSnapshot Json
+  projectSnapshot    Json
+  subtotal           Decimal            @db.Decimal(14, 2)
+  tax                Decimal            @db.Decimal(14, 2)
+  total              Decimal            @db.Decimal(14, 2)
+  lineItems          DocumentLineItem[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([dealId, createdAt])
+  @@map("document")
+}
+
+model DocumentLineItem {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal  @db.Decimal(14, 2)
+  unitPrice   Decimal  @db.Decimal(14, 2)
+  total       Decimal  @db.Decimal(14, 2)
+  position    Int
+
+  @@index([documentId, position])
+  @@map("documentLineItem")
 }
 
 enum FieldEntity {
@@ -1520,15 +1589,15 @@ model TelemetryCounter {
 }
 
 model Organization {
-  id          String       @id
-  name        String
-  slug        String
-  logo        String?
-  createdAt   DateTime
-  metadata    String?
-  website     String?
-  members     Member[]
-  invitations Invitation[]
+  id             String          @id
+  name           String
+  slug           String
+  logo           String?
+  createdAt      DateTime
+  metadata       String?
+  website        String?
+  members        Member[]
+  invitations    Invitation[]
   xmppAgentTasks XmppAgentTask[]
 
   @@unique([slug])

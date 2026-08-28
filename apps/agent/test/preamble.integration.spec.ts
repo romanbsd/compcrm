@@ -46,6 +46,7 @@ beforeAll(async () => {
 
 	const paula = await db.contact.create({
 		data: {
+			displayName: "Paula Customer",
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -74,9 +75,15 @@ beforeAll(async () => {
 			name: `Fernhill platform ${suffix}`,
 			companyId,
 			ownerId: user.id,
-			stage: DealStage.CONTRACT_SENT,
+			stage: DealStage.CONTRACTED,
 			amount: 48_000,
-			contacts: { create: [{ contactId: paulaId, role: "Champion" }] },
+			expectedCloseDate: new Date("2026-09-01"),
+			contacts: {
+				create: [
+					{ contactId: paulaId, role: "Champion", isPrimary: true },
+					{ contactId: tomiId, role: "Estimator" },
+				],
+			},
 		},
 		select: { id: true },
 	});
@@ -106,7 +113,7 @@ describe("companyPreamble", () => {
 		const { markdown } = await companyPreamble(companyId, rep);
 
 		expect(markdown).toContain(
-			`Paula Marchetti — Growth Specialist \`${paulaId}\``,
+			`Paula Customer — Growth Specialist \`${paulaId}\``,
 		);
 		expect(markdown).toContain(`Tomi Okonkwo — Head of Security \`${tomiId}\``);
 		expect(markdown).toContain("Never ask a rep which contact they mean");
@@ -116,7 +123,7 @@ describe("companyPreamble", () => {
 		const { markdown, focus } = await companyPreamble(companyId, rep);
 
 		expect(markdown).toContain(`company id \`${companyId}\``);
-		expect(markdown).toContain(`(CONTRACT_SENT) \`${dealId}\``);
+		expect(markdown).toContain(`(CONTRACTED) \`${dealId}\``);
 		expect(focus).toEqual({ companyId });
 	});
 
@@ -138,7 +145,7 @@ describe("contactPreamble", () => {
 	it("lists the deals they are on", async () => {
 		const { markdown } = await contactPreamble(paulaId, rep);
 
-		expect(markdown).toContain(`(CONTRACT_SENT, Champion) \`${dealId}\``);
+		expect(markdown).toContain(`(CONTRACTED, Champion) \`${dealId}\``);
 	});
 
 	it("offers a way out when they have no company", async () => {
@@ -155,12 +162,24 @@ describe("contactPreamble", () => {
 });
 
 describe("dealPreamble", () => {
-	it("carries the deal, the company and the people, all with ids", async () => {
+	it("carries the project, company and primary customer, all with ids", async () => {
 		const { markdown, focus } = await dealPreamble(dealId, rep);
 
-		expect(markdown).toContain(`deal id \`${dealId}\``);
+		expect(markdown).toContain(`Project: **Fernhill platform ${suffix}**`);
+		expect(markdown).toContain(`project id \`${dealId}\``);
+		expect(markdown).toContain("Status: **CONTRACTED**");
+		expect(markdown).toContain("Target date");
 		expect(markdown).toContain(`company id \`${companyId}\``);
-		expect(markdown).toContain(`Champion \`${paulaId}\``);
+		expect(markdown).toContain(
+			`Paula Customer (Growth Specialist) — Champion \`${paulaId}\``,
+		);
+		expect(markdown).toContain(
+			`Tomi Okonkwo (Head of Security) — Estimator \`${tomiId}\``,
+		);
+		expect(markdown.indexOf("Paula Customer")).toBeLessThan(
+			markdown.indexOf("Tomi Okonkwo"),
+		);
+		expect(markdown).toContain("Customer contacts:");
 		expect(focus).toEqual({ companyId });
 	});
 });

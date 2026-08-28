@@ -13,6 +13,7 @@ let peterId: string;
 let dealId: string;
 let freshDealId: string;
 let closedDealId: string;
+let noCompanyDealId: string;
 
 beforeAll(async () => {
 	await cleanup();
@@ -49,6 +50,7 @@ beforeAll(async () => {
 
 	const paula = await db.contact.create({
 		data: {
+			displayName: `Paula Customer ${suffix}`,
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -77,7 +79,7 @@ beforeAll(async () => {
 			name: `Northwind renewal ${suffix}`,
 			companyId: northwindId,
 			ownerId: user.id,
-			stage: DealStage.QUALIFIED_TO_BUY,
+			stage: DealStage.ESTIMATING,
 			amount: 12_000,
 			lastActivityAt: new Date("2026-06-01T12:00:00.000Z"),
 		},
@@ -90,7 +92,7 @@ beforeAll(async () => {
 			name: `Fresh expansion ${suffix}`,
 			companyId: northwindId,
 			ownerId: user.id,
-			stage: DealStage.CONTRACT_SENT,
+			stage: DealStage.CONTRACTED,
 			lastActivityAt: new Date("2026-08-04T12:00:00.000Z"),
 		},
 		select: { id: true },
@@ -102,12 +104,26 @@ beforeAll(async () => {
 			name: `Closed renewal ${suffix}`,
 			companyId: brightwaterId,
 			ownerId: user.id,
-			stage: DealStage.CLOSED_LOST,
+			stage: DealStage.LOST,
 			lastActivityAt: new Date("2026-05-01T12:00:00.000Z"),
 		},
 		select: { id: true },
 	});
 	closedDealId = closedDeal.id;
+
+	const noCompanyDeal = await db.deal.create({
+		data: {
+			name: `Unassigned project ${suffix}`,
+			ownerId: user.id,
+			lastActivityAt: new Date("2026-05-15T12:00:00.000Z"),
+		},
+		select: { id: true, stage: true },
+	});
+	noCompanyDealId = noCompanyDeal.id;
+	expect(noCompanyDeal.stage).toBe(DealStage.LEAD);
+	await db.dealContact.create({
+		data: { dealId: noCompanyDeal.id, contactId: paulaId, isPrimary: true },
+	});
 });
 
 afterAll(cleanup);
@@ -124,6 +140,10 @@ async function cleanup(): Promise<void> {
 		await db.deal.deleteMany({ where: { companyId: { in: ids } } });
 		await db.contact.deleteMany({ where: { companyId: { in: ids } } });
 		await db.company.deleteMany({ where: { id: { in: ids } } });
+	}
+
+	if (noCompanyDealId) {
+		await db.deal.delete({ where: { id: noCompanyDealId } });
 	}
 
 	await db.user.deleteMany({ where: { email: `rep.${suffix}@example.test` } });
@@ -160,6 +180,17 @@ describe("searchCrm", () => {
 		expect(result.companies[0]?.id).toBe(northwindId);
 	});
 
+	it("finds and returns a contact by display name", async () => {
+		const result = await searchCrm(`Paula Customer ${suffix}`, {
+			kinds: ["contact"],
+		});
+
+		expect(result.contacts[0]).toMatchObject({
+			id: paulaId,
+			name: `Paula Customer ${suffix}`,
+		});
+	});
+
 	it("treats a bare domain as the company", async () => {
 		const result = await searchCrm(domain);
 
@@ -171,6 +202,17 @@ describe("searchCrm", () => {
 
 		expect(result.deals[0]?.id).toBe(dealId);
 		expect(result.deals[0]?.amount).toBe(12_000);
+	});
+
+	it("keeps a project without a company in deal search results", async () => {
+		const result = await searchCrm(`Unassigned project ${suffix}`, {
+			kinds: ["deal"],
+		});
+
+		expect(result.deals[0]).toMatchObject({
+			id: noCompanyDealId,
+			company: null,
+		});
 	});
 
 	it("narrows to the kinds asked for", async () => {
@@ -210,6 +252,7 @@ describe("listDeals", () => {
 		const ids = result.deals.map((deal) => deal.id);
 
 		expect(ids).toContain(dealId);
+		expect(ids).toContain(noCompanyDealId);
 		expect(ids).not.toContain(freshDealId);
 		expect(ids).not.toContain(closedDealId);
 		expect(result.deals.find((deal) => deal.id === dealId)).toMatchObject({
@@ -223,6 +266,10 @@ describe("listDeals", () => {
 				logoUrl: "https://cdn.example.test/northwind-logo.svg",
 			},
 			owner: { image: "https://cdn.example.test/rep-one.png" },
+		});
+		expect(result.deals.find((deal) => deal.id === noCompanyDealId)).toMatchObject({
+			company: null,
+			primaryContact: { id: paulaId, name: `Paula Customer ${suffix}` },
 		});
 	});
 

@@ -4,7 +4,7 @@ import { listDeals } from "../lib/lookup";
 
 export default defineTool({
 	description:
-		"List deals across the CRM with pipeline status and inactivity filters. Use this for broad requests such as all open deals, stale deals, deals untouched for a number of days, or a pipeline sweep. Results are oldest-touch first and paginated; continue with nextCursor while hasMore is true. Free.",
+		"List projects across the CRM with project status and inactivity filters. Use this for broad requests such as all open projects, stale projects, projects untouched for a number of days, or a project status sweep. Results are oldest-touch first and paginated; continue with nextCursor while hasMore is true. Free.",
 	inputSchema: z.object({
 		status: z.enum(["open", "won", "lost", "all"]).default("open"),
 		inactiveForDays: z
@@ -14,7 +14,7 @@ export default defineTool({
 			.max(3650)
 			.optional()
 			.describe(
-				"Return deals whose last activity was at least this many days ago. Deals with no activity qualify once they are this old.",
+				"Return projects whose last activity was at least this many days ago. Projects with no activity qualify once they are this old.",
 			),
 		companyId: z.string().optional(),
 		ownerId: z.string().optional(),
@@ -31,7 +31,9 @@ export default defineTool({
 				...output,
 				deals: output.deals.map((deal) => ({
 					...deal,
-					company: { id: deal.company.id, name: deal.company.name },
+					company: deal.company
+						? { id: deal.company.id, name: deal.company.name }
+						: null,
 					owner: deal.owner
 						? {
 								id: deal.owner.id,

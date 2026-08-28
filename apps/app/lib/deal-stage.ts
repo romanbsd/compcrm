@@ -2,13 +2,12 @@ import { DealStage } from "@crm/db/enums";
 import type { StatusTone } from "@crm/ui/components/status-indicator";
 
 const ORDER = [
-	DealStage.DEMO_BOOKED,
-	DealStage.QUALIFIED_TO_BUY,
-	DealStage.DECISION_MAKER_BOUGHT_IN,
-	DealStage.CONTRACT_SENT,
-	DealStage.CLOSED_WON,
-	DealStage.CLOSED_LOST,
-	DealStage.UNQUALIFIED_TO_BUY,
+	DealStage.LEAD,
+	DealStage.ESTIMATING,
+	DealStage.CONTRACTED,
+	DealStage.IN_PROGRESS,
+	DealStage.COMPLETE,
+	DealStage.LOST,
 ] as const;
 
 type DealStagePresentation = Record<
@@ -17,21 +16,17 @@ type DealStagePresentation = Record<
 >;
 
 const PRESENTATION: DealStagePresentation = {
-	DEMO_BOOKED: { label: "Demo booked", tone: "neutral" },
-	QUALIFIED_TO_BUY: { label: "Qualified to buy", tone: "info" },
-	DECISION_MAKER_BOUGHT_IN: { label: "Decision maker in", tone: "info" },
-	CONTRACT_SENT: { label: "Contract sent", tone: "warning" },
-	CLOSED_WON: { label: "Closed won", tone: "success" },
-	CLOSED_LOST: { label: "Closed lost", tone: "error" },
-	UNQUALIFIED_TO_BUY: { label: "Unqualified", tone: "neutral" },
+	LEAD: { label: "Lead", tone: "neutral" },
+	ESTIMATING: { label: "Estimating", tone: "info" },
+	CONTRACTED: { label: "Contracted", tone: "warning" },
+	IN_PROGRESS: { label: "In progress", tone: "info" },
+	COMPLETE: { label: "Complete", tone: "success" },
+	LOST: { label: "Lost", tone: "error" },
 };
 
 export const OPEN_STAGES = ORDER.slice(0, 4) as readonly DealStage[];
 
-export const LOSING_STAGES: readonly DealStage[] = [
-	DealStage.CLOSED_LOST,
-	DealStage.UNQUALIFIED_TO_BUY,
-];
+export const LOSING_STAGES: readonly DealStage[] = [DealStage.LOST];
 
 export const DEAL_STAGE_OPTIONS = ORDER.map((value) => ({
 	value,

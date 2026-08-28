@@ -172,7 +172,7 @@ describe("deal list presentation", () => {
 	const deal = {
 		id: "deal-1",
 		name: "Notion — expansion",
-		stage: "CONTRACT_SENT",
+		stage: "CONTRACTED",
 		amount: 14_000,
 		currency: "USD",
 		company: {
@@ -194,6 +194,7 @@ describe("deal list presentation", () => {
 		neverActive: true,
 		expectedCloseDate: "2026-09-03T19:50:06.111Z",
 	};
+	const primaryContact = { id: "contact-1", name: "Priya Raman" };
 
 	const output = {
 		asOf: "2026-08-06T01:14:05.025Z",
@@ -203,7 +204,7 @@ describe("deal list presentation", () => {
 			companyId: null,
 			ownerId: null,
 		},
-		deals: [deal],
+		deals: [{ ...deal, primaryContact }],
 		hasMore: false,
 	};
 
@@ -217,11 +218,37 @@ describe("deal list presentation", () => {
 					company: {
 						iconUrl: "https://cdn.example.test/notion.png",
 					},
+					primaryContact: { id: "contact-1", name: "Priya Raman" },
 					owner: { image: "https://cdn.example.test/priya.png" },
 				},
 			],
 		});
 		expect(dealListResultOf({ deals: [] })).toBeNull();
+	});
+
+	it("keeps a no-company project renderable", () => {
+		const result = dealListResultOf({
+			...output,
+			deals: [
+				{ ...deal, name: "Kitchen remodel", company: null, primaryContact },
+			],
+		});
+
+		expect(result).toMatchObject({
+			deals: [
+				{
+					name: "Kitchen remodel",
+					company: null,
+					primaryContact: { id: "contact-1", name: "Priya Raman" },
+				},
+			],
+		});
+	});
+
+	it("normalizes old list_deals results without a primary contact", () => {
+		const result = dealListResultOf({ ...output, deals: [deal] });
+
+		expect(result).toMatchObject({ deals: [{ primaryContact: null }] });
 	});
 
 	it("merges paginated deal results without duplicate rows", () => {

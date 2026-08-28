@@ -38,7 +38,9 @@ const ENTRY_SELECT = {
 	createdAt: true,
 	createdBy: { select: AUTHOR_SELECT },
 	company: { select: { id: true, name: true } },
-	contact: { select: { id: true, firstName: true, lastName: true } },
+	contact: {
+		select: { id: true, displayName: true, firstName: true, lastName: true },
+	},
 	deal: { select: { id: true, name: true } },
 
 	emailThread: {
@@ -221,7 +223,7 @@ export class ActivitiesService {
 		if (input.contactId) return { contactId: input.contactId };
 		if (input.companyId) return { companyId: input.companyId };
 		throw new BadRequestException(
-			"A timeline needs a company, a contact or a deal.",
+			"A timeline needs a company, a contact or a project.",
 		);
 	}
 
@@ -236,7 +238,7 @@ export class ActivitiesService {
 				select: { companyId: true },
 			});
 			if (!deal) {
-				throw new NotFoundException(`No deal with id ${input.dealId}.`);
+				throw new NotFoundException(`No project with id ${input.dealId}.`);
 			}
 			return deal.companyId;
 		}

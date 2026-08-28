@@ -7,6 +7,7 @@ import { cn } from "@crm/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { z } from "zod";
+import { contactName } from "@/components/crm/contact-name";
 import { RecordLink } from "@/components/crm/record-sheet/record-link";
 import { LocalDateTime, LocalRelativeTime } from "@/components/local-date-time";
 import { activityLabel } from "@/lib/activity-presentation";
@@ -186,9 +187,7 @@ export function TimelineEntry({
 
 						{contact ? (
 							<RecordLink kind="contact" id={contact.id}>
-								{[contact.firstName, contact.lastName]
-									.filter(Boolean)
-									.join(" ")}
+								{contactName(contact)}
 							</RecordLink>
 						) : null}
 					</div>

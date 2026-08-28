@@ -116,10 +116,12 @@ export class ContactsService {
 				orderBy: resolveOrderBy(input, SORTABLE, [{ createdAt: "desc" }]),
 				select: {
 					id: true,
+					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,
 					title: true,
+					businessName: true,
 					imageUrl: true,
 					source: true,
 					company: { select: COMPANY_SELECT },
@@ -156,11 +158,13 @@ export class ContactsService {
 			where: { id },
 			select: {
 				id: true,
+				displayName: true,
 				firstName: true,
 				lastName: true,
 				email: true,
 				phone: true,
 				title: true,
+				businessName: true,
 				linkedinUrl: true,
 				twitterUrl: true,
 				githubUrl: true,
@@ -262,6 +266,11 @@ export class ContactsService {
 
 	async create(input: ContactCreateInput) {
 		const email = normalizeEmail(input.email ?? "");
+		const firstName = input.firstName.trim();
+		const lastName = blankToNull(input.lastName ?? "");
+		const displayName =
+			blankToNull(input.displayName ?? "") ??
+			[firstName, lastName].filter(Boolean).join(" ");
 
 		if (email) {
 			const existing = await this.db.contact.findFirst({
@@ -291,16 +300,19 @@ export class ContactsService {
 
 			const created = await tx.contact.create({
 				data: {
-					firstName: input.firstName.trim(),
-					lastName: blankToNull(input.lastName ?? ""),
+					displayName,
+					firstName,
+					lastName,
 					email,
 					phone: blankToNull(input.phone ?? ""),
 					title: blankToNull(input.title ?? ""),
+					businessName: blankToNull(input.businessName ?? ""),
 					companyId,
 					ownerId: input.ownerId ?? null,
 				},
 				select: {
 					id: true,
+					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,
@@ -342,6 +354,7 @@ export class ContactsService {
 
 		return {
 			id: contact.id,
+			displayName: contact.displayName,
 			firstName: contact.firstName,
 			lastName: contact.lastName,
 		};
@@ -470,6 +483,8 @@ export class ContactsService {
 	async update(id: string, input: ContactUpdateInput) {
 		const data: Prisma.ContactUpdateInput = {};
 
+		if (input.displayName !== undefined)
+			data.displayName = blankToNull(input.displayName) ?? "";
 		if (input.firstName !== undefined) data.firstName = input.firstName.trim();
 		if (input.lastName !== undefined)
 			data.lastName = blankToNull(input.lastName);
@@ -478,6 +493,8 @@ export class ContactsService {
 		if (input.email !== undefined) data.email = email;
 		if (input.phone !== undefined) data.phone = blankToNull(input.phone);
 		if (input.title !== undefined) data.title = blankToNull(input.title);
+		if (input.businessName !== undefined)
+			data.businessName = blankToNull(input.businessName);
 		if (input.linkedinUrl !== undefined) {
 			data.linkedinUrl = blankToNull(input.linkedinUrl);
 		}
@@ -507,7 +524,7 @@ export class ContactsService {
 				const updated = await tx.contact.update({
 					where: { id },
 					data,
-					select: { id: true, firstName: true, lastName: true },
+					select: { id: true, displayName: true, firstName: true, lastName: true },
 				});
 
 				if (email !== null) {
@@ -642,6 +659,7 @@ export class ContactsService {
 							take: 4,
 							select: {
 								id: true,
+								displayName: true,
 								firstName: true,
 								lastName: true,
 								title: true,
@@ -663,9 +681,9 @@ export class ContactsService {
 				: null,
 			colleagues: colleagues.map((colleague) => ({
 				id: colleague.id,
-				name: [colleague.firstName, colleague.lastName]
-					.filter(Boolean)
-					.join(" "),
+				name:
+					colleague.displayName ||
+					[colleague.firstName, colleague.lastName].filter(Boolean).join(" "),
 				title: colleague.title,
 			})),
 		};
@@ -785,6 +803,7 @@ export class ContactsService {
 
 		return {
 			OR: [
+				{ displayName: { contains: term, mode: "insensitive" } },
 				{ firstName: { contains: term, mode: "insensitive" } },
 				{ lastName: { contains: term, mode: "insensitive" } },
 				{ email: { contains: term, mode: "insensitive" } },

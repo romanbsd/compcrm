@@ -18,23 +18,23 @@ export const CRM_EVENT_CATALOG = {
 		recordKind: "contact",
 	},
 	"deal.created": {
-		label: "Deal created",
-		description: "A deal is added to the CRM",
+		label: "Project created",
+		description: "A project is added to the CRM",
 		recordKind: "deal",
 	},
 	"deal.stage.changed": {
-		label: "Deal stage changed",
-		description: "A deal moves from one pipeline stage to another",
+		label: "Project status changed",
+		description: "A project moves from one pipeline status to another",
 		recordKind: "deal",
 	},
 	"deal.opened": {
-		label: "Deal opened",
-		description: "A closed deal returns to the open pipeline",
+		label: "Project opened",
+		description: "A closed project returns to the open pipeline",
 		recordKind: "deal",
 	},
 	"deal.closed": {
-		label: "Deal closed",
-		description: "An open deal moves to a closed stage",
+		label: "Project closed",
+		description: "An open project moves to a closed status",
 		recordKind: "deal",
 	},
 } as const satisfies Record<string, CrmEventDefinition>;

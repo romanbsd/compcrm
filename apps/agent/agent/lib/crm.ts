@@ -29,6 +29,7 @@ export async function contactsNeedingWork(limit: number): Promise<WorkItem[]> {
 		select: {
 			id: true,
 			email: true,
+			displayName: true,
 			firstName: true,
 			lastName: true,
 			title: true,
@@ -43,7 +44,7 @@ export async function contactsNeedingWork(limit: number): Promise<WorkItem[]> {
 
 	return rows.map((row) => ({
 		id: row.id,
-		fullName: [row.firstName, row.lastName].filter(Boolean).join(" "),
+		fullName: contactName(row),
 		email: row.email,
 		title: row.title,
 		companyName: row.company?.name ?? null,
@@ -64,6 +65,7 @@ export async function personForVerification(
 	const contact = await db.contact.findUnique({
 		where: { id: contactId },
 		select: {
+			displayName: true,
 			firstName: true,
 			lastName: true,
 			title: true,
@@ -77,7 +79,7 @@ export async function personForVerification(
 	return {
 		firstName: contact.firstName,
 		lastName: contact.lastName,
-		fullName: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+		fullName: contactName(contact),
 		title: contact.title,
 		companyName: contact.company?.name ?? null,
 		companyDomain:
@@ -169,6 +171,7 @@ export async function readCrmHistory(
 		where: { id: contactId },
 		select: {
 			id: true,
+			displayName: true,
 			firstName: true,
 			lastName: true,
 			email: true,
@@ -249,7 +252,13 @@ export async function readCrmHistory(
 		contact.companyId
 			? db.contact.findMany({
 					where: { companyId: contact.companyId, id: { not: contactId } },
-					select: { id: true, firstName: true, lastName: true, title: true },
+					select: {
+						id: true,
+						displayName: true,
+						firstName: true,
+						lastName: true,
+						title: true,
+					},
 					take: 8,
 					orderBy: { lastActivityAt: "desc" },
 				})
@@ -268,7 +277,7 @@ export async function readCrmHistory(
 
 	return {
 		contact: {
-			fullName: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+			fullName: contactName(contact),
 			email: contact.email,
 			title: contact.title,
 			companyName: contact.company?.name ?? null,
@@ -317,7 +326,7 @@ export async function readCrmHistory(
 		},
 		colleagues: colleagues.map((colleague) => ({
 			id: colleague.id,
-			name: [colleague.firstName, colleague.lastName].filter(Boolean).join(" "),
+			name: contactName(colleague),
 			title: colleague.title,
 		})),
 	};
@@ -378,4 +387,15 @@ export async function writeTimelineNote(
 	});
 
 	return activity.id;
+}
+
+function contactName(person: {
+	displayName: string;
+	firstName: string;
+	lastName: string | null;
+}): string {
+	return (
+		person.displayName ||
+		[person.firstName, person.lastName].filter(Boolean).join(" ")
+	);
 }

@@ -25,6 +25,7 @@ import { formatMoney } from "@crm/ui/lib/format";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AgentPanel } from "@/components/crm/agent-panel";
+import { contactName } from "@/components/crm/contact-name";
 import { EnrichmentActions } from "@/components/crm/enrichment-actions";
 import { EnrichmentIndicator } from "@/components/crm/enrichment-status";
 import { FieldsCog, RecordFields } from "@/components/crm/fields/record-fields";
@@ -90,8 +91,8 @@ function companyConsequence(company: Company): string {
 
 	const gone =
 		deals > 0
-			? `${deals === 1 ? "Its one deal" : `All ${deals} of its deals`} and everything filed against the account go too.`
-			: "Everything filed against the account goes too.";
+			? `${deals === 1 ? "Its one project" : `All ${deals} of its projects`} stay in the CRM, with the company link cleared.`
+			: "Projects remain in the CRM, with the company link cleared.";
 
 	const kept =
 		contacts > 0
@@ -110,15 +111,15 @@ const CONTACT_COLUMNS = [
 ];
 
 const DEAL_COLUMNS = [
-	{ id: "deal", header: "Deal", width: "w-[32%]", className: "pl-5" },
-	{ id: "stage", header: "Stage", width: "w-[24%]" },
+	{ id: "deal", header: "Project", width: "w-[32%]", className: "pl-5" },
+	{ id: "stage", header: "Status", width: "w-[24%]" },
 	{
 		id: "amount",
 		header: "Amount",
 		width: "w-[16%]",
 		align: "right" as const,
 	},
-	{ id: "close-date", header: "Close date", width: "w-[14%]" },
+	{ id: "close-date", header: "Target date", width: "w-[14%]" },
 	{ id: "owner", header: "Owner", width: "w-[14%]" },
 ];
 
@@ -190,7 +191,7 @@ export function CompanySheet({ companyId }: { companyId: string }) {
 				},
 				{
 					value: "deals",
-					label: "Deals",
+					label: "Projects",
 					count: company.deals.length,
 					content: (
 						<CompanyDeals
@@ -267,7 +268,7 @@ export function CompanySheet({ companyId }: { companyId: string }) {
 			stats={
 				company ? (
 					<DetailSheetStats>
-						<DetailSheetStat label="Open pipeline">
+						<DetailSheetStat label="Open project value">
 							<span className="tabular-nums">
 								{formatMoney(openValueCents, company.reportingCurrency)}
 							</span>
@@ -278,10 +279,10 @@ export function CompanySheet({ companyId }: { companyId: string }) {
 								</span>
 							) : null}
 						</DetailSheetStat>
-						<DetailSheetStat label="Open deals">
+						<DetailSheetStat label="Open projects">
 							<span className="tabular-nums">{openDeals.length}</span>
 						</DetailSheetStat>
-						<DetailSheetStat label="Next close">
+						<DetailSheetStat label="Next target">
 							{closing ? <LocalDay date={closing} /> : <EmptyCellValue />}
 						</DetailSheetStat>
 						<DetailSheetStat label="Owner">
@@ -518,17 +519,11 @@ function CompanyContacts({
 								<span className="flex min-w-0 items-center gap-2">
 									<PersonAvatar
 										src={contact.imageUrl}
-										name={[contact.firstName, contact.lastName]
-											.filter(Boolean)
-											.join(" ")}
+										name={contactName(contact)}
 										email={contact.email}
 										size="sm"
 									/>
-									<span className="truncate">
-										{[contact.firstName, contact.lastName]
-											.filter(Boolean)
-											.join(" ")}
-									</span>
+									<span className="truncate">{contactName(contact)}</span>
 								</span>
 							</TableCell>
 							<TableCell className="truncate px-3 py-2.5">
@@ -583,12 +578,12 @@ function CompanyDeals({
 				{adding ? null : (
 					<DetailSheetEmpty
 						icon={Partnership}
-						title="No deals yet"
-						description={`Nothing is being sold to ${company.name} right now. Open one and it joins the pipeline and the forecast.`}
+						title="No projects yet"
+						description={`Nothing is being built for ${company.name} right now. Create a project to track the work and forecast.`}
 						action={
 							<Button variant="outline" size="sm" onClick={onAdd}>
 								<Icon icon={Add} data-icon="inline-start" />
-								New deal
+								New project
 							</Button>
 						}
 					/>
@@ -633,7 +628,7 @@ function CompanyDeals({
 				))}
 
 				<AddRow
-					label="New deal"
+					label="New project"
 					columns={DEAL_COLUMNS.length}
 					onClick={onAdd}
 				/>

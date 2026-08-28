@@ -17,6 +17,7 @@ import {
 	EntityLogo,
 	type EntityLogoTone,
 } from "@crm/ui/components/entity-logo";
+import { PersonAvatar } from "@crm/ui/components/person-avatar";
 import {
 	SimpleTable,
 	type SimpleTableColumn,
@@ -31,6 +32,7 @@ import Link from "next/link";
 import { useQueryState } from "nuqs";
 import type { CSSProperties, ReactNode } from "react";
 import { toast } from "sonner";
+import { contactName } from "@/components/crm/contact-name";
 import { DealStageIndicator } from "@/components/crm/deal-stage";
 import { RecordLink } from "@/components/crm/record-sheet/record-link";
 import { useOpenRecord } from "@/components/crm/record-sheet/record-stack";
@@ -46,10 +48,10 @@ import { SalesDashboard } from "./sales-dashboard";
 
 const CELL = "px-3 py-2.5 align-middle";
 const OPEN_COLUMNS: SimpleTableColumn[] = [
-	{ id: "deal", header: "Deal" },
+	{ id: "deal", header: "Project" },
 	{
 		id: "stage",
-		header: "Stage",
+		header: "Status",
 		width: "w-32",
 		className: "hidden lg:table-cell",
 	},
@@ -76,7 +78,7 @@ const ACTIVITY_COLUMNS: SimpleTableColumn[] = [
 	},
 	{
 		id: "deal",
-		header: "Deal",
+		header: "Project",
 		width: "w-48",
 		className: "hidden lg:table-cell",
 	},
@@ -134,20 +136,20 @@ export function DashboardSummary() {
 			<div className="grid gap-6 @3xl/page-content:grid-cols-2">
 				<Card className="min-w-0">
 					<CardHeader>
-						<CardTitle>Deals in progress</CardTitle>
+						<CardTitle>Projects in progress</CardTitle>
 						<CardDescription>
-							The largest open deals, and how long each has sat in its stage
+							The largest open projects, and how long each has sat in its status
 						</CardDescription>
 						<CardAction>
 							<Button asChild variant="contrast" size="sm">
-								<Link href={workspaceUrl("/deals")}>Open deals</Link>
+								<Link href={workspaceUrl("/deals")}>Open projects</Link>
 							</Button>
 						</CardAction>
 					</CardHeader>
 					<CardPanel>
 						{biggestOpen.length === 0 ? (
 							<CardPanelEmpty>
-								Nothing open. Time to fill the pipeline.
+								Nothing open. Time to add a project.
 							</CardPanelEmpty>
 						) : (
 							<SimpleTable
@@ -165,6 +167,7 @@ export function DashboardSummary() {
 											<DealCell
 												name={deal.name}
 												company={deal.company}
+												primaryContact={deal.primaryContact}
 												meta={<LocalRelativeTime date={deal.stageChangedAt} />}
 											/>
 										</TableCell>
@@ -269,8 +272,8 @@ export function DashboardSummary() {
 					</CardTitle>
 					<CardDescription>
 						{mine
-							? "Every note, task and stage change you have logged"
-							: "Every note, task and stage change across the workspace"}
+							? "Every note, task and project status change you have logged"
+							: "Every note, task and project status change across the workspace"}
 					</CardDescription>
 					<CardAction>
 						<Button asChild variant="contrast" size="sm">
@@ -329,6 +332,7 @@ export function DashboardSummary() {
 function DealCell({
 	name,
 	company,
+	primaryContact,
 	meta,
 }: {
 	name: string;
@@ -337,27 +341,47 @@ function DealCell({
 		iconUrl: string | null;
 		iconDarkUrl: string | null;
 		iconTone: string | null;
-	};
+	} | null;
+	primaryContact: {
+		displayName: string;
+		firstName: string;
+		lastName: string | null;
+		email: string | null;
+		imageUrl: string | null;
+	} | null;
 	meta?: ReactNode;
 }) {
+	const customer = primaryContact
+		? contactName(primaryContact)
+		: (company?.name ?? "No customer");
+
 	return (
 		<span className="flex min-w-0 items-center gap-2">
-			<EntityLogo
-				src={company.iconUrl}
-				darkSrc={company.iconDarkUrl}
-				tone={company.iconTone as EntityLogoTone | null | undefined}
-				name={company.name}
-				size="sm"
-			/>
+			{primaryContact ? (
+				<PersonAvatar
+					src={primaryContact.imageUrl}
+					name={customer}
+					email={primaryContact.email}
+					size="sm"
+				/>
+			) : company ? (
+				<EntityLogo
+					src={company.iconUrl}
+					darkSrc={company.iconDarkUrl}
+					tone={company.iconTone as EntityLogoTone | null | undefined}
+					name={company.name}
+					size="sm"
+				/>
+			) : null}
 			<span className="flex min-w-0 flex-col">
 				<span className="truncate font-medium">{name}</span>
 				<span className="truncate text-muted-foreground">
 					{meta ? (
 						<>
-							{company.name} · {meta}
+							{customer} · {meta}
 						</>
 					) : (
-						company.name
+						customer
 					)}
 				</span>
 			</span>

@@ -78,10 +78,12 @@ const COMPANY_SELECT = {
 
 const CONTACT_SELECT = {
 	id: true,
+	displayName: true,
 	firstName: true,
 	lastName: true,
 	email: true,
 	title: true,
+	businessName: true,
 	imageUrl: true,
 } as const;
 
@@ -130,12 +132,27 @@ export class DealsService {
 						id: true,
 						name: true,
 						stage: true,
+						leadSource: true,
+						projectType: true,
+						addressLine1: true,
+						addressLine2: true,
+						city: true,
+						state: true,
+						postalCode: true,
 						amount: true,
 						currency: true,
 						baseAmount: true,
 						expectedCloseDate: true,
 						closedAt: true,
 						company: { select: COMPANY_SELECT },
+						contacts: {
+							where: { isPrimary: true },
+							take: 1,
+							select: {
+								isPrimary: true,
+								contact: { select: CONTACT_SELECT },
+							},
+						},
 						owner: { select: OWNER_SELECT },
 						lastActivityAt: true,
 						createdAt: true,
@@ -166,9 +183,11 @@ export class DealsService {
 					lastActivityAt,
 					createdAt,
 					archivedAt,
+					contacts,
 					...row
 				}) => ({
 					...row,
+					primaryContact: contacts[0]?.contact ?? null,
 					amountCents: toCents(amount),
 					baseAmountCents: toCents(baseAmount),
 					expectedCloseDate: expectedCloseDate?.toISOString() ?? null,
@@ -199,6 +218,13 @@ export class DealsService {
 				name: true,
 				description: true,
 				stage: true,
+				leadSource: true,
+				projectType: true,
+				addressLine1: true,
+				addressLine2: true,
+				city: true,
+				state: true,
+				postalCode: true,
 				stageChangedAt: true,
 				amount: true,
 				currency: true,
@@ -213,14 +239,18 @@ export class DealsService {
 				company: { select: { ...COMPANY_SELECT, industry: true } },
 				owner: { select: OWNER_SELECT },
 				contacts: {
-					select: { role: true, contact: { select: CONTACT_SELECT } },
+					select: {
+						role: true,
+						isPrimary: true,
+						contact: { select: CONTACT_SELECT },
+					},
 					orderBy: { contact: { firstName: "asc" } },
 				},
 			},
 		});
 
 		if (!deal) {
-			throw new NotFoundException(`No deal with id ${id}.`);
+			throw new NotFoundException(`No project with id ${id}.`);
 		}
 
 		const {
@@ -246,12 +276,16 @@ export class DealsService {
 			closedAt: deal.closedAt?.toISOString() ?? null,
 			createdAt: deal.createdAt.toISOString(),
 			archivedAt: archivedAt?.toISOString() ?? null,
-			contacts: contacts.map(({ role, contact }) => ({ ...contact, role })),
+			contacts: contacts.map(({ role, isPrimary, contact }) => ({
+				...contact,
+				role,
+				isPrimary,
+			})),
 		};
 	}
 
 	async create(input: DealCreateInput) {
-		const stage = input.stage ?? "DEMO_BOOKED";
+		const stage = input.stage ?? "LEAD";
 		const closed = isClosedStage(stage);
 		const now = new Date();
 
@@ -268,7 +302,13 @@ export class DealsService {
 				const created = await tx.deal.create({
 					data: {
 						name: input.name.trim(),
-						companyId: input.companyId,
+						description:
+							input.description === undefined
+								? undefined
+								: input.description === null
+									? null
+									: blankToNull(input.description),
+						companyId: input.companyId ?? null,
 						ownerId: input.ownerId,
 						stage,
 						stageChangedAt: now,
@@ -277,6 +317,13 @@ export class DealsService {
 						currency,
 						...fx,
 						expectedCloseDate: parseDate(input.expectedCloseDate),
+						leadSource: textOrNull(input.leadSource),
+						projectType: textOrNull(input.projectType),
+						addressLine1: textOrNull(input.addressLine1),
+						addressLine2: textOrNull(input.addressLine2),
+						city: textOrNull(input.city),
+						state: textOrNull(input.state),
+						postalCode: textOrNull(input.postalCode),
 					},
 					select: { id: true, name: true, companyId: true },
 				});
@@ -297,7 +344,7 @@ export class DealsService {
 				return created;
 			});
 
-			this.logger.log({ message: "Deal created", dealId: deal.id, stage });
+			this.logger.log({ message: "Project created", dealId: deal.id, stage });
 
 			void this.fields.queueBackfillForNewRecord("DEAL", deal.id);
 
@@ -316,7 +363,9 @@ export class DealsService {
 				input.description === null ? null : blankToNull(input.description);
 		}
 		if (input.companyId !== undefined) {
-			data.company = { connect: { id: input.companyId } };
+			data.company = input.companyId
+				? { connect: { id: input.companyId } }
+				: { disconnect: true };
 		}
 		if (input.ownerId !== undefined) {
 			data.owner = { connect: { id: input.ownerId } };
@@ -330,6 +379,18 @@ export class DealsService {
 		if (input.expectedCloseDate !== undefined) {
 			data.expectedCloseDate = parseDate(input.expectedCloseDate);
 		}
+		if (input.leadSource !== undefined)
+			data.leadSource = textOrNull(input.leadSource);
+		if (input.projectType !== undefined)
+			data.projectType = textOrNull(input.projectType);
+		if (input.addressLine1 !== undefined)
+			data.addressLine1 = textOrNull(input.addressLine1);
+		if (input.addressLine2 !== undefined)
+			data.addressLine2 = textOrNull(input.addressLine2);
+		if (input.city !== undefined) data.city = textOrNull(input.city);
+		if (input.state !== undefined) data.state = textOrNull(input.state);
+		if (input.postalCode !== undefined)
+			data.postalCode = textOrNull(input.postalCode);
 
 		if (input.amountCents !== undefined || input.currency !== undefined) {
 			const current = await this.db.deal.findUnique({
@@ -338,7 +399,7 @@ export class DealsService {
 			});
 
 			if (!current) {
-				throw new NotFoundException(`No deal with id ${id}.`);
+				throw new NotFoundException(`No project with id ${id}.`);
 			}
 
 			const amount =
@@ -378,7 +439,7 @@ export class DealsService {
 				select: { name: true },
 			});
 
-			this.logger.log({ message: "Deal archived", dealId: id });
+			this.logger.log({ message: "Project archived", dealId: id });
 
 			return { id, name: deal.name };
 		} catch (error) {
@@ -394,7 +455,7 @@ export class DealsService {
 				select: { name: true },
 			});
 
-			this.logger.log({ message: "Deal restored", dealId: id });
+			this.logger.log({ message: "Project restored", dealId: id });
 
 			return { id, name: deal.name };
 		} catch (error) {
@@ -421,7 +482,7 @@ export class DealsService {
 
 				if (!row) {
 					if (guard) return null;
-					throw new NotFoundException(`No deal with id ${id}.`);
+					throw new NotFoundException(`No project with id ${id}.`);
 				}
 				if (
 					guard &&
@@ -449,7 +510,7 @@ export class DealsService {
 		await this.stamp.recomputeAfterDelete(deleted.targets, { dealId: id });
 
 		this.logger.log({
-			message: "Deal purged",
+			message: "Project purged",
 			dealId: id,
 			name: deleted.name,
 		});
@@ -484,7 +545,7 @@ export class DealsService {
 			`;
 
 			if (!deal) {
-				throw new NotFoundException(`No deal with id ${input.id}.`);
+				throw new NotFoundException(`No project with id ${input.id}.`);
 			}
 
 			if (deal.stage === input.stage) {
@@ -497,7 +558,7 @@ export class DealsService {
 			}
 			if (LOSING.has(input.stage) && !closedReason) {
 				throw new BadRequestException(
-					"Say why it was lost — a closed-lost deal with no reason teaches nobody anything.",
+					"Say why it was lost — a lost project with no reason teaches nobody anything.",
 				);
 			}
 
@@ -515,7 +576,7 @@ export class DealsService {
 			await tx.activity.create({
 				data: {
 					type: ActivityType.STAGE_CHANGE,
-					subject: "Stage changed",
+					subject: "Status changed",
 					body: closedReason ?? null,
 					occurredAt: now,
 					companyId: deal.companyId,
@@ -567,7 +628,7 @@ export class DealsService {
 		await this.stamp.touch({ companyId: deal.companyId, dealId: deal.id }, now);
 
 		this.logger.log({
-			message: "Deal stage changed",
+			message: "Project status changed",
 			dealId: deal.id,
 			from: deal.stage,
 			to: input.stage,
@@ -579,16 +640,16 @@ export class DealsService {
 	async contactOptions(dealId: string) {
 		const deal = await this.db.deal.findUnique({
 			where: { id: dealId },
-			select: { companyId: true, contacts: { select: { contactId: true } } },
+			select: { contacts: { select: { contactId: true } } },
 		});
 
 		if (!deal) {
-			throw new NotFoundException(`No deal with id ${dealId}.`);
+			throw new NotFoundException(`No project with id ${dealId}.`);
 		}
 
 		return this.db.contact.findMany({
 			where: {
-				companyId: deal.companyId,
+				archivedAt: null,
 				id: { notIn: deal.contacts.map((row) => row.contactId) },
 			},
 			select: CONTACT_SELECT,
@@ -598,42 +659,79 @@ export class DealsService {
 	}
 
 	async attachContact(input: DealAttachContactInput) {
-		const company = await this.companyOf(input.dealId);
-		const contact = await this.db.contact.findUnique({
-			where: { id: input.contactId },
-			select: { companyId: true },
-		});
-
-		if (!contact) {
-			throw new NotFoundException(`No contact with id ${input.contactId}.`);
-		}
-
-		if (contact.companyId !== company.id) {
-			throw new BadRequestException(
-				`That contact does not work at ${company.name}.`,
-			);
-		}
-
 		const role = roleOrNull(input.role ?? null);
 
-		await this.db.dealContact.upsert({
-			where: {
-				dealId_contactId: {
+		const link = await this.db.$transaction(async (tx) => {
+			const deal = await tx.deal.findUnique({
+				where: { id: input.dealId },
+				select: { id: true },
+			});
+			if (!deal) throw new NotFoundException(`No project with id ${input.dealId}.`);
+
+			const contact = await tx.contact.findFirst({
+				where: { id: input.contactId, archivedAt: null },
+				select: { id: true },
+			});
+			if (!contact) {
+				throw new NotFoundException(`No contact with id ${input.contactId}.`);
+			}
+
+			if (input.isPrimary === true) {
+				await tx.dealContact.updateMany({
+					where: {
+						dealId: input.dealId,
+						contactId: { not: input.contactId },
+						isPrimary: true,
+					},
+					data: { isPrimary: false },
+				});
+			}
+
+			const existing = await tx.dealContact.findUnique({
+				where: {
+					dealId_contactId: {
+						dealId: input.dealId,
+						contactId: input.contactId,
+					},
+				},
+				select: { isPrimary: true },
+			});
+			if (existing) {
+				return tx.dealContact.update({
+					where: {
+						dealId_contactId: {
+							dealId: input.dealId,
+							contactId: input.contactId,
+						},
+					},
+					data: {
+						...(role === null ? {} : { role }),
+						...(input.isPrimary === undefined
+							? {}
+							: { isPrimary: input.isPrimary }),
+					},
+					select: { dealId: true, contactId: true, isPrimary: true },
+				});
+			}
+
+			return tx.dealContact.create({
+				data: {
 					dealId: input.dealId,
 					contactId: input.contactId,
+					role,
+					isPrimary: input.isPrimary ?? false,
 				},
-			},
-			create: { dealId: input.dealId, contactId: input.contactId, role },
-			update: role === null ? {} : { role },
+				select: { dealId: true, contactId: true, isPrimary: true },
+			});
 		});
 
 		this.logger.log({
-			message: "Contact attached to deal",
+			message: "Contact attached to project",
 			dealId: input.dealId,
 			contactId: input.contactId,
 		});
 
-		return { dealId: input.dealId, contactId: input.contactId };
+		return link;
 	}
 
 	async detachContact(input: DealDetachContactInput) {
@@ -642,11 +740,11 @@ export class DealsService {
 		});
 
 		if (count === 0) {
-			throw new NotFoundException("That contact is not on this deal.");
+			throw new NotFoundException("That contact is not on this project.");
 		}
 
 		this.logger.log({
-			message: "Contact detached from deal",
+			message: "Contact detached from project",
 			dealId: input.dealId,
 			contactId: input.contactId,
 		});
@@ -657,16 +755,49 @@ export class DealsService {
 	async setContactRole(input: DealContactRoleInput) {
 		const role = roleOrNull(input.role);
 
-		const { count } = await this.db.dealContact.updateMany({
-			where: { dealId: input.dealId, contactId: input.contactId },
-			data: { role },
+		return this.db.$transaction(async (tx) => {
+			const existing = await tx.dealContact.findUnique({
+				where: {
+					dealId_contactId: {
+						dealId: input.dealId,
+						contactId: input.contactId,
+					},
+				},
+				select: { isPrimary: true },
+			});
+
+			if (!existing) {
+				throw new NotFoundException("That contact is not on this project.");
+			}
+
+			if (input.isPrimary === true) {
+				await tx.dealContact.updateMany({
+					where: {
+						dealId: input.dealId,
+						contactId: { not: input.contactId },
+						isPrimary: true,
+					},
+					data: { isPrimary: false },
+				});
+			}
+
+			await tx.dealContact.update({
+				where: { dealId: input.dealId, contactId: input.contactId },
+				data: {
+					role,
+					...(input.isPrimary === undefined
+						? {}
+						: { isPrimary: input.isPrimary }),
+				},
+			});
+
+			return {
+				dealId: input.dealId,
+				contactId: input.contactId,
+				role,
+				isPrimary: input.isPrimary ?? existing.isPrimary,
+			};
 		});
-
-		if (count === 0) {
-			throw new NotFoundException("That contact is not on this deal.");
-		}
-
-		return { dealId: input.dealId, contactId: input.contactId, role };
 	}
 
 	async bulkAssignOwner(input: DealBulkOwnerInput): Promise<BulkResult> {
@@ -679,7 +810,7 @@ export class DealsService {
 		});
 
 		this.logger.log({
-			message: "Deals reassigned",
+			message: "Projects reassigned",
 			count,
 			ownerId: input.ownerId,
 		});
@@ -701,7 +832,7 @@ export class DealsService {
 
 		if (LOSING.has(input.stage) && !closedReason) {
 			throw new BadRequestException(
-				"Say why they were lost — a closed-lost deal with no reason teaches nobody anything.",
+				"Say why they were lost — a lost project with no reason teaches nobody anything.",
 			);
 		}
 
@@ -722,27 +853,46 @@ export class DealsService {
 		return runBulk(ids, (id) => this.purge(id));
 	}
 
-	private async companyOf(dealId: string) {
-		const deal = await this.db.deal.findUnique({
-			where: { id: dealId },
-			select: { company: { select: { id: true, name: true } } },
-		});
-
-		if (!deal) {
-			throw new NotFoundException(`No deal with id ${dealId}.`);
-		}
-
-		return deal.company;
-	}
-
 	private searchFilter(q: string): Prisma.DealWhereInput {
 		const term = q.trim();
 		if (!term) return {};
+		const contactTerms = term.split(/\s+/).filter(Boolean);
 
 		return {
 			OR: [
 				{ name: { contains: term, mode: "insensitive" } },
 				{ company: { name: { contains: term, mode: "insensitive" } } },
+				{
+					contacts: {
+						some: {
+							isPrimary: true,
+							contact: {
+								AND: contactTerms.map((contactTerm) => ({
+									OR: [
+										{
+											displayName: {
+												contains: contactTerm,
+												mode: "insensitive",
+											},
+										},
+										{
+											firstName: {
+												contains: contactTerm,
+												mode: "insensitive",
+											},
+										},
+										{
+											lastName: {
+												contains: contactTerm,
+												mode: "insensitive",
+											},
+										},
+									],
+								})),
+							},
+						},
+					},
+				},
 			],
 		};
 	}
@@ -832,7 +982,7 @@ export class DealsService {
 			cause instanceof PrismaNamespace.PrismaClientKnownRequestError &&
 			cause.code === "P2025"
 		) {
-			throw new NotFoundException(`No deal with id ${id}.`);
+			throw new NotFoundException(`No project with id ${id}.`);
 		}
 		return this.translateRelations(cause);
 	}
@@ -879,6 +1029,14 @@ function closingFilter(window: ClosingWindow): Prisma.DealWhereInput {
 
 function roleOrNull(value: string | null): string | null {
 	return value === null ? null : blankToNull(value);
+}
+
+function textOrNull(value: string | null | undefined): string | null | undefined {
+	return value === undefined
+		? undefined
+		: value === null
+			? null
+			: blankToNull(value);
 }
 
 function parseDate(value: string | null | undefined): Date | null {

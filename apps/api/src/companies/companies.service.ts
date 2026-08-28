@@ -193,6 +193,7 @@ export class CompaniesService {
 				primaryContact: {
 					select: {
 						id: true,
+						displayName: true,
 						firstName: true,
 						lastName: true,
 						email: true,
@@ -204,6 +205,7 @@ export class CompaniesService {
 					orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
 					select: {
 						id: true,
+						displayName: true,
 						firstName: true,
 						lastName: true,
 						email: true,
@@ -458,18 +460,18 @@ export class CompaniesService {
 					tx,
 				);
 
-				const deals = await tx.deal.findMany({
-					where: { companyId: id },
-					select: { id: true },
+				await tx.activity.updateMany({
+					where: { companyId: id, dealId: { not: null } },
+					data: { companyId: null },
+				});
+
+				await tx.agentTask.updateMany({
+					where: { companyId: id, dealId: { not: null } },
+					data: { companyId: null },
 				});
 
 				await tx.agentTask.deleteMany({
-					where: {
-						OR: [
-							{ companyId: id },
-							{ dealId: { in: deals.map((deal) => deal.id) } },
-						],
-					},
+					where: { companyId: id, dealId: null },
 				});
 
 				const company = await tx.company.delete({

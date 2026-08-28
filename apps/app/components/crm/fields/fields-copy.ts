@@ -6,7 +6,7 @@ export const SHEET_TITLE = "Fields";
 const SUBTITLE = {
 	company: "This shapes every company in your CRM.",
 	contact: "This shapes every contact in your CRM.",
-	deal: "This shapes every deal in your CRM.",
+	deal: "This shapes every project in your CRM.",
 } satisfies Record<RecordKind, string>;
 
 export function subtitleFor(kind: RecordKind): string {
@@ -64,19 +64,19 @@ export const FILL_REST = "Fill the rest";
 const SHEET_PLACEMENT = {
 	COMPANY: "Show on the company sheet",
 	CONTACT: "Show on the contact sheet",
-	DEAL: "Show on the deal sheet",
+	DEAL: "Show on the project sheet",
 } satisfies Record<FieldEntity, string>;
 
 const TABLE_PLACEMENT = {
 	COMPANY: "Offer as a column on the Companies table",
 	CONTACT: "Offer as a column on the Contacts table",
-	DEAL: "Offer as a column on the Deals table",
+	DEAL: "Offer as a column on the Projects table",
 } satisfies Record<FieldEntity, string>;
 
 const FILTER_PLACEMENT = {
 	COMPANY: "Offer as a filter on the Companies table",
 	CONTACT: "Offer as a filter on the Contacts table",
-	DEAL: "Offer as a filter on the Deals table",
+	DEAL: "Offer as a filter on the Projects table",
 } satisfies Record<FieldEntity, string>;
 
 export function sheetPlacement(entity: FieldEntity): string {
@@ -94,5 +94,5 @@ export function filterPlacement(entity: FieldEntity): string {
 export const ENTITY_TABS = [
 	{ kind: "company", label: "Companies" },
 	{ kind: "contact", label: "Contacts" },
-	{ kind: "deal", label: "Deals" },
+	{ kind: "deal", label: "Projects" },
 ] as const satisfies readonly { kind: RecordKind; label: string }[];

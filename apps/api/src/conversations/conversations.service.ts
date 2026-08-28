@@ -173,6 +173,7 @@ export class ConversationsService {
 				where: contains
 					? {
 							OR: [
+								{ displayName: contains },
 								{ firstName: contains },
 								{ lastName: contains },
 								{ email: contains },
@@ -183,6 +184,7 @@ export class ConversationsService {
 				take: 6,
 				select: {
 					id: true,
+					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,
@@ -228,7 +230,9 @@ export class ConversationsService {
 			...contacts.map((contact) => ({
 				kind: "contact" as const,
 				id: contact.id,
-				label: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+				label:
+					contact.displayName ||
+					[contact.firstName, contact.lastName].filter(Boolean).join(" "),
 				detail: contact.company?.name ?? contact.email,
 				imageUrl: contact.imageUrl,
 			})),
@@ -236,8 +240,8 @@ export class ConversationsService {
 				kind: "deal" as const,
 				id: deal.id,
 				label: deal.name,
-				detail: deal.company.name,
-				imageUrl: deal.company.logoUrl,
+				detail: deal.company?.name ?? null,
+				imageUrl: deal.company?.logoUrl ?? null,
 			})),
 		];
 	}
@@ -938,7 +942,7 @@ export class ConversationsService {
 
 		if (!recordId || recordIds.length !== 1) {
 			throw new BadRequestException(
-				"Choose exactly one contact, company or deal.",
+				"Choose exactly one contact, company or project.",
 			);
 		}
 

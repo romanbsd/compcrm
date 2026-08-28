@@ -65,7 +65,7 @@ export const activityCreateInput = z
 		dealId: z.string().optional(),
 	})
 	.refine((input) => input.companyId || input.contactId || input.dealId, {
-		message: "An activity has to be about a company, a contact or a deal.",
+		message: "An activity has to be about a company, a contact or a project.",
 	})
 	.refine(
 		(input) => input.type !== ActivityType.TASK || Boolean(input.subject),
@@ -106,6 +106,7 @@ const activityCompanyRefOutput = z
 const activityContactRefOutput = z
 	.object({
 		id: z.string(),
+		displayName: z.string(),
 		firstName: z.string(),
 		lastName: z.string().nullable(),
 	})

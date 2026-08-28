@@ -54,7 +54,7 @@ export class ArchiveRetentionController {
 	@Get("prune")
 	@AllowAnonymous()
 	@ApiOperation({
-		summary: "Purge companies, contacts and deals past the archive window",
+		summary: "Purge companies, contacts and projects past the archive window",
 	})
 	@ApiOkResponse({ description: "The prune ran; per-record-type counts." })
 	async pruneViaGet(@Headers("authorization") authorization?: string) {

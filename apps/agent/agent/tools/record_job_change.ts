@@ -37,6 +37,7 @@ export default defineTool({
 		const contact = await db.contact.findUnique({
 			where: { id: contactId },
 			select: {
+				displayName: true,
 				firstName: true,
 				lastName: true,
 				ownerId: true,
@@ -45,9 +46,9 @@ export default defineTool({
 		});
 		if (!contact) return { raised: false as const, reason: "No such contact." };
 
-		const name = [contact.firstName, contact.lastName]
-			.filter(Boolean)
-			.join(" ");
+		const name =
+			contact.displayName ||
+			[contact.firstName, contact.lastName].filter(Boolean).join(" ");
 
 		await writeTimelineNote(
 			contactId,

@@ -14,9 +14,10 @@ import {
 	type EntityLogoTone,
 } from "@crm/ui/components/entity-logo";
 import { PersonAvatar } from "@crm/ui/components/person-avatar";
+import { useMountEffect } from "@crm/ui/hooks/use-mount-effect";
 import { useQuery } from "@tanstack/react-query";
 import { parseAsBoolean, useQueryState } from "nuqs";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useOpenRecord } from "@/components/crm/record-sheet/record-stack";
 import { SEARCH_PARAM } from "@/lib/search-param-keys";
 import { useTRPC } from "@/lib/trpc/client";
@@ -24,7 +25,7 @@ import { useTRPC } from "@/lib/trpc/client";
 const GROUP_LABEL = {
 	company: "Companies",
 	contact: "Contacts",
-	deal: "Deals",
+	deal: "Projects",
 } as const;
 
 const KINDS = ["company", "contact", "deal"] as const;
@@ -39,7 +40,7 @@ export function QuickSwitcher() {
 	);
 	const [query, setQuery] = useState("");
 
-	useEffect(() => {
+	useMountEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
@@ -49,7 +50,7 @@ export function QuickSwitcher() {
 
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
-	}, [setOpen]);
+	});
 
 	const results = useQuery({
 		...trpc.search.quick.queryOptions({ q: query }),
@@ -70,11 +71,11 @@ export function QuickSwitcher() {
 			open={open}
 			onOpenChange={(next) => setOpen(next || null)}
 			title="Search"
-			description="Jump to a company, contact or deal"
+			description="Jump to a company, contact or project"
 		>
 			<Command shouldFilter={false}>
 				<CommandInput
-					placeholder="Search companies, contacts and deals…"
+					placeholder="Search companies, contacts and projects…"
 					value={query}
 					onValueChange={setQuery}
 				/>

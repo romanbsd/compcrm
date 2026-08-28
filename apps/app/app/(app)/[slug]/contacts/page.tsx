@@ -29,7 +29,9 @@ export default function ContactsPage({
 			<PageShellHeader>
 				<PageShellHeading>
 					<PageShellTitle>Contacts</PageShellTitle>
-					<PageShellDescription>Everyone in the pipeline.</PageShellDescription>
+					<PageShellDescription>
+						Everyone involved in your projects.
+					</PageShellDescription>
 				</PageShellHeading>
 				<PageShellActions>
 					<CreateContactSheet />

@@ -158,12 +158,14 @@ describe("session purpose boundaries", () => {
 		expect(() => assertResearchPurpose(context("team-agent"))).toThrow();
 	});
 
-	it("leaves the read-only deal list open to the assistant chat that is told to use it", async () => {
+	it("leaves the read-only project list open to the assistant chat that is told to use it", async () => {
 		const source = await Bun.file(
 			new URL("../agent/tools/list_deals.ts", import.meta.url),
 		).text();
 
 		expect(source).not.toContain("assertResearchPurpose");
+		expect(source).toContain("List projects across the CRM");
+		expect(source).not.toContain("List deals across the CRM");
 		expect(builderTaskMarkdown(null)).toContain("list_deals");
 	});
 
@@ -336,8 +338,9 @@ describe("builder command routing", () => {
 		expect(chat).toContain("call ask_question");
 		expect(chat).toContain("one focused follow-up");
 		expect(chat).toContain(
-			"Do not restate or enumerate individual deal rows in prose, bullets, or tables",
+			"Do not restate or enumerate individual project rows in prose, bullets, or tables",
 		);
+		expect(chat).not.toContain("individual deal rows");
 		expect(builderTaskMarkdown(null)).toContain("private CRM assistant chat");
 	});
 

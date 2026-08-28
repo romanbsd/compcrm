@@ -5,7 +5,7 @@ import { requireTeamAgentAttribute } from "../../../lib/session-purpose";
 
 export default defineTool({
 	description:
-		"Search contacts, companies, and deals inside this deployed version's approved CRM scope.",
+		"Search contacts, companies, and projects inside this deployed version's approved CRM scope.",
 	inputSchema: z.object({
 		query: z.string().trim().min(2).max(160),
 		kinds: z.array(z.enum(["contact", "company", "deal"])).optional(),

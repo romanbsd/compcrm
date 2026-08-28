@@ -129,6 +129,24 @@ export class DashboardService {
 							iconTone: true,
 						},
 					},
+					contacts: {
+						where: { isPrimary: true },
+						take: 1,
+						select: {
+							contact: {
+								select: {
+									id: true,
+									displayName: true,
+									firstName: true,
+									lastName: true,
+									email: true,
+									title: true,
+									businessName: true,
+									imageUrl: true,
+								},
+							},
+						},
+					},
 					owner: { select: OWNER_SELECT },
 				},
 			}),
@@ -203,7 +221,7 @@ export class DashboardService {
 
 			const { closedAt, stage } = deal;
 			if (!closedAt) continue;
-			const won = stage === DealStage.CLOSED_WON;
+			const won = stage === DealStage.COMPLETE;
 
 			if (won) {
 				const closed = trend[monthKey(closedAt) - firstBucket];
@@ -226,7 +244,7 @@ export class DashboardService {
 					wonCents += cents;
 				}
 				cycleDays += (closedAt.getTime() - deal.createdAt.getTime()) / DAY_MS;
-			} else if (stage === DealStage.CLOSED_LOST) {
+			} else if (stage === DealStage.LOST) {
 				losses += 1;
 			}
 		}
@@ -266,9 +284,11 @@ export class DashboardService {
 						baseCurrency,
 						expectedCloseDate,
 						stageChangedAt,
+						contacts,
 						...deal
 					}) => ({
 						...deal,
+						primaryContact: contacts[0]?.contact ?? null,
 						amountCents: toCents(amount),
 						baseAmountCents: baseCurrency === base ? toCents(baseAmount) : null,
 						expectedCloseDate: expectedCloseDate?.toISOString() ?? null,

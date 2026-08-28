@@ -250,16 +250,15 @@ const TITLES = [
 ] as const;
 
 const OPEN_STAGES = [
-	DealStage.DEMO_BOOKED,
-	DealStage.QUALIFIED_TO_BUY,
-	DealStage.DECISION_MAKER_BOUGHT_IN,
-	DealStage.CONTRACT_SENT,
+	DealStage.LEAD,
+	DealStage.ESTIMATING,
+	DealStage.CONTRACTED,
+	DealStage.IN_PROGRESS,
 ] as const;
 
 const CLOSED_STAGES = [
-	DealStage.CLOSED_WON,
-	DealStage.CLOSED_LOST,
-	DealStage.UNQUALIFIED_TO_BUY,
+	DealStage.COMPLETE,
+	DealStage.LOST,
 ] as const;
 
 const DEAL_DESCRIPTIONS = [
@@ -840,11 +839,7 @@ async function seedDeals(
 							: -closedDaysAgo + integer(-4, 9),
 					),
 					closedAt: closed ? stageChangedAt : null,
-					closedReason:
-						stage === DealStage.CLOSED_LOST ||
-						stage === DealStage.UNQUALIFIED_TO_BUY
-							? pick(LOST_REASONS)
-							: null,
+					closedReason: stage === DealStage.LOST ? pick(LOST_REASONS) : null,
 					createdAt,
 				},
 				update: {},
@@ -854,15 +849,19 @@ async function seedDeals(
 				(contact) => contact.companyId === company.id,
 			);
 			for (const contact of companyContacts.slice(0, integer(1, 2))) {
-				await db.dealContact.upsert({
+				const existing = await db.dealContact.findUnique({
 					where: { dealId_contactId: { dealId: id, contactId: contact.id } },
-					create: {
-						dealId: id,
-						contactId: contact.id,
-						role: chance(0.5) ? "Champion" : "Decision maker",
-					},
-					update: {},
+					select: { dealId: true },
 				});
+				if (!existing) {
+					await db.dealContact.create({
+						data: {
+							dealId: id,
+							contactId: contact.id,
+							role: chance(0.5) ? "Champion" : "Decision maker",
+						},
+					});
+				}
 			}
 
 			deals.push({ id, companyId: company.id, ownerId, closed });
@@ -948,10 +947,10 @@ async function seedActivities(
 			...base(deal.companyId, deal.ownerId, daysFromNow(-integer(1, 20), 12)),
 			type: ActivityType.STAGE_CHANGE,
 			dealId: deal.id,
-			subject: "Stage changed",
+			subject: "Status changed",
 			meta: {
-				from: DealStage.DEMO_BOOKED,
-				to: deal.closed ? DealStage.CLOSED_WON : DealStage.QUALIFIED_TO_BUY,
+				from: DealStage.LEAD,
+				to: deal.closed ? DealStage.COMPLETE : DealStage.ESTIMATING,
 			},
 		});
 	}

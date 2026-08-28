@@ -45,6 +45,7 @@ export class SearchService {
 			this.db.contact.findMany({
 				where: {
 					OR: [
+						{ displayName: { contains: term, mode: "insensitive" } },
 						{ firstName: { contains: term, mode: "insensitive" } },
 						{ lastName: { contains: term, mode: "insensitive" } },
 						{ email: { contains: term, mode: "insensitive" } },
@@ -54,6 +55,7 @@ export class SearchService {
 				orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
 				select: {
 					id: true,
+					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,
@@ -99,6 +101,7 @@ export class SearchService {
 						kind: "contact",
 						id: contact.id,
 						label:
+							contact.displayName ||
 							[contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
 							(contact.email ?? "Unnamed"),
 						detail: contact.company?.name ?? contact.email,
@@ -113,10 +116,10 @@ export class SearchService {
 						kind: "deal",
 						id: deal.id,
 						label: deal.name,
-						detail: deal.company.name,
-						iconUrl: deal.company.iconUrl,
-						iconDarkUrl: deal.company.iconDarkUrl,
-						iconTone: deal.company.iconTone,
+						detail: deal.company?.name ?? null,
+						iconUrl: deal.company?.iconUrl ?? null,
+						iconDarkUrl: deal.company?.iconDarkUrl ?? null,
+						iconTone: deal.company?.iconTone ?? null,
 						imageUrl: null,
 					}),
 				),

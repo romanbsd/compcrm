@@ -61,7 +61,12 @@ beforeAll(async () => {
 		},
 	});
 	const contact = await db.contact.create({
-		data: { firstName: "Conversation", lastName: "Subject", email },
+		data: {
+			displayName: "Conversation Alias",
+			firstName: "Conversation",
+			lastName: "Subject",
+			email,
+		},
 		select: { id: true },
 	});
 	contactId = contact.id;
@@ -87,6 +92,18 @@ afterAll(async () => {
 describe("ConversationsService", () => {
 	it("starts a record with no history", async () => {
 		expect(await service.list({ contactId }, userId)).toEqual([]);
+	});
+
+	it("finds a builder contact by display name and renders it", async () => {
+		expect(await service.builderResources("Conversation Alias", userId)).toContainEqual(
+			{
+				kind: "contact",
+				id: contactId,
+				label: "Conversation Alias",
+				detail: email,
+				imageUrl: null,
+			},
+		);
 	});
 
 	it("saves a cursor and titles the thread from the opening question", async () => {

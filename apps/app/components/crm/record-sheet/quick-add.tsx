@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@crm/ui/components/button";
+import { Checkbox } from "@crm/ui/components/checkbox";
 import { DatePicker } from "@crm/ui/components/date-picker";
 import { Field, FieldLabel } from "@crm/ui/components/field";
 import { Input } from "@crm/ui/components/input";
@@ -73,11 +74,15 @@ export function QuickAddContact({
 
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
+	const [displayName, setDisplayName] = useState("");
+	const [businessName, setBusinessName] = useState("");
 	const [email, setEmail] = useState("");
 	const [title, setTitle] = useState("");
 
 	const firstNameId = useId();
 	const lastNameId = useId();
+	const displayNameId = useId();
+	const businessNameId = useId();
 	const emailId = useId();
 	const titleId = useId();
 
@@ -85,7 +90,7 @@ export function QuickAddContact({
 		trpc.contacts.create.mutationOptions({
 			onSuccess: async (contact) => {
 				await cache.contact(contact.id);
-				toast.success(`${contact.firstName} added.`);
+				toast.success(`${contactName(contact)} added.`);
 				onDone();
 			},
 			onError: (error) => toast.error(error.message),
@@ -100,8 +105,10 @@ export function QuickAddContact({
 			onCancel={onDone}
 			onSubmit={() =>
 				create.mutate({
+					displayName: displayName || undefined,
 					firstName,
 					lastName: lastName || undefined,
+					businessName: businessName || undefined,
 					email: email || undefined,
 					title: title || undefined,
 					companyId,
@@ -117,6 +124,26 @@ export function QuickAddContact({
 					value={firstName}
 					onChange={(event) => setFirstName(event.target.value)}
 					autoComplete="off"
+				/>
+			</Field>
+			<Field>
+				<FieldLabel htmlFor={displayNameId}>Display name</FieldLabel>
+				<Input
+					id={displayNameId}
+					value={displayName}
+					onChange={(event) => setDisplayName(event.target.value)}
+					placeholder="Shown across the CRM"
+					autoComplete="name"
+				/>
+			</Field>
+			<Field>
+				<FieldLabel htmlFor={businessNameId}>Business name</FieldLabel>
+				<Input
+					id={businessNameId}
+					value={businessName}
+					onChange={(event) => setBusinessName(event.target.value)}
+					placeholder="Customer business"
+					autoComplete="organization"
 				/>
 			</Field>
 			<Field>
@@ -158,7 +185,7 @@ export function AttachDealContact({
 	onDone,
 }: {
 	dealId: string;
-	companyName: string;
+	companyName?: string;
 	onDone: () => void;
 }) {
 	const trpc = useTRPC();
@@ -166,6 +193,7 @@ export function AttachDealContact({
 
 	const [contactId, setContactId] = useState("");
 	const [role, setRole] = useState("");
+	const [isPrimary, setIsPrimary] = useState(false);
 
 	const personId = useId();
 	const roleId = useId();
@@ -182,8 +210,8 @@ export function AttachDealContact({
 				await cache.deal(dealId);
 				toast.success(
 					person
-						? `${contactName(person)} is on the deal.`
-						: "Added to the deal.",
+						? `${contactName(person)} is on the project.`
+						: "Added to the project.",
 				);
 				onDone();
 			},
@@ -196,17 +224,24 @@ export function AttachDealContact({
 	const placeholder = options.isPending
 		? "Loading…"
 		: nobody
-			? `Everybody at ${companyName} is already on it`
+			? companyName
+				? `Everybody at ${companyName} is already attached`
+				: "All active contacts are already attached"
 			: "Choose somebody";
 
 	return (
 		<QuickAddForm
-			submitLabel="Add to deal"
+			submitLabel="Add to project"
 			pending={attach.isPending}
 			ready={contactId !== ""}
 			onCancel={onDone}
 			onSubmit={() =>
-				attach.mutate({ dealId, contactId, role: role.trim() || null })
+				attach.mutate({
+					dealId,
+					contactId,
+					role: role.trim() || null,
+					isPrimary,
+				})
 			}
 		>
 			<Field>
@@ -233,6 +268,16 @@ export function AttachDealContact({
 					onChange={(event) => setRole(event.target.value)}
 					placeholder="Champion"
 					autoComplete="off"
+				/>
+			</Field>
+			<Field orientation="horizontal">
+				<FieldLabel htmlFor="attach-project-primary">
+					Primary customer
+				</FieldLabel>
+				<Checkbox
+					id="attach-project-primary"
+					checked={isPrimary}
+					onCheckedChange={(checked) => setIsPrimary(checked === true)}
 				/>
 			</Field>
 		</QuickAddForm>
@@ -277,7 +322,7 @@ export function QuickAddDeal({
 
 	const submit = () => {
 		if (!owner) {
-			toast.error("Could not work out who should own this deal.");
+			toast.error("Could not work out who should own this project.");
 			return;
 		}
 
@@ -302,7 +347,7 @@ export function QuickAddDeal({
 
 	return (
 		<QuickAddForm
-			submitLabel="Create deal"
+			submitLabel="Create project"
 			pending={create.isPending}
 			ready={name.trim() !== ""}
 			onCancel={onDone}
@@ -315,7 +360,7 @@ export function QuickAddDeal({
 					autoFocus
 					value={name}
 					onChange={(event) => setName(event.target.value)}
-					placeholder={`${companyName} — Comp AI`}
+					placeholder={`${companyName} — kitchen remodel`}
 					autoComplete="off"
 				/>
 			</Field>
@@ -330,7 +375,7 @@ export function QuickAddDeal({
 				/>
 			</Field>
 			<Field>
-				<FieldLabel htmlFor={closeId}>Expected close</FieldLabel>
+				<FieldLabel htmlFor={closeId}>Target date</FieldLabel>
 				<DatePicker
 					id={closeId}
 					value={closeDate}

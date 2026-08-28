@@ -5,7 +5,7 @@ import { focusOn } from "../lib/focus";
 
 export default defineTool({
 	description:
-		"Read a deal in full: stage and how long it has been there, value, close date, the whole stage history, who is on it with their contact ids, the correspondence and meetings with those people, and the notes. Free — call it first in a deal session.",
+		"Read a project in full: status and how long it has been there, value, target date, the whole status history, who is on it with their contact ids, the correspondence and meetings with those people, and the notes. Free — call it first in a project session.",
 	inputSchema: z.object({
 		dealId: z.string(),
 		threads: z
@@ -18,9 +18,9 @@ export default defineTool({
 	}),
 	async execute({ dealId, threads }) {
 		const history = await readDealHistory(dealId, { threads });
-		if (!history) return { found: false as const, reason: "No such deal." };
+		if (!history) return { found: false as const, reason: "No such project." };
 
-		focusOn({ companyId: history.company.id });
+		if (history.company) focusOn({ companyId: history.company.id });
 
 		return { found: true as const, ...history };
 	},
