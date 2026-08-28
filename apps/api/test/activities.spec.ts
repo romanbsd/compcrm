@@ -19,7 +19,6 @@ beforeAll(async () => {
 	});
 	const contact = await db.contact.create({
 		data: {
-			displayName: "Preferred Activity Name",
 			firstName: "Stored",
 			lastName: "Contact",
 			email,
@@ -36,7 +35,7 @@ afterAll(async () => {
 });
 
 describe("ActivitiesService timeline", () => {
-	it("returns the contact display name", async () => {
+	it("returns the contact name", async () => {
 		await db.activity.create({
 			data: {
 				type: ActivityType.NOTE,
@@ -55,7 +54,6 @@ describe("ActivitiesService timeline", () => {
 
 		expect(result.entries[0]?.contact).toEqual({
 			id: contactId,
-			displayName: "Preferred Activity Name",
 			firstName: "Stored",
 			lastName: "Contact",
 		});

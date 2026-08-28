@@ -106,7 +106,6 @@ const activityCompanyRefOutput = z
 const activityContactRefOutput = z
 	.object({
 		id: z.string(),
-		displayName: z.string(),
 		firstName: z.string(),
 		lastName: z.string().nullable(),
 	})

@@ -64,8 +64,6 @@ function CreateContactForm({ companyId }: { companyId?: string }) {
 	);
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
-	const [displayName, setDisplayName] = useState("");
-	const [businessName, setBusinessName] = useState("");
 	const [email, setEmail] = useState("");
 	const [title, setTitle] = useState("");
 	const [company, setCompany] = useState(companyId ?? NONE);
@@ -73,8 +71,6 @@ function CreateContactForm({ companyId }: { companyId?: string }) {
 
 	const firstNameId = useId();
 	const lastNameId = useId();
-	const displayNameId = useId();
-	const businessNameId = useId();
 	const emailId = useId();
 	const titleId = useId();
 
@@ -88,8 +84,6 @@ function CreateContactForm({ companyId }: { companyId?: string }) {
 				await setOpen(null);
 				setFirstName("");
 				setLastName("");
-				setDisplayName("");
-				setBusinessName("");
 				setEmail("");
 				setTitle("");
 				openRecord({ kind: "contact", id: contact.id });
@@ -118,10 +112,8 @@ function CreateContactForm({ companyId }: { companyId?: string }) {
 					onSubmit={(event) => {
 						event.preventDefault();
 						create.mutate({
-							displayName: displayName || undefined,
 							firstName,
 							lastName: lastName || undefined,
-							businessName: businessName || undefined,
 							email: email || undefined,
 							title: title || undefined,
 							companyId: company === NONE ? null : company,
@@ -148,28 +140,6 @@ function CreateContactForm({ companyId }: { companyId?: string }) {
 								value={lastName}
 								onChange={(event) => setLastName(event.target.value)}
 								autoComplete="off"
-							/>
-						</Field>
-
-						<Field>
-							<FieldLabel htmlFor={displayNameId}>Display name</FieldLabel>
-							<Input
-								id={displayNameId}
-								value={displayName}
-								onChange={(event) => setDisplayName(event.target.value)}
-								placeholder="The name shown across the CRM"
-								autoComplete="name"
-							/>
-						</Field>
-
-						<Field>
-							<FieldLabel htmlFor={businessNameId}>Business name</FieldLabel>
-							<Input
-								id={businessNameId}
-								value={businessName}
-								onChange={(event) => setBusinessName(event.target.value)}
-								placeholder="Customer business"
-								autoComplete="organization"
 							/>
 						</Field>
 

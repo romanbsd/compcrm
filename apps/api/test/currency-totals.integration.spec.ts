@@ -521,10 +521,9 @@ describe("the dashboard only values what it can convert", () => {
 		await db.deal.deleteMany({ where: { id: { in: [open.id, unvalued.id] } } });
 	});
 
-	it("shows the primary contact for a project without a company", async () => {
+	it("does not infer a primary contact for a project without a company", async () => {
 		const contact = await db.contact.create({
 			data: {
-				displayName: "Dashboard Homeowner",
 				firstName: "Homeowner",
 				lastName: "Contact",
 				email: `dashboard-contact@${domain}`,
@@ -541,7 +540,7 @@ describe("the dashboard only values what it can convert", () => {
 				baseAmount: 999_999,
 				baseCurrency: "USD",
 				contacts: {
-					create: { contactId: contact.id, isPrimary: true },
+					create: { contactId: contact.id },
 				},
 			},
 			select: { id: true },
@@ -552,12 +551,7 @@ describe("the dashboard only values what it can convert", () => {
 			summary.biggestOpen.find((deal) => deal.id === project.id),
 		).toMatchObject({
 			company: null,
-			primaryContact: {
-				id: contact.id,
-				displayName: "Dashboard Homeowner",
-				firstName: "Homeowner",
-				lastName: "Contact",
-			},
+			primaryContact: null,
 		});
 
 		await db.deal.delete({ where: { id: project.id } });

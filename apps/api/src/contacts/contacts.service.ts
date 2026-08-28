@@ -117,12 +117,10 @@ export class ContactsService {
 				orderBy: resolveOrderBy(input, SORTABLE, [{ createdAt: "desc" }]),
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,
 					title: true,
-					businessName: true,
 					imageUrl: true,
 					source: true,
 					company: { select: COMPANY_SELECT },
@@ -159,13 +157,11 @@ export class ContactsService {
 			where: { id },
 			select: {
 				id: true,
-				displayName: true,
 				firstName: true,
 				lastName: true,
 				email: true,
 				phone: true,
 				title: true,
-				businessName: true,
 				linkedinUrl: true,
 				twitterUrl: true,
 				githubUrl: true,
@@ -269,11 +265,6 @@ export class ContactsService {
 		const email = normalizeEmail(input.email ?? "");
 		const firstName = input.firstName.trim();
 		const lastName = blankToNull(input.lastName ?? "");
-		const displayName = resolveDisplayName(
-			firstName,
-			lastName,
-			blankToNull(input.displayName ?? ""),
-		);
 
 		if (email) {
 			const existing = await this.db.contact.findFirst({
@@ -283,7 +274,6 @@ export class ContactsService {
 				},
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 				},
@@ -308,19 +298,16 @@ export class ContactsService {
 
 			const created = await tx.contact.create({
 				data: {
-					displayName,
 					firstName,
 					lastName,
 					email,
 					phone: blankToNull(input.phone ?? ""),
 					title: blankToNull(input.title ?? ""),
-					businessName: blankToNull(input.businessName ?? ""),
 					companyId,
 					ownerId: input.ownerId ?? null,
 				},
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,
@@ -362,7 +349,6 @@ export class ContactsService {
 
 		return {
 			id: contact.id,
-			displayName: contact.displayName,
 			firstName: contact.firstName,
 			lastName: contact.lastName,
 		};
@@ -373,7 +359,7 @@ export class ContactsService {
 			const contact = await this.db.contact.update({
 				where: { id },
 				data: { archivedAt: new Date() },
-				select: { displayName: true, firstName: true, lastName: true },
+				select: { firstName: true, lastName: true },
 			});
 
 			this.logger.log({ message: "Contact archived", contactId: id });
@@ -389,7 +375,7 @@ export class ContactsService {
 			const contact = await this.db.contact.update({
 				where: { id },
 				data: { archivedAt: null },
-				select: { displayName: true, firstName: true, lastName: true },
+				select: { firstName: true, lastName: true },
 			});
 
 			this.logger.log({ message: "Contact restored", contactId: id });
@@ -440,7 +426,6 @@ export class ContactsService {
 				const contact = await tx.contact.delete({
 					where: { id },
 					select: {
-						displayName: true,
 						firstName: true,
 						lastName: true,
 						email: true,
@@ -496,24 +481,6 @@ export class ContactsService {
 	async update(id: string, input: ContactUpdateInput) {
 		const data: Prisma.ContactUpdateInput = {};
 
-		if (input.displayName !== undefined) {
-			const provided = blankToNull(input.displayName);
-			if (provided === null) {
-				const current = await this.db.contact.findUnique({
-					where: { id },
-					select: { firstName: true, lastName: true },
-				});
-				data.displayName = resolveDisplayName(
-					input.firstName?.trim() ?? current?.firstName ?? "",
-					input.lastName !== undefined
-						? blankToNull(input.lastName)
-						: (current?.lastName ?? null),
-					provided,
-				);
-			} else {
-				data.displayName = provided;
-			}
-		}
 		if (input.firstName !== undefined) data.firstName = input.firstName.trim();
 		if (input.lastName !== undefined)
 			data.lastName = blankToNull(input.lastName);
@@ -522,8 +489,6 @@ export class ContactsService {
 		if (input.email !== undefined) data.email = email;
 		if (input.phone !== undefined) data.phone = blankToNull(input.phone);
 		if (input.title !== undefined) data.title = blankToNull(input.title);
-		if (input.businessName !== undefined)
-			data.businessName = blankToNull(input.businessName);
 		if (input.linkedinUrl !== undefined) {
 			data.linkedinUrl = blankToNull(input.linkedinUrl);
 		}
@@ -555,7 +520,6 @@ export class ContactsService {
 					data,
 					select: {
 						id: true,
-						displayName: true,
 						firstName: true,
 						lastName: true,
 					},
@@ -693,7 +657,6 @@ export class ContactsService {
 							take: 4,
 							select: {
 								id: true,
-								displayName: true,
 								firstName: true,
 								lastName: true,
 								title: true,
@@ -835,7 +798,6 @@ export class ContactsService {
 
 		return {
 			OR: [
-				{ displayName: { contains: term, mode: "insensitive" } },
 				{ firstName: { contains: term, mode: "insensitive" } },
 				{ lastName: { contains: term, mode: "insensitive" } },
 				{ email: { contains: term, mode: "insensitive" } },
@@ -970,16 +932,4 @@ export class ContactsService {
 		}
 		throw cause;
 	}
-}
-
-function resolveDisplayName(
-	firstName: string,
-	lastName: string | null,
-	displayName: string | null | undefined,
-): string {
-	return contactName({
-		firstName,
-		lastName,
-		displayName: displayName ?? undefined,
-	});
 }

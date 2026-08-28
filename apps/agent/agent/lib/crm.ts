@@ -29,7 +29,6 @@ export async function contactsNeedingWork(limit: number): Promise<WorkItem[]> {
 		select: {
 			id: true,
 			email: true,
-			displayName: true,
 			firstName: true,
 			lastName: true,
 			title: true,
@@ -65,7 +64,6 @@ export async function personForVerification(
 	const contact = await db.contact.findUnique({
 		where: { id: contactId },
 		select: {
-			displayName: true,
 			firstName: true,
 			lastName: true,
 			title: true,
@@ -171,7 +169,6 @@ export async function readCrmHistory(
 		where: { id: contactId },
 		select: {
 			id: true,
-			displayName: true,
 			firstName: true,
 			lastName: true,
 			email: true,
@@ -254,7 +251,6 @@ export async function readCrmHistory(
 					where: { companyId: contact.companyId, id: { not: contactId } },
 					select: {
 						id: true,
-						displayName: true,
 						firstName: true,
 						lastName: true,
 						title: true,

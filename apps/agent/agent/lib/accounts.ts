@@ -1,7 +1,7 @@
 import { ActivityType, type DealStage, db, EmailDirection } from "@crm/db";
 import { isOpenStage } from "@crm/db/deal-stage";
 import { z } from "zod";
-import { contactName, isDerivedName, primaryFirst } from "./names";
+import { contactName, isDerivedName } from "./names";
 
 const BODY_LIMIT = 4000;
 
@@ -134,7 +134,6 @@ export async function readCompanyHistory(
 				take: options.people ?? 25,
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 					title: true,
@@ -170,7 +169,6 @@ export async function readCompanyHistory(
 							contact: {
 								select: {
 									id: true,
-									displayName: true,
 									firstName: true,
 									lastName: true,
 								},
@@ -191,7 +189,6 @@ export async function readCompanyHistory(
 							contact: {
 								select: {
 									id: true,
-									displayName: true,
 									firstName: true,
 									lastName: true,
 								},
@@ -334,7 +331,6 @@ export type DealHistory = {
 		title: string | null;
 		email: string | null;
 		role: string | null;
-		isPrimary: boolean;
 	}[];
 	stageHistory: { from: string | null; to: string | null; at: string }[];
 	threads: AccountThread[];
@@ -379,11 +375,9 @@ export async function readDealHistory(
 			contacts: {
 				select: {
 					role: true,
-					isPrimary: true,
 					contact: {
 						select: {
 							id: true,
-							displayName: true,
 							firstName: true,
 							lastName: true,
 							title: true,
@@ -399,7 +393,7 @@ export async function readDealHistory(
 	const includeEmail = options.includeEmail ?? true;
 	const includeCalendar = options.includeCalendar ?? true;
 
-	const contacts = [...deal.contacts].sort(primaryFirst);
+	const contacts = [...deal.contacts];
 	const contactIds = contacts.map(({ contact }) => contact.id);
 
 	const relatedThreads = {
@@ -440,7 +434,6 @@ export async function readDealHistory(
 							contact: {
 								select: {
 									id: true,
-									displayName: true,
 									firstName: true,
 									lastName: true,
 								},
@@ -505,13 +498,12 @@ export async function readDealHistory(
 			createdAt: deal.createdAt.toISOString(),
 		},
 		company: deal.company,
-		people: contacts.map(({ role, isPrimary, contact }) => ({
+		people: contacts.map(({ role, contact }) => ({
 			id: contact.id,
 			name: contactName(contact),
 			title: contact.title,
 			email: contact.email,
 			role,
-			isPrimary,
 		})),
 		stageHistory: stageChanges.map((change) => {
 			const meta = stageChangeMeta.parse(change.meta);
@@ -594,7 +586,6 @@ function toAccountThread(thread: {
 	lastMessageAt: Date;
 	contact: {
 		id: string;
-		displayName?: string;
 		firstName: string;
 		lastName: string | null;
 	} | null;
@@ -652,7 +643,6 @@ function toCompanyDeal(deal: {
 		role: string | null;
 		contact: {
 			id: string;
-			displayName?: string;
 			firstName: string;
 			lastName: string | null;
 		};

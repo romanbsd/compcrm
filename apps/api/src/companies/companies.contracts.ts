@@ -145,7 +145,6 @@ export const companyListOutput = z.object({
 
 const companyDetailContactOutput = z.object({
 	id: z.string(),
-	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),
@@ -167,7 +166,6 @@ const companyDetailDealOutput = z.object({
 
 const companyDetailPrimaryContactOutput = z.object({
 	id: z.string(),
-	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),

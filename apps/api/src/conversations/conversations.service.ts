@@ -174,7 +174,6 @@ export class ConversationsService {
 				where: contains
 					? {
 							OR: [
-								{ displayName: contains },
 								{ firstName: contains },
 								{ lastName: contains },
 								{ email: contains },
@@ -185,7 +184,6 @@ export class ConversationsService {
 				take: 6,
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,

@@ -50,7 +50,6 @@ beforeAll(async () => {
 
 	const paula = await db.contact.create({
 		data: {
-			displayName: `Paula Customer ${suffix}`,
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -61,6 +60,10 @@ beforeAll(async () => {
 		select: { id: true },
 	});
 	paulaId = paula.id;
+	await db.company.update({
+		where: { id: northwindId },
+		data: { primaryContactId: paulaId },
+	});
 
 	const peter = await db.contact.create({
 		data: {
@@ -122,7 +125,7 @@ beforeAll(async () => {
 	noCompanyDealId = noCompanyDeal.id;
 	expect(noCompanyDeal.stage).toBe(DealStage.LEAD);
 	await db.dealContact.create({
-		data: { dealId: noCompanyDeal.id, contactId: paulaId, isPrimary: true },
+		data: { dealId: noCompanyDeal.id, contactId: paulaId },
 	});
 });
 
@@ -180,14 +183,14 @@ describe("searchCrm", () => {
 		expect(result.companies[0]?.id).toBe(northwindId);
 	});
 
-	it("finds and returns a contact by display name", async () => {
-		const result = await searchCrm(`Paula Customer ${suffix}`, {
+	it("finds and returns a contact by name", async () => {
+		const result = await searchCrm("Paula Marchetti", {
 			kinds: ["contact"],
 		});
 
 		expect(result.contacts[0]).toMatchObject({
 			id: paulaId,
-			name: `Paula Customer ${suffix}`,
+			name: "Paula Marchetti",
 		});
 	});
 
@@ -271,7 +274,7 @@ describe("listDeals", () => {
 			result.deals.find((deal) => deal.id === noCompanyDealId),
 		).toMatchObject({
 			company: null,
-			primaryContact: { id: paulaId, name: `Paula Customer ${suffix}` },
+			primaryContact: null,
 		});
 	});
 

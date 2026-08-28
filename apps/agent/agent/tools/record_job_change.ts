@@ -38,7 +38,6 @@ export default defineTool({
 		const contact = await db.contact.findUnique({
 			where: { id: contactId },
 			select: {
-				displayName: true,
 				firstName: true,
 				lastName: true,
 				ownerId: true,

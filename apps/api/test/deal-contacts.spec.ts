@@ -67,15 +67,17 @@ beforeAll(async () => {
 
 	const champion = await db.contact.create({
 		data: {
-			displayName: "Ada Champion",
 			firstName: "Ada",
 			lastName: "Champion",
-			businessName: "Champion Builders",
 			companyId,
 		},
 		select: { id: true },
 	});
 	championId = champion.id;
+	await db.company.update({
+		where: { id: companyId },
+		data: { primaryContactId: championId },
+	});
 
 	const colleague = await db.contact.create({
 		data: { firstName: "Beau", lastName: "Colleague", companyId },
@@ -123,7 +125,7 @@ describe("bringing a contact onto a deal", () => {
 		await deals.purge(project.id);
 	});
 
-	it("lists the primary project contact separately from its customer", async () => {
+	it("lists the company primary contact separately from its customer", async () => {
 		const project = await deals.create({
 			name: `Primary contact project ${suffix}`,
 			companyId,
@@ -132,7 +134,6 @@ describe("bringing a contact onto a deal", () => {
 		await deals.attachContact({
 			dealId: project.id,
 			contactId: championId,
-			isPrimary: true,
 		});
 
 		const list = await deals.list({
@@ -155,31 +156,32 @@ describe("bringing a contact onto a deal", () => {
 			company: { id: companyId },
 			primaryContact: {
 				id: championId,
-				displayName: "Ada Champion",
 				firstName: "Ada",
 				lastName: "Champion",
-				businessName: "Champion Builders",
 			},
 		});
 		expect(companyRow?.company?.id).toBe(companyId);
-		expect(companyRow?.primaryContact).toBeNull();
+		expect(companyRow?.primaryContact).toMatchObject({
+			id: championId,
+			firstName: "Ada",
+			lastName: "Champion",
+		});
 
 		await deals.purge(project.id);
 	});
 
-	it("finds customer projects by their primary contact", async () => {
-		const displayNameProject = await deals.create({
-			name: `Display name project ${suffix}`,
+	it("finds customer projects by an attached contact", async () => {
+		const contactProject = await deals.create({
+			name: `Contact project ${suffix}`,
 			companyId,
 			ownerId: userId,
 		});
 		await deals.attachContact({
-			dealId: displayNameProject.id,
+			dealId: contactProject.id,
 			contactId: championId,
-			isPrimary: true,
 		});
 
-		const displayNameMatches = await deals.list({
+		const contactMatches = await deals.list({
 			q: "Ada Champion",
 			page: 1,
 			pageSize: 100,
@@ -192,8 +194,8 @@ describe("bringing a contact onto a deal", () => {
 			fields: {},
 			archived: false,
 		});
-		expect(displayNameMatches.rows.map((row) => row.id)).toContain(
-			displayNameProject.id,
+		expect(contactMatches.rows.map((row) => row.id)).toContain(
+			contactProject.id,
 		);
 
 		const nameProject = await deals.create({
@@ -204,7 +206,6 @@ describe("bringing a contact onto a deal", () => {
 		await deals.attachContact({
 			dealId: nameProject.id,
 			contactId: colleagueId,
-			isPrimary: true,
 		});
 
 		const nameMatches = await deals.list({
@@ -222,7 +223,7 @@ describe("bringing a contact onto a deal", () => {
 		});
 		expect(nameMatches.rows.map((row) => row.id)).toContain(nameProject.id);
 
-		await deals.purge(displayNameProject.id);
+		await deals.purge(contactProject.id);
 		await deals.purge(nameProject.id);
 	});
 
@@ -277,8 +278,8 @@ describe("bringing a contact onto a deal", () => {
 		expect(deal.contacts).toHaveLength(1);
 		expect(deal.contacts[0]?.id).toBe(championId);
 		expect(deal.contacts[0]?.role).toBe("Champion");
-		expect(deal.contacts[0]?.displayName).toBe("Ada Champion");
-		expect(deal.contacts[0]?.businessName).toBe("Champion Builders");
+		expect(deal.contacts[0]?.firstName).toBe("Ada");
+		expect(deal.contacts[0]?.lastName).toBe("Champion");
 	});
 
 	it("stops offering somebody already on it", async () => {
@@ -337,25 +338,23 @@ describe("bringing a contact onto a deal", () => {
 		).rejects.toThrow("That contact is not on this project.");
 	});
 
-	it("allows only one primary contact per deal", async () => {
+	it("allows multiple contacts per deal", async () => {
 		await deals.attachContact({
 			dealId,
 			contactId: championId,
-			isPrimary: true,
 		});
 		await deals.attachContact({
 			dealId,
 			contactId: colleagueId,
-			isPrimary: true,
 		});
 
 		const links = await db.dealContact.findMany({
 			where: { dealId },
-			select: { contactId: true, isPrimary: true },
+			select: { contactId: true, role: true },
 		});
-		expect(links.filter((link) => link.isPrimary)).toEqual([
-			{ contactId: colleagueId, isPrimary: true },
-		]);
+		expect(links.map((link) => link.contactId)).toEqual(
+			expect.arrayContaining([championId, colleagueId]),
+		);
 	});
 
 	it("allows draft documents without an issue date", async () => {

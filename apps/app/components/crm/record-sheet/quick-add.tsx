@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@crm/ui/components/button";
-import { Checkbox } from "@crm/ui/components/checkbox";
 import { DatePicker } from "@crm/ui/components/date-picker";
 import { Field, FieldLabel } from "@crm/ui/components/field";
 import { Input } from "@crm/ui/components/input";
@@ -74,15 +73,11 @@ export function QuickAddContact({
 
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
-	const [displayName, setDisplayName] = useState("");
-	const [businessName, setBusinessName] = useState("");
 	const [email, setEmail] = useState("");
 	const [title, setTitle] = useState("");
 
 	const firstNameId = useId();
 	const lastNameId = useId();
-	const displayNameId = useId();
-	const businessNameId = useId();
 	const emailId = useId();
 	const titleId = useId();
 
@@ -105,10 +100,8 @@ export function QuickAddContact({
 			onCancel={onDone}
 			onSubmit={() =>
 				create.mutate({
-					displayName: displayName || undefined,
 					firstName,
 					lastName: lastName || undefined,
-					businessName: businessName || undefined,
 					email: email || undefined,
 					title: title || undefined,
 					companyId,
@@ -124,26 +117,6 @@ export function QuickAddContact({
 					value={firstName}
 					onChange={(event) => setFirstName(event.target.value)}
 					autoComplete="off"
-				/>
-			</Field>
-			<Field>
-				<FieldLabel htmlFor={displayNameId}>Display name</FieldLabel>
-				<Input
-					id={displayNameId}
-					value={displayName}
-					onChange={(event) => setDisplayName(event.target.value)}
-					placeholder="Shown across the CRM"
-					autoComplete="name"
-				/>
-			</Field>
-			<Field>
-				<FieldLabel htmlFor={businessNameId}>Business name</FieldLabel>
-				<Input
-					id={businessNameId}
-					value={businessName}
-					onChange={(event) => setBusinessName(event.target.value)}
-					placeholder="Customer business"
-					autoComplete="organization"
 				/>
 			</Field>
 			<Field>
@@ -193,7 +166,6 @@ export function AttachDealContact({
 
 	const [contactId, setContactId] = useState("");
 	const [role, setRole] = useState("");
-	const [isPrimary, setIsPrimary] = useState(false);
 
 	const personId = useId();
 	const roleId = useId();
@@ -240,7 +212,6 @@ export function AttachDealContact({
 					dealId,
 					contactId,
 					role: role.trim() || null,
-					isPrimary,
 				})
 			}
 		>
@@ -268,16 +239,6 @@ export function AttachDealContact({
 					onChange={(event) => setRole(event.target.value)}
 					placeholder="Champion"
 					autoComplete="off"
-				/>
-			</Field>
-			<Field orientation="horizontal">
-				<FieldLabel htmlFor="attach-project-primary">
-					Primary customer
-				</FieldLabel>
-				<Checkbox
-					id="attach-project-primary"
-					checked={isPrimary}
-					onCheckedChange={(checked) => setIsPrimary(checked === true)}
 				/>
 			</Field>
 		</QuickAddForm>

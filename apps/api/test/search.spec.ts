@@ -14,13 +14,11 @@ beforeAll(async () => {
 	await db.contact.createMany({
 		data: [
 			{
-				displayName: `Preferred ${suffix}`,
 				firstName: "Stored",
 				lastName: "Names",
 				email: displayEmail,
 			},
 			{
-				displayName: "",
 				firstName: "Legacy",
 				lastName: "Contact",
 				email: fallbackEmail,
@@ -36,13 +34,13 @@ afterAll(async () => {
 });
 
 describe("SearchService", () => {
-	it("matches and returns a contact display name", async () => {
-		const result = await search.quick(`Preferred ${suffix}`);
+	it("matches and returns a contact name", async () => {
+		const result = await search.quick("Stored");
 
 		expect(result.hits).toContainEqual({
 			kind: "contact",
 			id: expect.any(String),
-			label: `Preferred ${suffix}`,
+			label: "Stored Names",
 			detail: displayEmail,
 			iconUrl: null,
 			iconDarkUrl: null,

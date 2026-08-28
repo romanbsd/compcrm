@@ -42,7 +42,6 @@ beforeAll(async () => {
 
 	const paula = await db.contact.create({
 		data: {
-			displayName: "Paula Customer",
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -78,7 +77,7 @@ beforeAll(async () => {
 			expectedCloseDate: daysAhead(14),
 			lastActivityAt: daysAgo(3),
 			contacts: {
-				create: [{ contactId: paulaId, role: "Champion", isPrimary: true }],
+				create: [{ contactId: paulaId, role: "Champion" }],
 			},
 		},
 		select: { id: true },
@@ -248,7 +247,7 @@ describe("readCompanyHistory", () => {
 		expect(deal?.open).toBe(true);
 		expect(deal?.amount).toBe(48_000);
 		expect(deal?.contacts).toEqual([
-			{ id: paulaId, name: "Paula Customer", role: "Champion" },
+			{ id: paulaId, name: "Paula Marchetti", role: "Champion" },
 		]);
 		expect(history?.stats.openDeals).toBe(1);
 	});
@@ -331,11 +330,10 @@ describe("readDealHistory", () => {
 		expect(history?.people).toEqual([
 			{
 				id: paulaId,
-				name: "Paula Customer",
+				name: "Paula Marchetti",
 				title: "Growth Specialist",
 				email: `paula.marchetti@${domain}`,
 				role: "Champion",
-				isPrimary: true,
 			},
 		]);
 		expect(history?.company.id).toBe(companyId);

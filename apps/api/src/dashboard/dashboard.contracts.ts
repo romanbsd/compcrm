@@ -33,12 +33,10 @@ const linkedRecordOutput = z.object({ id: z.string(), name: z.string() });
 
 const primaryContactOutput = z.object({
 	id: z.string(),
-	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),
 	title: z.string().nullable(),
-	businessName: z.string().nullable(),
 	imageUrl: z.string().nullable(),
 });
 

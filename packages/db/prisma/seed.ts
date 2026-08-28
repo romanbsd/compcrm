@@ -846,7 +846,7 @@ async function seedDeals(
 				(contact) => contact.companyId === company.id,
 			);
 			const attached = companyContacts.slice(0, integer(1, 2));
-			for (const [position, contact] of attached.entries()) {
+			for (const contact of attached) {
 				const existing = await db.dealContact.findUnique({
 					where: { dealId_contactId: { dealId: id, contactId: contact.id } },
 					select: { dealId: true },
@@ -857,7 +857,6 @@ async function seedDeals(
 							dealId: id,
 							contactId: contact.id,
 							role: chance(0.5) ? "Champion" : "Decision maker",
-							isPrimary: position === 0,
 						},
 					});
 				}

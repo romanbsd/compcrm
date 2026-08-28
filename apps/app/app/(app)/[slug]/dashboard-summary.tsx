@@ -343,7 +343,6 @@ function DealCell({
 		iconTone: string | null;
 	} | null;
 	primaryContact: {
-		displayName: string;
 		firstName: string;
 		lastName: string | null;
 		email: string | null;

@@ -118,7 +118,6 @@ export const dealAttachContactInput = z.object({
 	dealId: z.string(),
 	contactId: z.string().min(1, "Choose somebody to bring onto the project."),
 	role: dealContactRole.optional(),
-	isPrimary: z.boolean().optional(),
 });
 
 export type DealAttachContactInput = z.infer<typeof dealAttachContactInput>;
@@ -134,7 +133,6 @@ export const dealContactRoleInput = z.object({
 	dealId: z.string(),
 	contactId: z.string(),
 	role: dealContactRole,
-	isPrimary: z.boolean().optional(),
 });
 
 export type DealContactRoleInput = z.infer<typeof dealContactRoleInput>;
@@ -209,18 +207,15 @@ const dealCompanyDetailOutput = dealCompanyOutput.extend({
 
 const dealContactSummaryOutput = z.object({
 	id: z.string(),
-	displayName: z.string(),
 	firstName: z.string(),
 	lastName: z.string().nullable(),
 	email: z.string().nullable(),
 	title: z.string().nullable(),
-	businessName: z.string().nullable(),
 	imageUrl: z.string().nullable(),
 });
 
 const dealContactOutput = dealContactSummaryOutput.extend({
 	role: z.string().nullable(),
-	isPrimary: z.boolean(),
 });
 
 const dealListRowOutput = z.object({
@@ -328,15 +323,12 @@ export const dealContactLinkOutput = z.object({
 
 export type DealContactLink = z.infer<typeof dealContactLinkOutput>;
 
-export const dealContactAttachOutput = dealContactLinkOutput.extend({
-	isPrimary: z.boolean(),
-});
+export const dealContactAttachOutput = dealContactLinkOutput;
 
 export const dealContactRoleOutput = z.object({
 	dealId: z.string(),
 	contactId: z.string(),
 	role: z.string().nullable(),
-	isPrimary: z.boolean(),
 });
 
 export type DealContactRoleResult = z.infer<typeof dealContactRoleOutput>;

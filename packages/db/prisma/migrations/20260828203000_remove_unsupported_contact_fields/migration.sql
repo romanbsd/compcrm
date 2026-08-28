@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE "contact" DROP COLUMN IF EXISTS "displayName";
+ALTER TABLE "contact" DROP COLUMN IF EXISTS "businessName";
+ALTER TABLE "dealContact" DROP COLUMN IF EXISTS "isPrimary";
+
+COMMIT;

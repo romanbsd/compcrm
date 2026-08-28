@@ -338,20 +338,6 @@ function ContactOverview({ contact }: { contact: Contact }) {
 						onSave={(lastName) => save({ lastName })}
 					/>
 					<InlineField
-						label="Display name"
-						value={contact.displayName}
-						placeholder="Shown across the CRM"
-						saving={isSaving("displayName")}
-						onSave={(displayName) => save({ displayName })}
-					/>
-					<InlineField
-						label="Business name"
-						value={contact.businessName}
-						placeholder="Customer business"
-						saving={isSaving("businessName")}
-						onSave={(businessName) => save({ businessName })}
-					/>
-					<InlineField
 						label="Title"
 						value={contact.title}
 						placeholder="Head of Security"

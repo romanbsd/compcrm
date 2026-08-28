@@ -62,7 +62,6 @@ beforeAll(async () => {
 	});
 	const contact = await db.contact.create({
 		data: {
-			displayName: "Conversation Alias",
 			firstName: "Conversation",
 			lastName: "Subject",
 			email,
@@ -94,13 +93,13 @@ describe("ConversationsService", () => {
 		expect(await service.list({ contactId }, userId)).toEqual([]);
 	});
 
-	it("finds a builder contact by display name and renders it", async () => {
+	it("finds a builder contact by name and renders it", async () => {
 		expect(
-			await service.builderResources("Conversation Alias", userId),
+			await service.builderResources("Conversation", userId),
 		).toContainEqual({
 			kind: "contact",
 			id: contactId,
-			label: "Conversation Alias",
+			label: "Conversation Subject",
 			detail: email,
 			imageUrl: null,
 		});

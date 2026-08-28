@@ -39,7 +39,7 @@ const ENTRY_SELECT = {
 	createdBy: { select: AUTHOR_SELECT },
 	company: { select: { id: true, name: true } },
 	contact: {
-		select: { id: true, displayName: true, firstName: true, lastName: true },
+		select: { id: true, firstName: true, lastName: true },
 	},
 	deal: { select: { id: true, name: true } },
 

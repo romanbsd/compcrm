@@ -193,7 +193,6 @@ export class CompaniesService {
 				primaryContact: {
 					select: {
 						id: true,
-						displayName: true,
 						firstName: true,
 						lastName: true,
 						email: true,
@@ -205,7 +204,6 @@ export class CompaniesService {
 					orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
 					select: {
 						id: true,
-						displayName: true,
 						firstName: true,
 						lastName: true,
 						email: true,

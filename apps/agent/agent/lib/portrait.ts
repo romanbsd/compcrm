@@ -110,7 +110,6 @@ export async function runPortrait({
 		where: { id: contactId },
 		select: {
 			id: true,
-			displayName: true,
 			firstName: true,
 			lastName: true,
 			imageUrl: true,

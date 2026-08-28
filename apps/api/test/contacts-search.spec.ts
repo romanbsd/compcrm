@@ -24,7 +24,6 @@ beforeAll(async () => {
 	await db.contact.deleteMany({ where: { email } });
 	await db.contact.create({
 		data: {
-			displayName: `Preferred ${suffix}`,
 			firstName: "Stored",
 			lastName: "Names",
 			email: email,
@@ -37,15 +36,14 @@ afterAll(async () => {
 });
 
 describe("ContactsService search", () => {
-	it("matches a contact display name in the contact list", async () => {
-		const result = await contacts.list(
-			contactListInput.parse({ q: `Preferred ${suffix}` }),
-		);
+	it("matches a contact name in the contact list", async () => {
+		const result = await contacts.list(contactListInput.parse({ q: "Stored" }));
 
 		expect(result.rows).toContainEqual(
 			expect.objectContaining({
 				email,
-				displayName: `Preferred ${suffix}`,
+				firstName: "Stored",
+				lastName: "Names",
 			}),
 		);
 	});

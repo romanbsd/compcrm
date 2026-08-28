@@ -26,11 +26,7 @@ import {
 	type StampTargets,
 } from "../crm/activity-stamp.service";
 import { type BulkResult, requireOwner, runBulk } from "../crm/bulk";
-import {
-	CONTACT_SELECT,
-	PRIMARY_CONTACT_SELECT,
-	primaryContactOf,
-} from "../crm/selects";
+import { CONTACT_SELECT } from "../crm/selects";
 import {
 	blankToNull,
 	decimalFromCents,
@@ -149,8 +145,12 @@ export class DealsService {
 						baseAmount: true,
 						expectedCloseDate: true,
 						closedAt: true,
-						company: { select: COMPANY_SELECT },
-						...PRIMARY_CONTACT_SELECT,
+						company: {
+							select: {
+								...COMPANY_SELECT,
+								primaryContact: { select: CONTACT_SELECT },
+							},
+						},
 						owner: { select: OWNER_SELECT },
 						lastActivityAt: true,
 						createdAt: true,
@@ -181,20 +181,29 @@ export class DealsService {
 					lastActivityAt,
 					createdAt,
 					archivedAt,
-					contacts,
+					company,
 					...row
-				}) => ({
-					...row,
-					primaryContact: primaryContactOf({ contacts }),
-					amountCents: toCents(amount),
-					baseAmountCents: toCents(baseAmount),
-					expectedCloseDate: expectedCloseDate?.toISOString() ?? null,
-					closedAt: closedAt?.toISOString() ?? null,
-					lastActivityAt: lastActivityAt?.toISOString() ?? null,
-					createdAt: createdAt.toISOString(),
-					archivedAt: archivedAt?.toISOString() ?? null,
-					fields: tableFields.get(row.id) ?? {},
-				}),
+				}) => {
+					const primaryContact = company?.primaryContact ?? null;
+					const companySummary = company
+						? (({ primaryContact: _primaryContact, ...summary }) => summary)(
+								company,
+							)
+						: null;
+					return {
+						...row,
+						company: companySummary,
+						primaryContact,
+						amountCents: toCents(amount),
+						baseAmountCents: toCents(baseAmount),
+						expectedCloseDate: expectedCloseDate?.toISOString() ?? null,
+						closedAt: closedAt?.toISOString() ?? null,
+						lastActivityAt: lastActivityAt?.toISOString() ?? null,
+						createdAt: createdAt.toISOString(),
+						archivedAt: archivedAt?.toISOString() ?? null,
+						fields: tableFields.get(row.id) ?? {},
+					};
+				},
 			),
 			total,
 			facetCounts,
@@ -239,7 +248,6 @@ export class DealsService {
 				contacts: {
 					select: {
 						role: true,
-						isPrimary: true,
 						contact: { select: CONTACT_SELECT },
 					},
 					orderBy: { contact: { firstName: "asc" } },
@@ -274,10 +282,9 @@ export class DealsService {
 			closedAt: deal.closedAt?.toISOString() ?? null,
 			createdAt: deal.createdAt.toISOString(),
 			archivedAt: archivedAt?.toISOString() ?? null,
-			contacts: contacts.map(({ role, isPrimary, contact }) => ({
+			contacts: contacts.map(({ role, contact }) => ({
 				...contact,
 				role,
-				isPrimary,
 			})),
 		};
 	}
@@ -659,10 +666,6 @@ export class DealsService {
 				throw new NotFoundException(`No contact with id ${input.contactId}.`);
 			}
 
-			if (input.isPrimary === true) {
-				await demoteOtherPrimaries(tx, input.dealId, input.contactId);
-			}
-
 			const existing = await tx.dealContact.findUnique({
 				where: {
 					dealId_contactId: {
@@ -670,7 +673,6 @@ export class DealsService {
 						contactId: input.contactId,
 					},
 				},
-				select: { isPrimary: true },
 			});
 			if (existing) {
 				return tx.dealContact.update({
@@ -682,9 +684,8 @@ export class DealsService {
 					},
 					data: {
 						role: role ?? undefined,
-						isPrimary: input.isPrimary ?? undefined,
 					},
-					select: { dealId: true, contactId: true, isPrimary: true },
+					select: { dealId: true, contactId: true },
 				});
 			}
 
@@ -693,9 +694,8 @@ export class DealsService {
 					dealId: input.dealId,
 					contactId: input.contactId,
 					role,
-					isPrimary: input.isPrimary ?? false,
 				},
-				select: { dealId: true, contactId: true, isPrimary: true },
+				select: { dealId: true, contactId: true },
 			});
 		});
 
@@ -737,22 +737,21 @@ export class DealsService {
 						contactId: input.contactId,
 					},
 				},
-				select: { isPrimary: true },
 			});
 
 			if (!existing) {
 				throw new NotFoundException("That contact is not on this project.");
 			}
 
-			if (input.isPrimary === true) {
-				await demoteOtherPrimaries(tx, input.dealId, input.contactId);
-			}
-
 			await tx.dealContact.update({
-				where: { dealId: input.dealId, contactId: input.contactId },
+				where: {
+					dealId_contactId: {
+						dealId: input.dealId,
+						contactId: input.contactId,
+					},
+				},
 				data: {
 					role,
-					isPrimary: input.isPrimary ?? undefined,
 				},
 			});
 
@@ -760,7 +759,6 @@ export class DealsService {
 				dealId: input.dealId,
 				contactId: input.contactId,
 				role,
-				isPrimary: input.isPrimary ?? existing.isPrimary,
 			};
 		});
 	}
@@ -830,16 +828,9 @@ export class DealsService {
 				{
 					contacts: {
 						some: {
-							isPrimary: true,
 							contact: {
 								AND: contactTerms.map((contactTerm) => ({
 									OR: [
-										{
-											displayName: {
-												contains: contactTerm,
-												mode: "insensitive",
-											},
-										},
 										{
 											firstName: {
 												contains: contactTerm,
@@ -994,17 +985,6 @@ function closingFilter(window: ClosingWindow): Prisma.DealWhereInput {
 
 function roleOrNull(value: string | null): string | null {
 	return value === null ? null : blankToNull(value);
-}
-
-async function demoteOtherPrimaries(
-	tx: Prisma.TransactionClient,
-	dealId: string,
-	contactId: string,
-): Promise<void> {
-	await tx.dealContact.updateMany({
-		where: { dealId, contactId: { not: contactId }, isPrimary: true },
-		data: { isPrimary: false },
-	});
 }
 
 function textOrNull(

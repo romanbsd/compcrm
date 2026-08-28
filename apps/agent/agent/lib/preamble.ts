@@ -1,7 +1,7 @@
 import { db } from "@crm/db";
 import { websiteUrl } from "@crm/db/workspace";
 import { capabilitiesMarkdown } from "./capabilities";
-import { contactName, primaryFirst } from "./names";
+import { contactName } from "./names";
 import { identity, usMarkdown, type WorkspaceIdentity } from "./workspace";
 
 export type Opened = {
@@ -82,7 +82,6 @@ export async function contactPreamble(
 	const contact = await db.contact.findUnique({
 		where: { id: contactId },
 		select: {
-			displayName: true,
 			firstName: true,
 			lastName: true,
 			email: true,
@@ -178,7 +177,6 @@ export async function companyPreamble(
 				take: 12,
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 					title: true,
@@ -263,11 +261,9 @@ export async function dealPreamble(
 			contacts: {
 				select: {
 					role: true,
-					isPrimary: true,
 					contact: {
 						select: {
 							id: true,
-							displayName: true,
 							firstName: true,
 							lastName: true,
 							title: true,
@@ -281,7 +277,6 @@ export async function dealPreamble(
 	if (!deal) return { markdown: await closing(), focus: {} };
 
 	const people = [...deal.contacts]
-		.sort(primaryFirst)
 		.map(({ role, contact }) => {
 			const name = contactName(contact);
 			return `${name}${contact.title ? ` (${contact.title})` : ""}${

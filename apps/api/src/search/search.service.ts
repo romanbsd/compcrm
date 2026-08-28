@@ -46,7 +46,6 @@ export class SearchService {
 			this.db.contact.findMany({
 				where: {
 					OR: [
-						{ displayName: { contains: term, mode: "insensitive" } },
 						{ firstName: { contains: term, mode: "insensitive" } },
 						{ lastName: { contains: term, mode: "insensitive" } },
 						{ email: { contains: term, mode: "insensitive" } },
@@ -56,7 +55,6 @@ export class SearchService {
 				orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
 				select: {
 					id: true,
-					displayName: true,
 					firstName: true,
 					lastName: true,
 					email: true,

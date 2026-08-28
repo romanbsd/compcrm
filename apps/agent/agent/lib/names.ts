@@ -1,12 +1,5 @@
 export { contactName } from "@crm/db/contact-name";
 
-export function primaryFirst(
-	a: { isPrimary: boolean },
-	b: { isPrimary: boolean },
-): number {
-	return Number(b.isPrimary) - Number(a.isPrimary);
-}
-
 export function searchTerms(local: string): string[] {
 	const handle = local.toLowerCase().replace(/[^a-z0-9._-]/g, "");
 	const terms: string[] = [];

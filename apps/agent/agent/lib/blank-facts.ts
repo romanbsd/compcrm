@@ -15,7 +15,6 @@ const MAX_FILLS = 500;
 const CONTACT_SELECT = {
 	id: true,
 	email: true,
-	displayName: true,
 	firstName: true,
 	lastName: true,
 	title: true,
@@ -136,7 +135,6 @@ type Proposal = {
 	score: number;
 	contact: {
 		id: string;
-		displayName: string;
 		email: string | null;
 		firstName: string;
 		lastName: string | null;

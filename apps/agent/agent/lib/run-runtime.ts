@@ -1111,7 +1111,6 @@ async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 			where: { id },
 			select: {
 				id: true,
-				displayName: true,
 				firstName: true,
 				lastName: true,
 				companyId: true,

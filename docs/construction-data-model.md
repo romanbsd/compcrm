@@ -10,25 +10,22 @@ The database has 64 Prisma models. Only a small group is required for the first 
 
 | Existing model | Construction meaning | POC use |
 | --- | --- | --- |
-| `User` | Internal team member | Owns customers, contacts, and Projects. Creates activities and runs bots. This is not a customer. |
-| `Organization` and `Member` | CompCRM workspace and workspace membership | Controls which internal users belong to the contractor's workspace. This is not a customer. |
+| `User` | GC login | The POC has one User and one human role, GC. This login owns customers, contacts, and Projects, creates activities, and runs bots. |
+| `Organization` and `Member` | Inherited access infrastructure | The POC has one Organization, one User, and one Member row with role `owner`. These records provide access only and are not construction workflow entities. |
 | `Company` | Customer | Represents a household or business. Every Project must have one customer. |
-| `Contact` | Person | Represents a homeowner, spouse, business contact, subcontractor, or other person. |
+| `Contact` | Customer person | Represents a homeowner or spouse. |
 | `Deal` | Project | Represents the construction opportunity and job from lead through completion. |
-| `DealContact` | Project Contact | Connects people to a Project and records one optional role plus the primary-contact flag. |
+| `DealContact` | Project Contact | Connects people to a Project and records one optional role. |
 | `Activity` | Project or customer history item | Stores notes, calls, emails, meetings, tasks, and stage changes. |
 | `Artifact` | Project file | Stores the reference to a photo, recording, transcript, plan, or other file. |
 | `Document` | Estimate or invoice | Stores an issued financial document and fixed recipient, contractor, and Project snapshots. |
 | `DocumentLineItem` | Estimate or invoice line | Stores the work or material lines in a Document. |
-| `AgentConversation`, `AgentRun`, `AgentAction` | Secretary and PM bot records | Stores bot conversations, executions, and actions, with optional Project context. |
+| `AgentConversation`, `AgentRun`, `AgentAction` | Automation records | Stores bot conversations, executions, and actions, with optional Project context. |
 
 ## Core construction relationship
 
 ```mermaid
 erDiagram
-    ORGANIZATION ||--o{ MEMBER : includes
-    USER ||--o{ MEMBER : joins
-
     USER o|--o{ COMPANY : owns
     COMPANY ||--o{ DEAL : customer_for
     COMPANY o|--o{ CONTACT : groups
@@ -58,10 +55,10 @@ For a household, `Company.name` can contain the household display name and the s
 | --- | --- | --- |
 | GC and CRM | `Company`, `CompanyEnrichment`, `Contact`, `ContactFact`, `ContactBrief`, `Deal`, `DealContact`, `Activity`, `Artifact`, `Document`, `DocumentLineItem`, `ExchangeRate` | `Company`, `Contact`, `Deal`, `DealContact`, `Activity`, `Artifact`, `Document`, and `DocumentLineItem` are in the GC flow. |
 | Custom fields and views | `FieldDefinition`, `FieldOption`, `FieldValue`, `SavedView` | Optional CRM support. |
-| Agents | `AgentTask`, `XmppAgentTask`, `AgentEvent`, `AgentConversation`, `AgentConversationFeedback`, `AgentConversationShare`, `AgentConversationSubmission`, `AgentConversationAttachment`, `AgentDefinition`, `AgentVersion`, `AgentBuilderArtifact`, `AgentTrigger`, `AgentRun`, `AgentRunEvent`, `AgentAction`, `AgentAuditEvent` | Supports the Secretary bot, PM bot, and agent builder. |
+| Agents | `AgentTask`, `XmppAgentTask`, `AgentEvent`, `AgentConversation`, `AgentConversationFeedback`, `AgentConversationShare`, `AgentConversationSubmission`, `AgentConversationAttachment`, `AgentDefinition`, `AgentVersion`, `AgentBuilderArtifact`, `AgentTrigger`, `AgentRun`, `AgentRunEvent`, `AgentAction`, `AgentAuditEvent` | Supports construction automation and the agent builder. |
 | Email and calendar | `MailboxSync`, `EmailThread`, `EmailMessage`, `CalendarEvent`, `CalendarAttendee` | Supports customer communication and scheduling. |
 | Tracking and forms | `SuppressedDomain`, `SuppressedContact`, `TrackedDomain`, `TrackedVisitor`, `TrackedEvent`, `TrackingCounter`, `TrackedPageDaily`, `FormSubmission` | No required role in the first GC flow. |
-| Authentication and workspace | `User`, `Session`, `Account`, `Verification`, `RateLimit`, `Organization`, `WorkspaceProfile`, `Member`, `Invitation`, `SsoProvider`, `Apikey` | Supports sign-in, users, access, and workspace membership. |
+| Authentication and workspace | `User`, `Session`, `Account`, `Verification`, `RateLimit`, `Organization`, `WorkspaceProfile`, `Member`, `Invitation`, `SsoProvider`, `Apikey` | Supports sign-in and inherited access infrastructure. |
 | Slack | `SlackMemberMatch`, `SlackChannel`, `SlackInstallation`, `SlackWorkspaceGrant` | No required role in the first GC flow. |
 | System and telemetry | `AppSetting`, `Install`, `TelemetryMilestone`, `TelemetryCounter` | Application configuration and product telemetry. |
 
@@ -117,12 +114,10 @@ erDiagram
         string id PK
         string companyId FK
         string ownerId FK
-        string displayName
         string firstName
         string lastName
         string email
         string phone
-        string businessName
         datetime archivedAt
     }
 
@@ -167,7 +162,6 @@ erDiagram
         string dealId PK,FK
         string contactId PK,FK
         string role
-        boolean isPrimary
     }
 
     ACTIVITY {
@@ -265,9 +259,9 @@ erDiagram
 
 1. Create or select one `Company` customer. Use it for either a household or business.
 2. Create each person as a `Contact`. `Contact.companyId` can group the person under the customer, but this link is not the Project relationship.
-3. Create the `Deal` Project with the customer in `Deal.companyId`, the internal owner in `Deal.ownerId`, and `stage = LEAD`.
+3. Create the `Deal` Project with the customer in `Deal.companyId`, the GC owner in `Deal.ownerId`, and `stage = LEAD`.
 4. Add each participating person through `DealContact`.
-5. Set one `DealContact.isPrimary = true` when the main Project contact is known.
+5. Set `Company.primaryContactId` when the main customer contact is known.
 6. Store intake notes, calls, meetings, or follow-up work as `Activity` records.
 
 ### Sales and production
@@ -287,7 +281,7 @@ erDiagram
 
 ### Project contacts
 
-The `DealContact` primary key is `(dealId, contactId)`. One person can appear once in a Project and has one optional `role`. The separate `isPrimary` flag identifies the main customer contact. A partial unique index allows only one primary contact per Project.
+The `DealContact` primary key is `(dealId, contactId)`. One person can appear once in a Project and has one optional `role`. `Company.primaryContactId` identifies the main customer contact for the household or business.
 
 This structure supports two spouses without a Household table. Both spouses are Contacts, both link to the same Project, and the Project belongs to the household customer stored in `Company`.
 
@@ -297,11 +291,11 @@ Create one `Document` for each estimate or invoice. Add its rows through `Docume
 
 The `recipientSnapshot`, `contractorSnapshot`, and `projectSnapshot` fields preserve the printed information at issue time. Later changes to the customer, Contacts, or Project do not change an issued document.
 
-### Secretary and PM bots
+### Construction automation
 
-Use `AgentConversation` for the bot conversation. Link it to `Deal` when the conversation concerns a Project. `AgentRun` stores each execution and can also link to the Project. `AgentAction` stores each planned or completed action from the run.
+Use `AgentConversation` for an automation conversation. Link it to `Deal` when the conversation concerns a Project. `AgentRun` stores each execution and can also link to the Project. `AgentAction` stores each planned or completed action from the run.
 
-The existing agent framework is shared by the Secretary and PM bots. Separate construction bot tables are not required.
+The existing agent framework is shared by construction automations. Separate construction bot tables are not required.
 
 ### Communication and scheduling
 
@@ -315,7 +309,7 @@ The existing agent framework is shared by the Secretary and PM bots. Separate co
 | A customer with Projects cannot be purged. | The Company service rejects purge until its Projects are deleted. |
 | A Project can have several people. | `DealContact` is a many-to-many join between `Deal` and `Contact`. |
 | A person appears once per Project. | Composite primary key on `DealContact(dealId, contactId)`. |
-| A Project has at most one primary contact. | Partial unique index on `DealContact.dealId` where `isPrimary = true`. |
+| A Company has at most one primary contact. | `Company.primaryContactId` points to one Contact. |
 | Issued documents keep their original printed details. | Required JSON snapshots on `Document`. |
 | Project files are deleted with the Project. | `Artifact.dealId` uses cascade delete. |
 | Documents and their lines are deleted with the Project. | `Document.dealId` and `DocumentLineItem.documentId` use cascade delete. |

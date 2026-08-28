@@ -6,7 +6,6 @@ import UserMultiple from "@carbon/icons-react/es/UserMultiple";
 import { CURRENCIES, normalizeCurrency } from "@crm/db/currency";
 import type { FieldValueJson } from "@crm/db/fields";
 import { Button } from "@crm/ui/components/button";
-import { Checkbox } from "@crm/ui/components/checkbox";
 import { EmptyCellValue } from "@crm/ui/components/empty-cell";
 import {
 	EntityLogo,
@@ -111,8 +110,7 @@ function ReportedValue({ deal }: { deal: Deal }) {
 
 const CONTACT_COLUMNS = [
 	{ id: "name", header: "Name", width: "w-[28%]", className: "pl-5" },
-	{ id: "primary", header: "Customer", width: "w-[16%]" },
-	{ id: "role", header: "Role", width: "w-[20%]" },
+	{ id: "role", header: "Role", width: "w-[36%]" },
 	{ id: "title", header: "Title", width: "w-[18%]" },
 	{ id: "email", header: "Email", width: "w-[14%]" },
 	{ id: "remove", srLabel: "Remove", width: "w-10" },
@@ -136,7 +134,6 @@ export function DealSheet({ dealId }: { dealId: string }) {
 
 	const query = useQuery(trpc.deals.byId.queryOptions({ id: dealId }));
 	const deal = query.data;
-	const primaryContact = deal?.contacts.find((contact) => contact.isPrimary);
 
 	const tabs: DetailSheetTab[] = deal
 		? [
@@ -179,20 +176,7 @@ export function DealSheet({ dealId }: { dealId: string }) {
 			title={deal?.name ?? "Project"}
 			description={
 				deal ? (
-					primaryContact ? (
-						<span>
-							Primary customer:{" "}
-							<button
-								type="button"
-								onClick={() =>
-									openRecord({ kind: "contact", id: primaryContact.id })
-								}
-								className="underline-offset-2 hover:underline"
-							>
-								{contactName(primaryContact)}
-							</button>
-						</span>
-					) : deal.company ? (
+					deal.company ? (
 						<button
 							type="button"
 							onClick={() =>
@@ -553,7 +537,7 @@ function DealContacts({
 					<DetailSheetEmpty
 						icon={UserMultiple}
 						title="No project contacts"
-						description="Attach the people involved in this project and mark the primary customer."
+						description="Attach the people involved in this project."
 						action={
 							<Button variant="outline" size="sm" onClick={onAdd}>
 								<Icon icon={Add} data-icon="inline-start" />
@@ -585,25 +569,6 @@ function DealContacts({
 									size="sm"
 								/>
 								<span className="truncate">{contactName(contact)}</span>
-							</span>
-						</TableCell>
-						<TableCell className="truncate px-1 py-2.5">
-							<span className="flex items-center gap-2">
-								<Checkbox
-									checked={contact.isPrimary}
-									aria-label={`Set ${contactName(contact)} as primary customer`}
-									disabled={setRole.isPending}
-									onClick={(event) => event.stopPropagation()}
-									onCheckedChange={(checked) =>
-										setRole.mutate({
-											dealId: deal.id,
-											contactId: contact.id,
-											role: contact.role,
-											isPrimary: checked === true,
-										})
-									}
-								/>
-								<span className="text-muted-foreground text-xs">Primary</span>
 							</span>
 						</TableCell>
 						<TableCell className="truncate px-1 py-2.5">
