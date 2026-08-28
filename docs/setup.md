@@ -142,6 +142,40 @@ DATABASE_URL="…" bunx prisma migrate diff \
 strings, asserted by `packages/env/test/root.spec.ts`. **Generate your own secret**;
 never reuse one from an example, a tutorial, or another environment.
 
+## XMPP agent gateway
+
+The gateway starts with the agent when `XMPP_COMPONENT_ENABLED=1`.
+It uses the root `.env` and the same PostgreSQL database.
+
+Set these required values:
+
+```sh
+XMPP_COMPONENT_ENABLED="1"
+XMPP_COMPONENT_JID="gateway.agents.example.com"
+XMPP_COMPONENT_SECRET="..."
+XMPP_ORGANIZATION_ID="..."
+AGENT_BRIDGE_SECRET="..."
+```
+
+The XMPP server must contain the component account.
+The gateway connects through `XMPP_COMPONENT_SERVICE`.
+The default address is `xmpp://127.0.0.1:5275`.
+
+`XMPP_ALLOWED_CALLER_DOMAINS` limits discovery and invocation.
+`XMPP_ALLOW_DESTRUCTIVE_CALLERS` lists bare JIDs that can run destructive exports.
+An empty destructive caller list denies every destructive export.
+
+The gateway exposes only `apps/agent/src/exports` registry entries.
+It stores task state in PostgreSQL for recovery and replay protection.
+
+Run the live invocation check against a configured test server:
+
+```sh
+XMPP_E2E_ALLOW_SELF_SIGNED=1 bun run --filter=agent e2e:xmpp
+```
+
+Use `XMPP_E2E_ALLOW_SELF_SIGNED` only with an isolated server certificate.
+
 ## Tests
 
 ```sh

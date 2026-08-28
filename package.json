@@ -43,6 +43,7 @@
 	},
 	"workspaces": [
 		"apps/*",
-		"packages/*"
+		"packages/*",
+		"packages/agent-xmpp/*"
 	]
 }

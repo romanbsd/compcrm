@@ -1,0 +1,166 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xs:schema xmlns='urn:xmpp:agent-api:0'
+           xmlns:xs='http://www.w3.org/2001/XMLSchema'
+           elementFormDefault='qualified'
+           targetNamespace='urn:xmpp:agent-api:0'>
+
+  <xs:simpleType name='version'>
+    <xs:restriction base='xs:string'>
+      <xs:pattern value='[A-Za-z0-9._~-]{1,64}'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='toolName'>
+    <xs:restriction base='xs:string'>
+      <xs:minLength value='1'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='direction'>
+    <xs:restriction base='xs:string'>
+      <xs:enumeration value='input'/>
+      <xs:enumeration value='output'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name='hashContainer'>
+    <xs:sequence>
+      <xs:any maxOccurs='1'
+              minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name='register'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name='manifest'>
+          <xs:complexType>
+            <xs:simpleContent>
+              <xs:extension base='xs:string'>
+                <xs:attribute fixed='application/json' name='media-type'
+                              type='xs:string' use='required'/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='registered'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any maxOccurs='1'
+                minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+      </xs:sequence>
+      <xs:attribute name='jid' type='xs:string' use='required'/>
+      <xs:attribute name='version' type='version' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='activate'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any maxOccurs='1'
+                minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+      </xs:sequence>
+      <xs:attribute name='jid' type='xs:string' use='required'/>
+      <xs:attribute name='version' type='version' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='active'>
+    <xs:complexType>
+      <xs:attribute name='jid' type='xs:string' use='required'/>
+      <xs:attribute name='version' type='version' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name='endpointOperation'>
+    <xs:attribute name='jid' type='xs:string' use='required'/>
+  </xs:complexType>
+
+  <xs:element name='deactivate' type='endpointOperation'/>
+  <xs:element name='deactivated' type='endpointOperation'/>
+  <xs:element name='registration-status' type='endpointOperation'/>
+  <xs:element name='remove-endpoint' type='endpointOperation'/>
+
+  <xs:element name='remove-version'>
+    <xs:complexType>
+      <xs:attribute name='jid' type='xs:string' use='required'/>
+      <xs:attribute name='version' type='version' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='removed'>
+    <xs:complexType>
+      <xs:attribute name='jid' type='xs:string' use='required'/>
+      <xs:attribute name='version' type='version' use='optional'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='registration'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs='unbounded' minOccurs='0' name='version'>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:any maxOccurs='1'
+                      minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+            </xs:sequence>
+            <xs:attribute name='id' type='version' use='required'/>
+            <xs:attribute name='active' type='xs:boolean' use='required'/>
+            <xs:attribute name='removable' type='xs:boolean' use='required'/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name='jid' type='xs:string' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='manifest-request'>
+    <xs:complexType>
+      <xs:attribute name='version' type='version' use='optional'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='manifest'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any maxOccurs='1'
+                minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+        <xs:element name='json' type='xs:string'/>
+      </xs:sequence>
+      <xs:attribute name='version' type='version' use='required'/>
+      <xs:attribute fixed='application/json' name='media-type'
+                    type='xs:string' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='schema-request'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any maxOccurs='1'
+                minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+      </xs:sequence>
+      <xs:attribute name='tool' type='toolName' use='required'/>
+      <xs:attribute name='version' type='version' use='required'/>
+      <xs:attribute name='direction' type='direction' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='schema'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name='manifest-hash' type='hashContainer'/>
+        <xs:element name='schema-hash' type='hashContainer'/>
+        <xs:element name='json' type='xs:string'/>
+      </xs:sequence>
+      <xs:attribute name='tool' type='toolName' use='required'/>
+      <xs:attribute name='version' type='version' use='required'/>
+      <xs:attribute name='direction' type='direction' use='required'/>
+      <xs:attribute fixed='application/schema+json' name='media-type'
+                    type='xs:string' use='required'/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

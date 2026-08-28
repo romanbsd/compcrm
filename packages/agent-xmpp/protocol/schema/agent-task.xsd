@@ -1,0 +1,205 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xs:schema xmlns='urn:xmpp:agent-task:0'
+           xmlns:xs='http://www.w3.org/2001/XMLSchema'
+           elementFormDefault='qualified'
+           targetNamespace='urn:xmpp:agent-task:0'>
+
+  <xs:simpleType name='eventType'>
+    <xs:restriction base='xs:string'>
+      <xs:enumeration value='status'/>
+      <xs:enumeration value='progress'/>
+      <xs:enumeration value='input_required'/>
+      <xs:enumeration value='completed'/>
+      <xs:enumeration value='failed'/>
+      <xs:enumeration value='cancelled'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='executionState'>
+    <xs:restriction base='xs:string'>
+      <xs:enumeration value='accepted'/>
+      <xs:enumeration value='running'/>
+      <xs:enumeration value='input_required'/>
+      <xs:enumeration value='cancelling'/>
+      <xs:enumeration value='cancelled'/>
+      <xs:enumeration value='failed'/>
+      <xs:enumeration value='completed'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='terminalState'>
+    <xs:restriction base='xs:string'>
+      <xs:enumeration value='cancelled'/>
+      <xs:enumeration value='failed'/>
+      <xs:enumeration value='completed'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='identifier'>
+    <xs:restriction base='xs:string'>
+      <xs:pattern value='[A-Za-z0-9._~-]{22,128}'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='version'>
+    <xs:restriction base='xs:string'>
+      <xs:pattern value='[A-Za-z0-9._~-]{1,64}'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name='toolName'>
+    <xs:restriction base='xs:string'>
+      <xs:minLength value='1'/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name='hashContainer'>
+    <xs:sequence>
+      <xs:any maxOccurs='1'
+              minOccurs='1' namespace='urn:xmpp:hashes:2' processContents='lax'/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name='invoke'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name='manifest-hash' type='hashContainer'/>
+        <xs:element name='arguments'>
+          <xs:complexType>
+            <xs:simpleContent>
+              <xs:extension base='xs:string'>
+                <xs:attribute fixed='application/json' name='media-type'
+                              type='xs:string' use='required'/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+        <xs:element minOccurs='0' name='deadline' type='xs:dateTime'/>
+      </xs:sequence>
+      <xs:attribute name='request-id' type='identifier' use='required'/>
+      <xs:attribute name='tool' type='toolName' use='required'/>
+      <xs:attribute name='api-version' type='version' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='accepted'>
+    <xs:complexType>
+      <xs:attribute name='request-id' type='identifier' use='required'/>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+      <xs:attribute name='revision' type='xs:nonNegativeInteger' use='required'/>
+      <xs:attribute name='created' type='xs:dateTime' use='required'/>
+      <xs:attribute name='retain-until' type='xs:dateTime' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='provide-input'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name='input'>
+          <xs:complexType>
+            <xs:simpleContent>
+              <xs:extension base='xs:string'>
+                <xs:attribute fixed='application/json' name='media-type'
+                              type='xs:string' use='required'/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+      <xs:attribute name='request-id' type='identifier' use='required'/>
+      <xs:attribute name='expected-revision' type='xs:nonNegativeInteger' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='input-accepted'>
+    <xs:complexType>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+      <xs:attribute name='revision' type='xs:nonNegativeInteger' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='cancel'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs='0' name='reason' type='xs:string'/>
+      </xs:sequence>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+      <xs:attribute name='expected-revision' type='xs:nonNegativeInteger' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='cancel-accepted'>
+    <xs:complexType>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+      <xs:attribute name='revision' type='xs:nonNegativeInteger' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='event'>
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base='xs:string'>
+          <xs:attribute name='task-id' type='identifier' use='required'/>
+          <xs:attribute name='event-id' type='identifier' use='required'/>
+          <xs:attribute name='revision' type='xs:nonNegativeInteger' use='required'/>
+          <xs:attribute name='type' type='eventType' use='required'/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='task-state-request'>
+    <xs:complexType>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='task-state'>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name='manifest-hash' type='hashContainer'/>
+        <xs:element minOccurs='0' name='pending-input'>
+          <xs:complexType>
+            <xs:simpleContent>
+              <xs:extension base='xs:string'>
+                <xs:attribute fixed='application/json' name='media-type'
+                              type='xs:string' use='required'/>
+              </xs:extension>
+            </xs:simpleContent>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+      <xs:attribute name='endpoint' type='xs:string' use='required'/>
+      <xs:attribute name='state' type='executionState' use='required'/>
+      <xs:attribute name='revision' type='xs:nonNegativeInteger' use='required'/>
+      <xs:attribute name='api-version' type='version' use='required'/>
+      <xs:attribute name='created' type='xs:dateTime' use='required'/>
+      <xs:attribute name='updated' type='xs:dateTime' use='required'/>
+      <xs:attribute name='deadline' type='xs:dateTime' use='optional'/>
+      <xs:attribute name='retain-until' type='xs:dateTime' use='required'/>
+      <xs:attribute name='result-available' type='xs:boolean' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='task-result-request'>
+    <xs:complexType>
+      <xs:attribute name='task-id' type='identifier' use='required'/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='task-result'>
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base='xs:string'>
+          <xs:attribute name='task-id' type='identifier' use='required'/>
+          <xs:attribute name='state' type='terminalState' use='required'/>
+          <xs:attribute name='revision' type='xs:nonNegativeInteger' use='required'/>
+          <xs:attribute fixed='application/json' name='media-type'
+                        type='xs:string' use='required'/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

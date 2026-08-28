@@ -14,6 +14,7 @@
 		".agents/**",
 		".claude/**",
 		"apps/api/src/generated/**",
+		"packages/agent-xmpp/**",
 		"packages/db/src/generated/**",
 		"packages/ui/src/components/**",
 		"tools/oxlint/anti-slop/**"

@@ -219,6 +219,26 @@ missing key removes a place to look. **Never an error, never throws.**
 `capabilitiesFrom()`/`markdownFor()` are the pure halves. `contextDevKey()` is the only
 resolver, and `lib/context-dev.ts` memoises its client on the key string.
 
+## XMPP export tools
+
+`src/exports` contains the explicit external operation allowlist. An export uses
+`defineExportTool` and cannot expose a normal Eve tool accidentally.
+
+`src/export-tools` owns validation, manifests, execution, and the Eve adapter. The
+adapter calls the current channel's `send` function and uses native task mode.
+
+`agent/channels/xmpp.ts` is the required Eve channel location. It provides authenticated
+manifest and invocation routes for the XMPP gateway host.
+
+`src/xmpp` owns ProtoXEP routing and PostgreSQL task persistence. Every task belongs to
+one organization. The replay key includes the organization, caller, target, and request.
+
+The copied protocol, validation, and gateway runtime sources derive from Clawdike commit
+`d2386b42741410533cb302ffee1540d33192b34c`.
+
+The gateway starts only when `XMPP_COMPONENT_ENABLED=1`. Missing XMPP configuration
+removes the capability and leaves the normal agent process available.
+
 ## Budget and scheduling
 
 - `lib/focus.ts` — per-session budget in `defineState`; running out is a normal ending.
