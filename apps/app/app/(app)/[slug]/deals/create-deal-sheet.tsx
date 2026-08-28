@@ -134,7 +134,8 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 		}),
 	);
 
-	const ready = name.trim() !== "" && resolvedOwner !== UNSET;
+	const ready =
+		name.trim() !== "" && company !== UNSET && resolvedOwner !== UNSET;
 
 	return (
 		<Sheet open={open} onOpenChange={(next) => setOpen(next || null)}>
@@ -145,8 +146,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 				<SheetHeader>
 					<SheetTitle>New project</SheetTitle>
 					<SheetDescription>
-						Track the customer, job site, status, and next steps. Company is
-						optional.
+						Track the customer, job site, status, and next steps.
 					</SheetDescription>
 				</SheetHeader>
 
@@ -159,7 +159,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 						const parsed = Number.parseFloat(amount);
 						create.mutate({
 							name,
-							companyId: company || null,
+							companyId: company,
 							ownerId: resolvedOwner,
 							stage,
 							projectType: projectType || null,
@@ -192,13 +192,16 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 						</Field>
 
 						<Field>
-							<FieldLabel htmlFor="create-project-company">Company</FieldLabel>
+							<FieldLabel htmlFor="create-project-company">Customer</FieldLabel>
 							<CompanyPicker
 								id="create-project-company"
 								value={company}
 								onValueChange={setCompany}
-								none={{ value: UNSET, label: "No company" }}
+								placeholder="Choose a household or business"
 							/>
+							<FieldDescription>
+								Every project belongs to a household or business customer.
+							</FieldDescription>
 						</Field>
 
 						<Field>

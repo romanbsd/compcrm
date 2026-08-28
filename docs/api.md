@@ -273,12 +273,13 @@ Below is `purge`'s contract — everything that used to be `delete`'s:
   transaction**. Never automatic.
 - **Purging a company does not suppress its domain** — its people survive with no
   company, and domain suppression stays the explicit Settings → Connections control.
+- **A company with a deal cannot be purged.** Delete its projects first. This keeps
+  every construction project attached to its household or business customer.
 - **Clear `AgentTask` and `AgentEvent` yourself** — they carry `contactId`/`companyId`
   with no foreign key, so nothing cascades.
 - **Recompute `lastActivityAt` on exactly the records the purge reached.**
   `ActivityStampService.targetsOf(where)` collects them *inside* the transaction (the
-  evidence is what gets deleted); `recomputeMany` restamps. A company's `where` must
-  follow its deals: `{ OR: [{ companyId }, { deal: { companyId } }] }`.
+  evidence is what gets deleted); `recomputeMany` restamps.
   `recomputeAll()` is for a purge only.
 - **Recompute after commit, logging rather than throwing** — the row is already gone,
   and a raised error makes the browser skip invalidation and retry into a 404.

@@ -306,7 +306,7 @@ export class DealsService {
 								: input.description === null
 									? null
 									: blankToNull(input.description),
-						companyId: input.companyId ?? null,
+						companyId: input.companyId,
 						ownerId: input.ownerId,
 						stage,
 						stageChangedAt: now,
@@ -355,9 +355,7 @@ export class DealsService {
 				input.description === null ? null : blankToNull(input.description);
 		}
 		if (input.companyId !== undefined) {
-			data.company = input.companyId
-				? { connect: { id: input.companyId } }
-				: { disconnect: true };
+			data.company = { connect: { id: input.companyId } };
 		}
 		if (input.ownerId !== undefined) {
 			data.owner = { connect: { id: input.ownerId } };

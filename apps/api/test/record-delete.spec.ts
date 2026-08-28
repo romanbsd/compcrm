@@ -110,7 +110,9 @@ async function clean() {
 	});
 	await db.agentEvent.deleteMany({ where: { contactId: { in: contactIds } } });
 	await db.contact.deleteMany({ where: ours });
-	await db.deal.deleteMany({ where: { companyId: { in: companyIds } } });
+	await db.deal.deleteMany({
+		where: { OR: [{ companyId: { in: companyIds } }, { ownerId: userId }] },
+	});
 	await db.company.deleteMany({ where: { domain: { in: domains } } });
 	await db.suppressedContact.deleteMany({ where: ours });
 	await db.user.deleteMany({ where: { id: userId } });
@@ -251,7 +253,7 @@ describe("purging a contact", () => {
 });
 
 describe("purging a company", () => {
-	it("keeps its projects and leaves its people without a company", async () => {
+	it("refuses to delete a customer that still has projects", async () => {
 		const company = await companies.create({
 			name: "Doomed",
 			domain: doomedDomain,
@@ -273,39 +275,41 @@ describe("purging a company", () => {
 			dealId: deal.id,
 		});
 
-		expect(await companies.purge(company.id)).toEqual({
-			id: company.id,
-			name: "Doomed",
-		});
+		await expect(companies.purge(company.id)).rejects.toThrow(
+			"Delete this customer's projects before deleting the customer.",
+		);
 
 		expect(
 			await db.deal.findUnique({
 				where: { id: deal.id },
 				select: { companyId: true },
 			}),
-		).toEqual({ companyId: null });
+		).toEqual({ companyId: company.id });
 		expect(await db.agentTask.count({ where: { companyId: company.id } })).toBe(
-			0,
+			2,
 		);
 		expect(
 			await db.agentTask.findUnique({ where: { id: companyTask.id } }),
-		).toBe(null);
+		).not.toBe(null);
 		expect(
 			await db.agentTask.findUnique({
 				where: { id: projectTask.id },
 				select: { companyId: true, dealId: true },
 			}),
-		).toEqual({ companyId: null, dealId: deal.id });
+		).toEqual({ companyId: company.id, dealId: deal.id });
 
 		const survivor = await db.contact.findUnique({
 			where: { id: contact.id },
 			select: { companyId: true },
 		});
-		expect(survivor?.companyId).toBeNull();
+		expect(survivor?.companyId).toBe(company.id);
 
-		await db.contact.delete({ where: { id: contact.id } });
-		await db.agentTask.delete({ where: { id: projectTask.id } });
+		await db.agentTask.deleteMany({
+			where: { id: { in: [companyTask.id, projectTask.id] } },
+		});
 		await db.deal.delete({ where: { id: deal.id } });
+		await db.contact.delete({ where: { id: contact.id } });
+		await db.company.delete({ where: { id: company.id } });
 	});
 });
 
@@ -358,7 +362,7 @@ describe("the activity stamps a purge leaves behind", () => {
 		).toEqual({ lastActivityAt: null });
 	});
 
-	it("follow a deleted company through the deals it takes with it", async () => {
+	it("keeps project activity when customer deletion is refused", async () => {
 		const company = await companies.create({
 			name: "Orphaner",
 			domain: orphanDomain,
@@ -388,29 +392,32 @@ describe("the activity stamps a purge leaves behind", () => {
 		});
 		await stamp.touch({ contactId: contact.id, dealId: deal.id }, at);
 
-		await companies.purge(company.id);
+		await expect(companies.purge(company.id)).rejects.toThrow(
+			"Delete this customer's projects before deleting the customer.",
+		);
 
 		expect(
 			await db.deal.findUnique({
 				where: { id: deal.id },
 				select: { companyId: true },
 			}),
-		).toEqual({ companyId: null });
+		).toEqual({ companyId: company.id });
 		expect(
 			await db.activity.findUnique({
 				where: { id: activity.id },
 				select: { companyId: true, dealId: true },
 			}),
-		).toEqual({ companyId: null, dealId: deal.id });
+		).toEqual({ companyId: company.id, dealId: deal.id });
 
 		const survivor = await db.contact.findUnique({
 			where: { id: contact.id },
 			select: { companyId: true, lastActivityAt: true },
 		});
-		expect(survivor?.companyId).toBeNull();
+		expect(survivor?.companyId).toBe(company.id);
 		expect(survivor?.lastActivityAt).not.toBeNull();
 
 		await db.contact.delete({ where: { id: contact.id } });
 		await db.deal.delete({ where: { id: deal.id } });
+		await db.company.delete({ where: { id: company.id } });
 	});
 });

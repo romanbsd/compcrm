@@ -59,7 +59,14 @@ async function clean() {
 	});
 	const companyIds = owned.map((row) => row.id);
 
-	await db.deal.deleteMany({ where: { companyId: { in: companyIds } } });
+	await db.deal.deleteMany({
+		where: {
+			OR: [
+				{ companyId: { in: companyIds } },
+				{ ownerId: { in: [ownerId, secondOwnerId] } },
+			],
+		},
+	});
 	await db.activity.deleteMany({ where: { companyId: { in: companyIds } } });
 	await db.agentTask.deleteMany({ where: { companyId: { in: companyIds } } });
 	await db.contact.deleteMany({ where: ours });
@@ -208,7 +215,7 @@ describe("purging a selection", () => {
 		).toBeNull();
 	});
 
-	it("keeps a company's projects without their company", async () => {
+	it("refuses to delete a customer that still has projects", async () => {
 		const doomed = await companies.create({
 			name: `Doomed Co ${suffix}`,
 			domain: `doomed-${domain}`,
@@ -221,10 +228,10 @@ describe("purging a selection", () => {
 
 		expect(await companies.bulkPurge([doomed.id])).toEqual({
 			requested: 1,
-			succeeded: 1,
+			succeeded: 0,
 			skipped: 0,
-			failed: 0,
-			message: null,
+			failed: 1,
+			message: "Delete this customer's projects before deleting the customer.",
 		});
 
 		expect(
@@ -232,8 +239,9 @@ describe("purging a selection", () => {
 				where: { id: deal.id },
 				select: { companyId: true },
 			}),
-		).toEqual({ companyId: null });
+		).toEqual({ companyId: doomed.id });
 		await db.deal.delete({ where: { id: deal.id } });
+		await db.company.delete({ where: { id: doomed.id } });
 	});
 });
 

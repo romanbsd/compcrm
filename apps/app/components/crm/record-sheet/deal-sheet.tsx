@@ -374,13 +374,11 @@ function DealOverview({ deal }: { deal: Deal }) {
 						onSave={(leadSource) => save({ leadSource })}
 					/>
 					<InlineCompanyField
+						label="Customer"
 						value={deal.company?.id ?? NONE}
 						company={deal.company}
 						saving={isSaving("companyId")}
-						none={{ value: NONE, label: "No company" }}
-						onSave={(companyId) =>
-							save({ companyId: companyId === NONE ? null : companyId })
-						}
+						onSave={(companyId) => save({ companyId })}
 					/>
 					<InlineSelectField
 						label="Owner"

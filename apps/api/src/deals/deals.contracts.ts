@@ -53,7 +53,7 @@ const projectCreateStageEnum = stageEnum.superRefine((stage, context) => {
 
 export const dealCreateInput = z.object({
 	name: z.string().trim().min(1, "A project needs a name."),
-	companyId: z.string().min(1).nullable().optional(),
+	companyId: z.string().min(1, "A project needs a customer."),
 	ownerId: z.string().min(1, "A project needs an owner."),
 	stage: projectCreateStageEnum.optional(),
 	description: z.string().nullable().optional(),
@@ -74,7 +74,7 @@ export type DealCreateInput = z.infer<typeof dealCreateInput>;
 const dealUpdateInput = z.object({
 	name: z.string().trim().min(1).optional(),
 	description: z.string().nullable().optional(),
-	companyId: z.string().nullable().optional(),
+	companyId: z.string().min(1, "A project needs a customer.").optional(),
 	ownerId: z.string().optional(),
 	amountCents,
 	currency: currencyCode.optional(),

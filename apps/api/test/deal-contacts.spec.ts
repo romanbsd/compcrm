@@ -100,9 +100,10 @@ beforeAll(async () => {
 afterAll(clean);
 
 describe("bringing a contact onto a deal", () => {
-	it("creates a project without a company and keeps its project fields", async () => {
+	it("creates a project for a customer and keeps its project fields", async () => {
 		const project = await deals.create({
 			name: `Kitchen ${suffix}`,
+			companyId,
 			ownerId: userId,
 			leadSource: "Referral",
 			projectType: "Kitchen",
@@ -115,16 +116,17 @@ describe("bringing a contact onto a deal", () => {
 
 		const detail = await deals.byId(project.id);
 		expect(detail.stage).toBe("LEAD");
-		expect(detail.company).toBeNull();
+		expect(detail.company?.id).toBe(companyId);
 		expect(detail.leadSource).toBe("Referral");
 		expect(detail.addressLine1).toBe("1 Main Street");
 
 		await deals.purge(project.id);
 	});
 
-	it("lists the primary contact separately from a nullable company", async () => {
+	it("lists the primary project contact separately from its customer", async () => {
 		const project = await deals.create({
 			name: `Primary contact project ${suffix}`,
+			companyId,
 			ownerId: userId,
 		});
 		await deals.attachContact({
@@ -150,7 +152,7 @@ describe("bringing a contact onto a deal", () => {
 		const projectRow = list.rows.find((row) => row.id === project.id);
 		const companyRow = list.rows.find((row) => row.id === dealId);
 		expect(projectRow).toMatchObject({
-			company: null,
+			company: { id: companyId },
 			primaryContact: {
 				id: championId,
 				displayName: "Ada Champion",
@@ -165,9 +167,10 @@ describe("bringing a contact onto a deal", () => {
 		await deals.purge(project.id);
 	});
 
-	it("finds company-free projects by their primary contact", async () => {
+	it("finds customer projects by their primary contact", async () => {
 		const displayNameProject = await deals.create({
 			name: `Display name project ${suffix}`,
+			companyId,
 			ownerId: userId,
 		});
 		await deals.attachContact({
@@ -195,6 +198,7 @@ describe("bringing a contact onto a deal", () => {
 
 		const nameProject = await deals.create({
 			name: `Fallback name project ${suffix}`,
+			companyId,
 			ownerId: userId,
 		});
 		await deals.attachContact({
@@ -223,7 +227,14 @@ describe("bringing a contact onto a deal", () => {
 	});
 
 	it("allows open initial stages and rejects closed project stages", async () => {
-		const base = { name: "Stage validation", ownerId: userId };
+		const base = { name: "Stage validation", companyId, ownerId: userId };
+
+		expect(
+			dealCreateInput.safeParse({ name: base.name, ownerId: userId }).success,
+		).toBe(false);
+		expect(
+			dealCreateInput.safeParse({ ...base, companyId: null }).success,
+		).toBe(false);
 
 		expect(dealCreateInput.safeParse({ ...base, stage: "LOST" }).success).toBe(
 			false,
@@ -237,6 +248,7 @@ describe("bringing a contact onto a deal", () => {
 
 		const project = await deals.create({
 			name: "Open stage project",
+			companyId,
 			ownerId: userId,
 			stage: "IN_PROGRESS",
 		});
