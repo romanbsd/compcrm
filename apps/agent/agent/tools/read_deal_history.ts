@@ -21,6 +21,7 @@ export default defineTool({
 		if (!history) return { found: false as const, reason: "No such project." };
 
 		if (history.company) focusOn({ companyId: history.company.id });
+		else focusOn({ companyId: null });
 
 		return { found: true as const, ...history };
 	},

@@ -268,7 +268,10 @@ describe("purging a company", () => {
 		});
 
 		const companyTask = await parked({ companyId: company.id });
-		const projectTask = await parked({ dealId: deal.id });
+		const projectTask = await parked({
+			companyId: company.id,
+			dealId: deal.id,
+		});
 
 		expect(await companies.purge(company.id)).toEqual({
 			id: company.id,

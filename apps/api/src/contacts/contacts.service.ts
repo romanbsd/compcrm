@@ -269,11 +269,11 @@ export class ContactsService {
 		const email = normalizeEmail(input.email ?? "");
 		const firstName = input.firstName.trim();
 		const lastName = blankToNull(input.lastName ?? "");
-		const displayName = contactName({
+		const displayName = resolveDisplayName(
 			firstName,
 			lastName,
-			displayName: blankToNull(input.displayName ?? "") ?? undefined,
-		});
+			blankToNull(input.displayName ?? ""),
+		);
 
 		if (email) {
 			const existing = await this.db.contact.findFirst({
@@ -281,7 +281,12 @@ export class ContactsService {
 					email: { equals: email, mode: "insensitive" },
 					archivedAt: null,
 				},
-				select: { id: true, firstName: true, lastName: true },
+				select: {
+					id: true,
+					displayName: true,
+					firstName: true,
+					lastName: true,
+				},
 			});
 			if (existing) {
 				throw new ConflictException(
@@ -368,7 +373,7 @@ export class ContactsService {
 			const contact = await this.db.contact.update({
 				where: { id },
 				data: { archivedAt: new Date() },
-				select: { firstName: true, lastName: true },
+				select: { displayName: true, firstName: true, lastName: true },
 			});
 
 			this.logger.log({ message: "Contact archived", contactId: id });
@@ -384,7 +389,7 @@ export class ContactsService {
 			const contact = await this.db.contact.update({
 				where: { id },
 				data: { archivedAt: null },
-				select: { firstName: true, lastName: true },
+				select: { displayName: true, firstName: true, lastName: true },
 			});
 
 			this.logger.log({ message: "Contact restored", contactId: id });
@@ -434,7 +439,12 @@ export class ContactsService {
 
 				const contact = await tx.contact.delete({
 					where: { id },
-					select: { firstName: true, lastName: true, email: true },
+					select: {
+						displayName: true,
+						firstName: true,
+						lastName: true,
+						email: true,
+					},
 				});
 
 				const name = contactName(contact);
@@ -486,8 +496,24 @@ export class ContactsService {
 	async update(id: string, input: ContactUpdateInput) {
 		const data: Prisma.ContactUpdateInput = {};
 
-		if (input.displayName !== undefined)
-			data.displayName = blankToNull(input.displayName) ?? "";
+		if (input.displayName !== undefined) {
+			const provided = blankToNull(input.displayName);
+			if (provided === null) {
+				const current = await this.db.contact.findUnique({
+					where: { id },
+					select: { firstName: true, lastName: true },
+				});
+				data.displayName = resolveDisplayName(
+					input.firstName?.trim() ?? current?.firstName ?? "",
+					input.lastName !== undefined
+						? blankToNull(input.lastName)
+						: (current?.lastName ?? null),
+					provided,
+				);
+			} else {
+				data.displayName = provided;
+			}
+		}
 		if (input.firstName !== undefined) data.firstName = input.firstName.trim();
 		if (input.lastName !== undefined)
 			data.lastName = blankToNull(input.lastName);
@@ -944,4 +970,16 @@ export class ContactsService {
 		}
 		throw cause;
 	}
+}
+
+function resolveDisplayName(
+	firstName: string,
+	lastName: string | null,
+	displayName: string | null | undefined,
+): string {
+	return contactName({
+		firstName,
+		lastName,
+		displayName: displayName ?? undefined,
+	});
 }

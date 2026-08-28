@@ -52,7 +52,7 @@ export function DealListResultTable({ result }: { result: DealListResult }) {
 							colSpan={COLUMNS.length}
 							className="h-32 whitespace-normal py-8 text-center align-middle text-muted-foreground"
 						>
-							No projects met these status filters.
+							No projects matched these filters.
 						</TableCell>
 					</SimpleTableRow>
 				) : (

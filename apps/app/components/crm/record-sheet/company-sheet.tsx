@@ -91,7 +91,9 @@ function companyConsequence(company: Company): string {
 
 	const gone =
 		deals > 0
-			? `${deals === 1 ? "Its one project" : `All ${deals} of its projects`} stay in the CRM, with the company link cleared.`
+			? deals === 1
+				? "Its one project stays in the CRM, with the company link cleared."
+				: `All ${deals} of its projects stay in the CRM, with the company link cleared.`
 			: "Projects remain in the CRM, with the company link cleared.";
 
 	const kept =

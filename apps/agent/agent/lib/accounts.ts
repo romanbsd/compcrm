@@ -543,7 +543,9 @@ export async function readDealHistory(
 			includeEmail || includeCalendar
 				? contactIds.length > 0
 					? "Connected account history is filed against people and companies, never against a project. The history here belongs to the people on this project and the rest of the account — read the details before treating any of it as being about this project."
-					: "Nobody is attached to this project, so the correspondence here is the whole account's. Attaching the people on it would make this answer sharper."
+					: deal.company
+						? "Nobody is attached to this project, so the correspondence here is the whole account's. Attaching the people on it would make this answer sharper."
+						: "This project has no company and nobody on it, so there is no related correspondence to show. Attaching the company or the people on it would make this answer sharper."
 				: "Connected email and calendar history are outside this agent version's approved data sources.",
 	};
 }

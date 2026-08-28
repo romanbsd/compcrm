@@ -284,6 +284,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 								value={addressLine2}
 								onChange={(event) => setAddressLine2(event.target.value)}
 								placeholder="Suite or unit"
+								aria-label="Address line 2"
 								autoComplete="address-line2"
 							/>
 							<div className="grid gap-2 sm:grid-cols-3">
@@ -292,6 +293,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 									value={city}
 									onChange={(event) => setCity(event.target.value)}
 									placeholder="City"
+									aria-label="City"
 									autoComplete="address-level2"
 								/>
 								<Input
@@ -299,6 +301,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 									value={state}
 									onChange={(event) => setState(event.target.value)}
 									placeholder="State"
+									aria-label="State"
 									autoComplete="address-level1"
 								/>
 								<Input
@@ -306,6 +309,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 									value={postalCode}
 									onChange={(event) => setPostalCode(event.target.value)}
 									placeholder="ZIP code"
+									aria-label="ZIP code"
 									autoComplete="postal-code"
 								/>
 							</div>

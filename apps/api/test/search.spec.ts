@@ -52,7 +52,7 @@ describe("SearchService", () => {
 	});
 
 	it("keeps first and last name fallback behavior", async () => {
-		const result = await search.quick("Legacy");
+		const result = await search.quick(fallbackEmail);
 
 		expect(result.hits.find((hit) => hit.kind === "contact")?.label).toBe(
 			"Legacy Contact",
