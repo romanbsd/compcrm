@@ -58,7 +58,7 @@ ajv.addFormat("date-time", isXep0082DateTime);
 const manifestValidator = ajv.compile(MANIFEST_SCHEMA);
 const validatorCache = new Map<string, ValidateFunction>();
 const SCHEMA_WORKER_COUNT = 2;
-const SCHEMA_WORKER_FAILURE_LIMIT = 3;
+export const SCHEMA_WORKER_FAILURE_LIMIT = 3;
 const DEFAULT_SCHEMA_TIMEOUT_MS = 500;
 
 interface WorkerRequest {
@@ -83,12 +83,12 @@ interface PendingValidation {
 
 interface SchemaWorkerSlot {
 	worker: Worker;
+	consecutiveFailures: number;
 	pending?: PendingValidation;
 	timer?: ReturnType<typeof setTimeout>;
 }
 
 let nextValidationId = 1;
-let consecutiveWorkerFailures = 0;
 const validationQueue: PendingValidation[] = [];
 const schemaWorkers: SchemaWorkerSlot[] = [];
 
@@ -355,24 +355,30 @@ export async function closeSchemaWorkers(): Promise<void> {
 
 function ensureSchemaWorkers(): void {
 	while (schemaWorkers.length < SCHEMA_WORKER_COUNT) {
-		try {
-			schemaWorkers.push(createSchemaWorker());
-		} catch (error) {
-			consecutiveWorkerFailures++;
-			if (consecutiveWorkerFailures >= SCHEMA_WORKER_FAILURE_LIMIT) {
-				rejectValidationQueue(
-					error instanceof Error
-						? error
-						: new Error("schema validator worker failed"),
-				);
-				consecutiveWorkerFailures = 0;
-				return;
-			}
-		}
+		const slot = createSchemaWorkerLineage();
+		if (!slot) return;
+		schemaWorkers.push(slot);
 	}
 }
 
-function createSchemaWorker(): SchemaWorkerSlot {
+function createSchemaWorkerLineage(
+	consecutiveFailures = 0,
+): SchemaWorkerSlot | undefined {
+	let failures = consecutiveFailures;
+	let lastError = new Error("schema validator worker failed");
+	while (failures < SCHEMA_WORKER_FAILURE_LIMIT) {
+		try {
+			return createSchemaWorker(failures);
+		} catch (error) {
+			lastError = error instanceof Error ? error : lastError;
+			failures++;
+		}
+	}
+	rejectValidationQueue(lastError);
+	return undefined;
+}
+
+function createSchemaWorker(consecutiveFailures: number): SchemaWorkerSlot {
 	const sourceMode = import.meta.url.endsWith(".ts");
 	const worker = new Worker(
 		new URL(
@@ -384,7 +390,7 @@ function createSchemaWorker(): SchemaWorkerSlot {
 		},
 	);
 	worker.unref();
-	const slot: SchemaWorkerSlot = { worker };
+	const slot: SchemaWorkerSlot = { worker, consecutiveFailures };
 	worker.on("message", (response: WorkerResponse) =>
 		settleWorker(slot, response),
 	);
@@ -425,10 +431,12 @@ function settleWorker(slot: SchemaWorkerSlot, response: WorkerResponse): void {
 	if (slot.timer) clearTimeout(slot.timer);
 	slot.timer = undefined;
 	slot.pending = undefined;
-	consecutiveWorkerFailures = 0;
 	if (response.failure)
 		pending.reject(new Error(`schema validation failed: ${response.failure}`));
-	else pending.resolve(response.errors ?? []);
+	else {
+		slot.consecutiveFailures = 0;
+		pending.resolve(response.errors ?? []);
+	}
 	dispatchValidationQueue();
 }
 
@@ -440,16 +448,15 @@ function replaceWorker(slot: SchemaWorkerSlot, error: Error): void {
 	slot.pending = undefined;
 	void slot.worker.terminate();
 	schemaWorkers.splice(index, 1);
-	consecutiveWorkerFailures++;
-	if (consecutiveWorkerFailures >= SCHEMA_WORKER_FAILURE_LIMIT) {
+	const consecutiveFailures = slot.consecutiveFailures + 1;
+	if (consecutiveFailures >= SCHEMA_WORKER_FAILURE_LIMIT) {
 		rejectValidationQueue(error);
-		consecutiveWorkerFailures = 0;
 		return;
 	}
-	if (validationQueue.length > 0) {
-		ensureSchemaWorkers();
-		dispatchValidationQueue();
-	}
+	const replacement = createSchemaWorkerLineage(consecutiveFailures);
+	if (!replacement) return;
+	schemaWorkers.splice(index, 0, replacement);
+	dispatchValidationQueue();
 }
 
 function rejectValidationQueue(error: Error): void {

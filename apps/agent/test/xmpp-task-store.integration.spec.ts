@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { db } from "@crm/db";
+import { XMPP_EXPORT } from "../src/xmpp/config";
 import { PostgresXmppTaskStore } from "../src/xmpp/task-store";
 
 const suffix = crypto.randomUUID();
@@ -82,7 +83,9 @@ describe("PostgreSQL XMPP task state", () => {
 		expect(await recoveringStore.failInterrupted()).toBe(0);
 		expect((await store.get(interrupted.task.taskId))?.state).toBe("accepted");
 		expect(
-			await recoveringStore.failInterrupted(new Date(Date.now() + 60_000)),
+			await recoveringStore.failInterrupted(
+				new Date(Date.now() + XMPP_EXPORT.task.leaseMs),
+			),
 		).toBeGreaterThanOrEqual(1);
 		expect((await store.get(interrupted.task.taskId))?.state).toBe("failed");
 		expect(await store.deleteExpired()).toBe(1);
