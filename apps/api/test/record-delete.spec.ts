@@ -253,7 +253,7 @@ describe("purging a contact", () => {
 });
 
 describe("purging a company", () => {
-	it("refuses to delete a customer that still has projects", async () => {
+	it("refuses to delete a company that still has deals", async () => {
 		const company = await companies.create({
 			name: "Doomed",
 			domain: doomedDomain,
@@ -270,13 +270,13 @@ describe("purging a company", () => {
 		});
 
 		const companyTask = await parked({ companyId: company.id });
-		const projectTask = await parked({
+		const dealTask = await parked({
 			companyId: company.id,
 			dealId: deal.id,
 		});
 
 		await expect(companies.purge(company.id)).rejects.toThrow(
-			"Delete this customer's projects before deleting the customer.",
+			"Delete this company's deals before deleting the company.",
 		);
 
 		expect(
@@ -293,7 +293,7 @@ describe("purging a company", () => {
 		).not.toBe(null);
 		expect(
 			await db.agentTask.findUnique({
-				where: { id: projectTask.id },
+				where: { id: dealTask.id },
 				select: { companyId: true, dealId: true },
 			}),
 		).toEqual({ companyId: company.id, dealId: deal.id });
@@ -305,7 +305,7 @@ describe("purging a company", () => {
 		expect(survivor?.companyId).toBe(company.id);
 
 		await db.agentTask.deleteMany({
-			where: { id: { in: [companyTask.id, projectTask.id] } },
+			where: { id: { in: [companyTask.id, dealTask.id] } },
 		});
 		await db.deal.delete({ where: { id: deal.id } });
 		await db.contact.delete({ where: { id: contact.id } });
@@ -362,7 +362,7 @@ describe("the activity stamps a purge leaves behind", () => {
 		).toEqual({ lastActivityAt: null });
 	});
 
-	it("keeps project activity when customer deletion is refused", async () => {
+	it("keeps deal activity when company deletion is refused", async () => {
 		const company = await companies.create({
 			name: "Orphaner",
 			domain: orphanDomain,
@@ -392,7 +392,7 @@ describe("the activity stamps a purge leaves behind", () => {
 		await stamp.touch({ contactId: contact.id, dealId: deal.id }, at);
 
 		await expect(companies.purge(company.id)).rejects.toThrow(
-			"Delete this customer's projects before deleting the customer.",
+			"Delete this company's deals before deleting the company.",
 		);
 
 		expect(

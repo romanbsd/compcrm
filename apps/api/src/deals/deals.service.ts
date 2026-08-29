@@ -87,7 +87,7 @@ const CONTACT_SELECT = {
 
 const LOSING = new Set<DealStage>(LOSING_DEAL_STAGES);
 
-const GC_TEXT_FIELDS = [
+const DEAL_TEXT_FIELDS = [
 	"leadSource",
 	"projectType",
 	"addressLine1",
@@ -96,7 +96,7 @@ const GC_TEXT_FIELDS = [
 	"state",
 	"postalCode",
 ] as const;
-type GcTextField = (typeof GC_TEXT_FIELDS)[number];
+type DealTextField = (typeof DEAL_TEXT_FIELDS)[number];
 
 const SORTABLE: OrderByColumns<Prisma.DealOrderByWithRelationInput[]> = {
 	name: (dir) => [{ name: dir }],
@@ -302,7 +302,7 @@ export class DealsService {
 						currency,
 						...fx,
 						expectedCloseDate: parseDate(input.expectedCloseDate),
-						...gcTextInput(input),
+						...dealTextInput(input),
 					},
 					select: { id: true, name: true, companyId: true },
 				});
@@ -356,9 +356,9 @@ export class DealsService {
 		if (input.expectedCloseDate !== undefined) {
 			data.expectedCloseDate = parseDate(input.expectedCloseDate);
 		}
-		const gc = gcTextInput(input);
-		for (const field of GC_TEXT_FIELDS) {
-			if (gc[field] !== undefined) data[field] = gc[field];
+		const dealFields = dealTextInput(input);
+		for (const field of DEAL_TEXT_FIELDS) {
+			if (dealFields[field] !== undefined) data[field] = dealFields[field];
 		}
 
 		if (input.amountCents !== undefined || input.currency !== undefined) {
@@ -921,13 +921,13 @@ function textOrNull(
 			: blankToNull(value);
 }
 
-type GcTextFields = Record<GcTextField, string | null | undefined>;
+type DealTextFields = Record<DealTextField, string | null | undefined>;
 
-function gcTextInput(
-	input: Pick<DealCreateInput | DealUpdateInput, GcTextField>,
-): GcTextFields {
-	const out = {} as GcTextFields;
-	for (const field of GC_TEXT_FIELDS) {
+function dealTextInput(
+	input: Pick<DealCreateInput | DealUpdateInput, DealTextField>,
+): DealTextFields {
+	const out = {} as DealTextFields;
+	for (const field of DEAL_TEXT_FIELDS) {
 		out[field] = textOrNull(input[field]);
 	}
 	return out;

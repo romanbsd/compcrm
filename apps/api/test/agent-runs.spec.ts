@@ -85,7 +85,7 @@ beforeAll(async () => {
 	});
 	companyId = company.id;
 	const deal = await db.deal.create({
-		data: { name: "Agent run project", companyId, ownerId: userId },
+		data: { name: "Agent run deal", companyId, ownerId: userId },
 		select: { id: true },
 	});
 	dealId = deal.id;

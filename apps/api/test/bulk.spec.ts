@@ -208,7 +208,7 @@ describe("purging a selection", () => {
 		).toBeNull();
 	});
 
-	it("refuses to delete a customer that still has projects", async () => {
+	it("refuses to delete a company that still has deals", async () => {
 		const doomed = await companies.create({
 			name: `Doomed Co ${suffix}`,
 			domain: `doomed-${domain}`,
@@ -224,7 +224,7 @@ describe("purging a selection", () => {
 			succeeded: 0,
 			skipped: 0,
 			failed: 1,
-			message: "Delete this customer's projects before deleting the customer.",
+			message: "Delete this company's deals before deleting the company.",
 		});
 
 		expect(

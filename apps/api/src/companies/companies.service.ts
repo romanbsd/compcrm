@@ -453,13 +453,13 @@ export class CompaniesService {
 					return null;
 				}
 
-				const project = await tx.deal.findFirst({
+				const deal = await tx.deal.findFirst({
 					where: { companyId: id },
 					select: { id: true },
 				});
-				if (project) {
+				if (deal) {
 					throw new ConflictException(
-						"Delete this customer's projects before deleting the customer.",
+						"Delete this company's deals before deleting the company.",
 					);
 				}
 

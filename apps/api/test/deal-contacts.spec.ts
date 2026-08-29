@@ -93,9 +93,9 @@ beforeAll(async () => {
 afterAll(clean);
 
 describe("bringing a contact onto a deal", () => {
-	it("rejects a database project without a customer", async () => {
+	it("rejects a database deal without a company", async () => {
 		const attempt =
-			db.$executeRaw`INSERT INTO "deal" ("id", "name", "ownerId", "updatedAt") VALUES (${`no-company-${suffix}`}, ${`No customer ${suffix}`}, ${userId}, ${new Date()})`.then(
+			db.$executeRaw`INSERT INTO "deal" ("id", "name", "ownerId", "updatedAt") VALUES (${`no-company-${suffix}`}, ${`No company ${suffix}`}, ${userId}, ${new Date()})`.then(
 				async () => {
 					await db.deal.delete({ where: { id: `no-company-${suffix}` } });
 				},
@@ -104,13 +104,13 @@ describe("bringing a contact onto a deal", () => {
 		await expect(attempt).rejects.toThrow();
 	});
 
-	it("creates, updates, lists, and reads project fields", async () => {
-		const project = await deals.create({
-			name: `Kitchen ${suffix}`,
+	it("creates, updates, lists, and reads deal fields", async () => {
+		const deal = await deals.create({
+			name: `Deal ${suffix}`,
 			companyId,
 			ownerId: userId,
 			leadSource: "Referral",
-			projectType: "Kitchen",
+			projectType: "Type A",
 			addressLine1: "1 Main Street",
 			addressLine2: "Unit 2",
 			city: "Austin",
@@ -118,9 +118,9 @@ describe("bringing a contact onto a deal", () => {
 			postalCode: "78701",
 		});
 
-		await deals.update(project.id, {
+		await deals.update(deal.id, {
 			leadSource: "Website",
-			projectType: "Bathroom",
+			projectType: "Type B",
 			addressLine1: "2 Main Street",
 			addressLine2: "Unit 3",
 			city: "Dallas",
@@ -128,12 +128,12 @@ describe("bringing a contact onto a deal", () => {
 			postalCode: "75201",
 		});
 
-		const detail = await deals.byId(project.id);
+		const detail = await deals.byId(deal.id);
 		expect(detail).toMatchObject({
 			stage: "DEMO_BOOKED",
 			company: { id: companyId },
 			leadSource: "Website",
-			projectType: "Bathroom",
+			projectType: "Type B",
 			addressLine1: "2 Main Street",
 			addressLine2: "Unit 3",
 			city: "Dallas",
@@ -154,9 +154,9 @@ describe("bringing a contact onto a deal", () => {
 			fields: {},
 			archived: false,
 		});
-		expect(list.rows.find((row) => row.id === project.id)).toMatchObject({
+		expect(list.rows.find((row) => row.id === deal.id)).toMatchObject({
 			leadSource: "Website",
-			projectType: "Bathroom",
+			projectType: "Type B",
 			addressLine1: "2 Main Street",
 			addressLine2: "Unit 3",
 			city: "Dallas",
@@ -164,25 +164,25 @@ describe("bringing a contact onto a deal", () => {
 			postalCode: "75201",
 		});
 
-		await deals.purge(project.id);
+		await deals.purge(deal.id);
 	});
 
-	it("stores a document and its line items on a project", async () => {
+	it("stores a document and its line items on a deal", async () => {
 		const document = await db.document.create({
 			data: {
 				dealId,
 				type: "ESTIMATE",
 				number: `DRAFT-${suffix}`,
 				status: "DRAFT",
-				recipientSnapshot: { name: "Homeowner" },
-				contractorSnapshot: { name: "Builder" },
-				projectSnapshot: { name: "Kitchen" },
+				recipientSnapshot: { name: "Recipient" },
+				contractorSnapshot: { name: "Company" },
+				projectSnapshot: { name: "Deal" },
 				subtotal: "100.00",
 				tax: "8.25",
 				total: "108.25",
 				lineItems: {
 					create: {
-						description: "Cabinets",
+						description: "Line item",
 						quantity: "1.00",
 						unitPrice: "100.00",
 						total: "100.00",
@@ -200,7 +200,7 @@ describe("bringing a contact onto a deal", () => {
 
 		expect(document.issuedAt).toBeNull();
 		expect(document.currency).toBe("USD");
-		expect(document.lineItems[0]?.description).toBe("Cabinets");
+		expect(document.lineItems[0]?.description).toBe("Line item");
 
 		await db.document.delete({ where: { id: document.id } });
 	});

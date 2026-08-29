@@ -230,7 +230,7 @@ describe("durable custom-agent runtime", () => {
 		const eventDeal = await db.deal.create({
 			data: {
 				id: `event-deal-${suffix}`,
-				name: "Event project",
+				name: "Event deal",
 				ownerId: userId,
 				companyId,
 			},
