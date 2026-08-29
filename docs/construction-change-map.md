@@ -16,7 +16,7 @@ retained database or parameter change.
 
 | Original CRM name | Construction meaning | Stored and API name |
 | --- | --- | --- |
-| `Company` | Customer or household | `Company`, `company` |
+| `Company` | Customer or Household | `Company`, `company` |
 | `Contact` | Person | `Contact`, `contact` |
 | `Deal` | Project | `Deal`, `deal` |
 | `DealContact` | Project Contact | `DealContact`, `dealContact` |
