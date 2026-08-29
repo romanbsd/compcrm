@@ -8,14 +8,12 @@ import {
 	type DataTableFacet,
 } from "@crm/ui/components/data-table";
 import { EmptyCellValue } from "@crm/ui/components/empty-cell";
-import { PersonAvatar } from "@crm/ui/components/person-avatar";
 import { useTableSelection } from "@crm/ui/hooks/use-table-selection";
 import { formatMoney } from "@crm/ui/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { CLOSING_OPTIONS } from "@/components/crm/closing-window";
 import { CompanyCell } from "@/components/crm/company-cell";
-import { contactName } from "@/components/crm/contact-name";
 import { useFieldColumns } from "@/components/crm/fields/field-columns";
 import { useFieldFacets } from "@/components/crm/fields/field-facets";
 import { OwnerCell } from "@/components/crm/owner-cell";
@@ -36,7 +34,7 @@ type DealRow = RouterOutputs["deals"]["list"]["rows"][number];
 const COLUMNS: DataTableColumn<DealRow>[] = [
 	{
 		id: "name",
-		header: "Project",
+		header: "Deal",
 		sortable: true,
 		hideable: false,
 		width: "w-[24%]",
@@ -44,28 +42,17 @@ const COLUMNS: DataTableColumn<DealRow>[] = [
 	},
 	{
 		id: "company",
-		header: "Customer",
+		header: "Company",
+		sortable: true,
 		width: "w-[18%]",
-		cell: (row) => <CustomerCell row={row} />,
+		cell: (row) => <CompanyCell company={row.company} />,
 	},
 	{
 		id: "stage",
-		header: "Status",
+		header: "Stage",
 		sortable: true,
 		width: "w-[18%]",
 		cell: (row) => <DealStageMenu dealId={row.id} stage={row.stage} />,
-	},
-	{
-		id: "projectType",
-		header: "Project type",
-		width: "w-[16%]",
-		hideBelow: "md",
-		cell: (row) =>
-			row.projectType ? (
-				<span className="truncate">{row.projectType}</span>
-			) : (
-				<EmptyCellValue />
-			),
 	},
 	{
 		id: "amount",
@@ -93,7 +80,7 @@ const COLUMNS: DataTableColumn<DealRow>[] = [
 	},
 	{
 		id: "expectedCloseDate",
-		header: "Target date",
+		header: "Close date",
 		sortable: true,
 		width: "w-[12%]",
 		hideBelow: "lg",
@@ -138,25 +125,6 @@ const COLUMNS: DataTableColumn<DealRow>[] = [
 		),
 	},
 ];
-
-function CustomerCell({ row }: { row: DealRow }) {
-	if (row.primaryContact) {
-		const name = contactName(row.primaryContact);
-		return (
-			<span className="flex min-w-0 items-center gap-2">
-				<PersonAvatar
-					src={row.primaryContact.imageUrl}
-					name={name}
-					email={row.primaryContact.email}
-					size="sm"
-				/>
-				<span className="truncate">{name}</span>
-			</span>
-		);
-	}
-
-	return <CompanyCell company={row.company} />;
-}
 
 const ARCHIVED_COLUMN: DataTableColumn<DealRow> = {
 	id: "archivedAt",
@@ -227,14 +195,14 @@ export function DealsTable() {
 		},
 		{
 			id: "stage",
-			label: "Status",
+			label: "Stage",
 			options: DEAL_STAGE_OPTIONS.filter(
 				(option) => (facetCounts?.stage?.[option.value] ?? 0) > 0,
 			),
 		},
 		{
 			id: "closing",
-			label: "Target date",
+			label: "Closing",
 			options: CLOSING_OPTIONS.flatMap((option) =>
 				(facetCounts?.closing?.[option.value] ?? 0) > 0
 					? [{ value: option.value, label: option.label }]
@@ -262,7 +230,7 @@ export function DealsTable() {
 	return (
 		<DataTable
 			query={query}
-			search={<ListSearch placeholder="Search projects by name or customer…" />}
+			search={<ListSearch placeholder="Search deals by name or company…" />}
 			actions={
 				<Button
 					variant={input.archived ? "contrast" : "outline"}
@@ -281,7 +249,7 @@ export function DealsTable() {
 			facets={facets}
 			tabs={{
 				id: "status",
-				allLabel: "All projects",
+				allLabel: "All deals",
 				options: [
 					{ value: "open", label: "Open" },
 					{ value: "closed", label: "Closed" },
@@ -303,18 +271,16 @@ export function DealsTable() {
 			onRowHover={(row) => prefetchRecord({ kind: "deal", id: row.id })}
 			onRowClick={(row) => openRecord({ kind: "deal", id: row.id })}
 			empty={
-				input.archived
-					? "No archived projects."
-					: "No projects match this view."
+				input.archived ? "No archived deals." : "No deals match this view."
 			}
 			meta={
 				input.archived || openPipelineCents === null ? undefined : (
 					<span>
-						{deals.data?.total ?? 0} projects ·{" "}
+						{deals.data?.total ?? 0} deals ·{" "}
 						<span className="tabular-nums">
 							{formatMoney(openPipelineCents, reportingCurrency)}
 						</span>{" "}
-						open project value
+						open pipeline
 						{unconverted && unconverted.count > 0 ? (
 							<span className="text-muted-foreground">
 								{" "}

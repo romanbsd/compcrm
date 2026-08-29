@@ -36,7 +36,7 @@ import {
 const NOUN = {
 	company: "company",
 	contact: "contact",
-	deal: "project",
+	deal: "deal",
 } satisfies Record<RecordKind, string>;
 
 const RECORD_PROCEDURES = {

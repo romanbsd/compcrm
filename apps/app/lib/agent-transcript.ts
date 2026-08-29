@@ -59,7 +59,7 @@ type ToolVerbs = Record<string, string>;
 const VERBS: ToolVerbs = {
 	read_crm_history: "Read our emails and meetings with them",
 	read_company_history: "Read everything we have on the company",
-	read_deal_history: "Read the project and where it has been",
+	read_deal_history: "Read the deal and where it has been",
 	search_crm: "Looked the record up in the CRM",
 	resolve_linkedin_profile: "Searched for their LinkedIn profile",
 	get_linkedin_profile: "Read a LinkedIn profile",
@@ -76,7 +76,7 @@ const VERBS: ToolVerbs = {
 	enrich_company: "Looked up the company",
 	schedule_recheck: "Decided when to look again",
 	record_job_change: "Raised a job change",
-	list_deals: "Reviewed the project list",
+	list_deals: "Reviewed the deal pipeline",
 	list_outstanding_work: "Looked for outstanding work",
 	set_chat_title: "Named this chat",
 	list_fields: "Read what this workspace tracks",

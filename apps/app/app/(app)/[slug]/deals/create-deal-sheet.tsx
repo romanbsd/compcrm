@@ -31,7 +31,6 @@ import {
 	SheetTrigger,
 } from "@crm/ui/components/sheet";
 import { Spinner } from "@crm/ui/components/spinner";
-import { Textarea } from "@crm/ui/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { parseAsBoolean, useQueryState } from "nuqs";
 import { type ComponentProps, Suspense, useId, useState } from "react";
@@ -49,7 +48,7 @@ function AddButton(props: ComponentProps<typeof Button>) {
 	return (
 		<Button {...props}>
 			<Icon icon={Add} data-icon="inline-start" />
-			New project
+			New deal
 		</Button>
 	);
 }
@@ -75,29 +74,13 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 	const [company, setCompany] = useState(companyId ?? UNSET);
 	const [ownerId, setOwnerId] = useState(UNSET);
 	const [stage, setStage] = useState<DealStage>(DealStage.LEAD);
-	const [projectType, setProjectType] = useState("");
-	const [leadSource, setLeadSource] = useState("");
-	const [description, setDescription] = useState("");
-	const [addressLine1, setAddressLine1] = useState("");
-	const [addressLine2, setAddressLine2] = useState("");
-	const [city, setCity] = useState("");
-	const [state, setState] = useState("");
-	const [postalCode, setPostalCode] = useState("");
 	const [amount, setAmount] = useState("");
 	const [currency, setCurrency] = useState("");
-	const [targetDate, setTargetDate] = useState("");
+	const [closeDate, setCloseDate] = useState("");
 
 	const nameId = useId();
-	const projectTypeId = useId();
-	const leadSourceId = useId();
-	const descriptionId = useId();
-	const addressLine1Id = useId();
-	const addressLine2Id = useId();
-	const cityId = useId();
-	const stateId = useId();
-	const postalCodeId = useId();
 	const amountId = useId();
-	const targetDateId = useId();
+	const closeDateId = useId();
 
 	const users = useQuery(trpc.users.list.queryOptions());
 	const me = useQuery(trpc.users.me.queryOptions());
@@ -109,26 +92,15 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 
 	const create = useMutation(
 		trpc.deals.create.mutationOptions({
-			onSuccess: async (project) => {
-				await cache.deal(project.id);
-				toast.success(`${project.name} added.`);
+			onSuccess: async (deal) => {
+				await cache.deal(deal.id);
+				toast.success(`${deal.name} added.`);
 				await setOpen(null);
 				setName("");
-				setCompany(companyId ?? UNSET);
-				setOwnerId("");
-				setStage(DealStage.LEAD);
-				setProjectType("");
-				setLeadSource("");
-				setDescription("");
-				setAddressLine1("");
-				setAddressLine2("");
-				setCity("");
-				setState("");
-				setPostalCode("");
 				setAmount("");
 				setCurrency("");
-				setTargetDate("");
-				openRecord({ kind: "deal", id: project.id });
+				setCloseDate("");
+				openRecord({ kind: "deal", id: deal.id });
 			},
 			onError: (error) => toast.error(error.message),
 		}),
@@ -144,14 +116,14 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 			</SheetTrigger>
 			<SheetContent side="right">
 				<SheetHeader>
-					<SheetTitle>New project</SheetTitle>
+					<SheetTitle>New deal</SheetTitle>
 					<SheetDescription>
-						Track the customer, job site, status, and next steps.
+						Every deal belongs to a company and has someone's name against it.
 					</SheetDescription>
 				</SheetHeader>
 
 				<form
-					id="create-project"
+					id="create-deal"
 					className="flex-1 overflow-y-auto px-4"
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -162,52 +134,40 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 							companyId: company,
 							ownerId: resolvedOwner,
 							stage,
-							projectType: projectType || null,
-							leadSource: leadSource || null,
-							description: description || null,
-							addressLine1: addressLine1 || null,
-							addressLine2: addressLine2 || null,
-							city: city || null,
-							state: state || null,
-							postalCode: postalCode || null,
 							amountCents: Number.isFinite(parsed)
 								? Math.round(parsed * 100)
 								: null,
 							currency: currency || workspaceCurrency,
-							expectedCloseDate: targetDate || null,
+							expectedCloseDate: closeDate || null,
 						});
 					}}
 				>
 					<FieldGroup>
 						<Field>
-							<FieldLabel htmlFor={nameId}>Project name</FieldLabel>
+							<FieldLabel htmlFor={nameId}>Name</FieldLabel>
 							<Input
 								id={nameId}
 								value={name}
 								onChange={(event) => setName(event.target.value)}
-								placeholder="Kitchen remodel"
+								placeholder="Stripe — Comp AI"
 								autoComplete="off"
 								required
 							/>
 						</Field>
 
 						<Field>
-							<FieldLabel htmlFor="create-project-company">Customer</FieldLabel>
+							<FieldLabel htmlFor="create-deal-company">Company</FieldLabel>
 							<CompanyPicker
-								id="create-project-company"
+								id="create-deal-company"
 								value={company}
 								onValueChange={setCompany}
-								placeholder="Choose a household or business"
 							/>
-							<FieldDescription>
-								Every project belongs to a household or business customer.
-							</FieldDescription>
 						</Field>
 
 						<Field>
-							<FieldLabel htmlFor="create-project-owner">Owner</FieldLabel>
+							<FieldLabel htmlFor="create-deal-owner">Owner</FieldLabel>
 							<Select value={resolvedOwner} onValueChange={setOwnerId}>
-								<SelectTrigger id="create-project-owner">
+								<SelectTrigger id="create-deal-owner">
 									<SelectValue placeholder="Choose an owner" />
 								</SelectTrigger>
 								<SelectContent>
@@ -221,12 +181,12 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 						</Field>
 
 						<Field>
-							<FieldLabel htmlFor="create-project-status">Status</FieldLabel>
+							<FieldLabel htmlFor="create-deal-stage">Stage</FieldLabel>
 							<Select
 								value={stage}
 								onValueChange={(value) => setStage(value as DealStage)}
 							>
-								<SelectTrigger id="create-project-status">
+								<SelectTrigger id="create-deal-stage">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -237,85 +197,10 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 									))}
 								</SelectContent>
 							</Select>
-							<FieldDescription>New projects start as Lead.</FieldDescription>
-						</Field>
-
-						<Field>
-							<FieldLabel htmlFor={projectTypeId}>Project type</FieldLabel>
-							<Input
-								id={projectTypeId}
-								value={projectType}
-								onChange={(event) => setProjectType(event.target.value)}
-								placeholder="Kitchen remodel"
-								autoComplete="off"
-							/>
-						</Field>
-
-						<Field>
-							<FieldLabel htmlFor={leadSourceId}>Lead source</FieldLabel>
-							<Input
-								id={leadSourceId}
-								value={leadSource}
-								onChange={(event) => setLeadSource(event.target.value)}
-								placeholder="Referral"
-								autoComplete="off"
-							/>
-						</Field>
-
-						<Field>
-							<FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
-							<Textarea
-								id={descriptionId}
-								value={description}
-								onChange={(event) => setDescription(event.target.value)}
-								placeholder="Scope, customer goals, and next steps"
-								rows={4}
-							/>
-						</Field>
-
-						<Field>
-							<FieldLabel htmlFor={addressLine1Id}>Job-site address</FieldLabel>
-							<Input
-								id={addressLine1Id}
-								value={addressLine1}
-								onChange={(event) => setAddressLine1(event.target.value)}
-								placeholder="123 Main Street"
-								autoComplete="street-address"
-							/>
-							<Input
-								id={addressLine2Id}
-								value={addressLine2}
-								onChange={(event) => setAddressLine2(event.target.value)}
-								placeholder="Suite or unit"
-								aria-label="Address line 2"
-								autoComplete="address-line2"
-							/>
-							<div className="grid gap-2 sm:grid-cols-3">
-								<Input
-									id={cityId}
-									value={city}
-									onChange={(event) => setCity(event.target.value)}
-									placeholder="City"
-									aria-label="City"
-									autoComplete="address-level2"
-								/>
-								<Input
-									id={stateId}
-									value={state}
-									onChange={(event) => setState(event.target.value)}
-									placeholder="State"
-									aria-label="State"
-									autoComplete="address-level1"
-								/>
-								<Input
-									id={postalCodeId}
-									value={postalCode}
-									onChange={(event) => setPostalCode(event.target.value)}
-									placeholder="ZIP code"
-									aria-label="ZIP code"
-									autoComplete="postal-code"
-								/>
-							</div>
+							<FieldDescription>
+								A new deal is an open deal — close it from the pipeline once
+								there is an outcome to record.
+							</FieldDescription>
 						</Field>
 
 						<Field>
@@ -348,12 +233,12 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 						</Field>
 
 						<Field>
-							<FieldLabel htmlFor={targetDateId}>Target date</FieldLabel>
+							<FieldLabel htmlFor={closeDateId}>Expected close date</FieldLabel>
 							<DatePicker
-								id={targetDateId}
-								value={targetDate}
-								onChange={setTargetDate}
-								placeholder="No target date yet"
+								id={closeDateId}
+								value={closeDate}
+								onChange={setCloseDate}
+								placeholder="No date yet"
 							/>
 						</Field>
 					</FieldGroup>
@@ -362,11 +247,11 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 				<SheetFooter>
 					<Button
 						type="submit"
-						form="create-project"
+						form="create-deal"
 						disabled={create.isPending || !ready}
 					>
 						{create.isPending ? <Spinner /> : null}
-						Create project
+						Add deal
 					</Button>
 					<SheetClose asChild>
 						<Button variant="outline">Cancel</Button>

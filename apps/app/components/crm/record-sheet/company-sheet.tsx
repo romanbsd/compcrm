@@ -25,7 +25,6 @@ import { formatMoney } from "@crm/ui/lib/format";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AgentPanel } from "@/components/crm/agent-panel";
-import { contactName } from "@/components/crm/contact-name";
 import { EnrichmentActions } from "@/components/crm/enrichment-actions";
 import { EnrichmentIndicator } from "@/components/crm/enrichment-status";
 import { FieldsCog, RecordFields } from "@/components/crm/fields/record-fields";
@@ -92,9 +91,9 @@ function companyConsequence(company: Company): string {
 	const gone =
 		deals > 0
 			? deals === 1
-				? "The one Project must be deleted before this Customer can be permanently deleted."
-				: `All ${deals} Projects must be deleted before this Customer can be permanently deleted.`
-			: "This Customer has no Projects and can be permanently deleted.";
+				? "Its one deal must be deleted before this company can be permanently deleted."
+				: `All ${deals} deals must be deleted before this company can be permanently deleted.`
+			: "This company has no deals and can be permanently deleted.";
 
 	const kept =
 		contacts > 0
@@ -113,15 +112,15 @@ const CONTACT_COLUMNS = [
 ];
 
 const DEAL_COLUMNS = [
-	{ id: "deal", header: "Project", width: "w-[32%]", className: "pl-5" },
-	{ id: "stage", header: "Status", width: "w-[24%]" },
+	{ id: "deal", header: "Deal", width: "w-[32%]", className: "pl-5" },
+	{ id: "stage", header: "Stage", width: "w-[24%]" },
 	{
 		id: "amount",
 		header: "Amount",
 		width: "w-[16%]",
 		align: "right" as const,
 	},
-	{ id: "close-date", header: "Target date", width: "w-[14%]" },
+	{ id: "close-date", header: "Close date", width: "w-[14%]" },
 	{ id: "owner", header: "Owner", width: "w-[14%]" },
 ];
 
@@ -193,7 +192,7 @@ export function CompanySheet({ companyId }: { companyId: string }) {
 				},
 				{
 					value: "deals",
-					label: "Projects",
+					label: "Deals",
 					count: company.deals.length,
 					content: (
 						<CompanyDeals
@@ -270,7 +269,7 @@ export function CompanySheet({ companyId }: { companyId: string }) {
 			stats={
 				company ? (
 					<DetailSheetStats>
-						<DetailSheetStat label="Open project value">
+						<DetailSheetStat label="Open pipeline">
 							<span className="tabular-nums">
 								{formatMoney(openValueCents, company.reportingCurrency)}
 							</span>
@@ -281,10 +280,10 @@ export function CompanySheet({ companyId }: { companyId: string }) {
 								</span>
 							) : null}
 						</DetailSheetStat>
-						<DetailSheetStat label="Open projects">
+						<DetailSheetStat label="Open deals">
 							<span className="tabular-nums">{openDeals.length}</span>
 						</DetailSheetStat>
-						<DetailSheetStat label="Next target">
+						<DetailSheetStat label="Next close">
 							{closing ? <LocalDay date={closing} /> : <EmptyCellValue />}
 						</DetailSheetStat>
 						<DetailSheetStat label="Owner">
@@ -521,11 +520,17 @@ function CompanyContacts({
 								<span className="flex min-w-0 items-center gap-2">
 									<PersonAvatar
 										src={contact.imageUrl}
-										name={contactName(contact)}
+										name={[contact.firstName, contact.lastName]
+											.filter(Boolean)
+											.join(" ")}
 										email={contact.email}
 										size="sm"
 									/>
-									<span className="truncate">{contactName(contact)}</span>
+									<span className="truncate">
+										{[contact.firstName, contact.lastName]
+											.filter(Boolean)
+											.join(" ")}
+									</span>
 								</span>
 							</TableCell>
 							<TableCell className="truncate px-3 py-2.5">
@@ -580,12 +585,12 @@ function CompanyDeals({
 				{adding ? null : (
 					<DetailSheetEmpty
 						icon={Partnership}
-						title="No projects yet"
-						description={`Nothing is being built for ${company.name} right now. Create a project to track the work and forecast.`}
+						title="No deals yet"
+						description={`Nothing is being sold to ${company.name} right now. Open one and it joins the pipeline and the forecast.`}
 						action={
 							<Button variant="outline" size="sm" onClick={onAdd}>
 								<Icon icon={Add} data-icon="inline-start" />
-								New project
+								New deal
 							</Button>
 						}
 					/>
@@ -630,7 +635,7 @@ function CompanyDeals({
 				))}
 
 				<AddRow
-					label="New project"
+					label="New deal"
 					columns={DEAL_COLUMNS.length}
 					onClick={onAdd}
 				/>

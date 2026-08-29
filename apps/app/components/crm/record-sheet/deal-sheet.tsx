@@ -110,9 +110,9 @@ function ReportedValue({ deal }: { deal: Deal }) {
 
 const CONTACT_COLUMNS = [
 	{ id: "name", header: "Name", width: "w-[28%]", className: "pl-5" },
-	{ id: "role", header: "Role", width: "w-[36%]" },
-	{ id: "title", header: "Title", width: "w-[18%]" },
-	{ id: "email", header: "Email", width: "w-[14%]" },
+	{ id: "role", header: "Role", width: "w-[20%]" },
+	{ id: "title", header: "Title", width: "w-[22%]" },
+	{ id: "email", header: "Email", width: "w-[22%]" },
 	{ id: "remove", srLabel: "Remove", width: "w-10" },
 ];
 
@@ -144,7 +144,7 @@ export function DealSheet({ dealId }: { dealId: string }) {
 				},
 				{
 					value: "contacts",
-					label: "Project contacts",
+					label: "Contacts",
 					count: deal.contacts.length,
 					content: (
 						<DealContacts
@@ -173,7 +173,7 @@ export function DealSheet({ dealId }: { dealId: string }) {
 		<RecordSheetFrame
 			loading={query.isPending}
 			error={query.error?.message ?? null}
-			title={deal?.name ?? "Project"}
+			title={deal?.name ?? "Deal"}
 			description={
 				deal ? (
 					deal.company ? (
@@ -187,7 +187,7 @@ export function DealSheet({ dealId }: { dealId: string }) {
 							{deal.company.name}
 						</button>
 					) : (
-						<span className="text-muted-foreground">No customer attached</span>
+						<span className="text-muted-foreground">No company attached</span>
 					)
 				) : undefined
 			}
@@ -215,7 +215,7 @@ export function DealSheet({ dealId }: { dealId: string }) {
 						<RecordActions
 							record={{ kind: "deal", id: deal.id }}
 							name={deal.name}
-							consequence={`Its status history, notes and agent conversations go too. The ${deal.contacts.length === 1 ? "person" : "people"} attached to it stay in the CRM.`}
+							consequence={`Its stage history, notes and agent conversations go too. ${deal.company?.name ?? "The company"} and the ${deal.contacts.length === 1 ? "person" : "people"} on it stay in the CRM.`}
 							archivedAt={deal.archivedAt}
 						/>
 					</>
@@ -233,14 +233,14 @@ export function DealSheet({ dealId }: { dealId: string }) {
 								</span>
 							)}
 						</DetailSheetStat>
-						<DetailSheetStat label="Target date">
+						<DetailSheetStat label="Expected close">
 							{deal.expectedCloseDate ? (
 								<LocalDay date={deal.expectedCloseDate} />
 							) : (
 								<EmptyCellValue />
 							)}
 						</DetailSheetStat>
-						<DetailSheetStat label="Status since">
+						<DetailSheetStat label="In stage">
 							<LocalRelativeTime date={deal.stageChangedAt} />
 						</DetailSheetStat>
 						<DetailSheetStat label="Owner">
@@ -283,12 +283,12 @@ function DealOverview({ deal }: { deal: Deal }) {
 
 	return (
 		<DetailSheetBody>
-			<DetailSheetSection title="Status">
+			<DetailSheetSection title="Stage">
 				<StageStepper dealId={deal.id} stage={deal.stage} />
 
 				{deal.closedReason ? (
 					<DetailSheetProperties>
-						<DetailSheetProperty label="Resolved">
+						<DetailSheetProperty label="Closed">
 							{deal.closedAt ? (
 								<LocalDateTime date={deal.closedAt} options={DATE_OPTIONS} />
 							) : (
@@ -338,27 +338,12 @@ function DealOverview({ deal }: { deal: Deal }) {
 					/>
 					<ReportedValue deal={deal} />
 					<InlineDateField
-						label="Target date"
+						label="Close date"
 						value={deal.expectedCloseDate}
 						saving={isSaving("expectedCloseDate")}
 						onSave={(next) => save({ expectedCloseDate: next || null })}
 					/>
-					<InlineField
-						label="Project type"
-						value={deal.projectType}
-						placeholder="Kitchen remodel"
-						saving={isSaving("projectType")}
-						onSave={(projectType) => save({ projectType })}
-					/>
-					<InlineField
-						label="Lead source"
-						value={deal.leadSource}
-						placeholder="Referral"
-						saving={isSaving("leadSource")}
-						onSave={(leadSource) => save({ leadSource })}
-					/>
 					<InlineCompanyField
-						label="Customer"
 						value={deal.company?.id ?? NONE}
 						company={deal.company}
 						saving={isSaving("companyId")}
@@ -381,48 +366,11 @@ function DealOverview({ deal }: { deal: Deal }) {
 				</DetailSheetProperties>
 			</DetailSheetSection>
 
-			<DetailSheetSection title="Job site">
-				<DetailSheetProperties>
-					<InlineField
-						label="Address"
-						value={deal.addressLine1}
-						placeholder="Street address"
-						saving={isSaving("addressLine1")}
-						onSave={(addressLine1) => save({ addressLine1 })}
-					/>
-					<InlineField
-						label="Address line 2"
-						value={deal.addressLine2}
-						placeholder="Suite or unit"
-						saving={isSaving("addressLine2")}
-						onSave={(addressLine2) => save({ addressLine2 })}
-					/>
-					<InlineField
-						label="City"
-						value={deal.city}
-						saving={isSaving("city")}
-						onSave={(city) => save({ city })}
-					/>
-					<InlineField
-						label="State"
-						value={deal.state}
-						saving={isSaving("state")}
-						onSave={(state) => save({ state })}
-					/>
-					<InlineField
-						label="Postal code"
-						value={deal.postalCode}
-						saving={isSaving("postalCode")}
-						onSave={(postalCode) => save({ postalCode })}
-					/>
-				</DetailSheetProperties>
-			</DetailSheetSection>
-
 			<DetailSheetSection title="Description">
 				<InlineTextArea
 					label="Description"
 					value={deal.description}
-					placeholder="Scope, customer goals, and next steps."
+					placeholder={`What ${deal.company?.name ?? "the company"} is buying, why now, and what stands in the way.`}
 					saving={isSaving("description")}
 					onSave={(description) => save({ description })}
 				/>
@@ -437,18 +385,18 @@ function WhereItStands({ deal }: { deal: Deal }) {
 	const openRecord = useOpenRecord();
 
 	return (
-		<DetailSheetSection title="Project details">
+		<DetailSheetSection title="Where it stands">
 			<DetailSheetProperties>
 				<DetailSheetProperty label="Opened">
 					<LocalDateTime date={deal.createdAt} options={DATE_OPTIONS} />
 				</DetailSheetProperty>
 
-				<DetailSheetProperty label="Status since">
+				<DetailSheetProperty label="In stage since">
 					<LocalDateTime date={deal.stageChangedAt} options={DATE_OPTIONS} />
 				</DetailSheetProperty>
 
 				{deal.closedAt ? (
-					<DetailSheetProperty label="Resolved">
+					<DetailSheetProperty label="Closed">
 						<LocalDateTime date={deal.closedAt} options={DATE_OPTIONS} />
 					</DetailSheetProperty>
 				) : null}
@@ -459,10 +407,10 @@ function WhereItStands({ deal }: { deal: Deal }) {
 					</DetailSheetProperty>
 				) : null}
 
-				<DetailSheetProperty label="Project contacts" wide>
+				<DetailSheetProperty label="On it" wide>
 					{deal.contacts.length === 0 ? (
 						<span className="text-muted-foreground">
-							No contacts are attached yet.
+							Nobody from {deal.company?.name ?? "the company"} is attached yet.
 						</span>
 					) : (
 						<span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -536,8 +484,8 @@ function DealContacts({
 				{adding ? null : (
 					<DetailSheetEmpty
 						icon={UserMultiple}
-						title="No project contacts"
-						description="Attach the people involved in this project."
+						title="No contacts on this deal"
+						description={`Nobody from ${deal.company?.name ?? "the company"} is attached yet. Bring the people you are selling to onto the deal and it says who to chase.`}
 						action={
 							<Button variant="outline" size="sm" onClick={onAdd}>
 								<Icon icon={Add} data-icon="inline-start" />
@@ -573,7 +521,7 @@ function DealContacts({
 						</TableCell>
 						<TableCell className="truncate px-1 py-2.5">
 							<InlineTextCell
-								label={`Role on this project for ${contactName(contact)}`}
+								label={`Role on this deal for ${contactName(contact)}`}
 								value={contact.role}
 								placeholder="Champion"
 								saving={
@@ -612,11 +560,11 @@ function DealContacts({
 									>
 										<Icon icon={Close} />
 										<span className="sr-only">
-											Take {contactName(contact)} off this project
+											Take {contactName(contact)} off this deal
 										</span>
 									</Button>
 								</TooltipTrigger>
-								<TooltipContent>Take off this project</TooltipContent>
+								<TooltipContent>Take off this deal</TooltipContent>
 							</Tooltip>
 						</TableCell>
 					</SimpleTableRow>

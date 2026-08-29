@@ -45,12 +45,9 @@ const never = [
 ];
 
 const suggestions = [
-	["When a project is created", "Post the project to an approved channel."],
-	[
-		"When a project is complete",
-		"Tell an approved channel that the project is complete.",
-	],
-	["When a project reopens", "Notify one approved channel or teammate."],
+	["When a deal is created", "Post the deal to an approved sales channel."],
+	["When a deal is won", "Tell an approved channel that the deal closed."],
+	["When a deal reopens", "Notify one approved channel or teammate."],
 ];
 
 type SlackConnectionPageProps = {

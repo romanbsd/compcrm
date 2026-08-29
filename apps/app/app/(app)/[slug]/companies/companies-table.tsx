@@ -103,7 +103,7 @@ const COLUMNS: DataTableColumn<CompanyRow>[] = [
 	},
 	{
 		id: "deals",
-		header: "Open projects",
+		header: "Open deals",
 		sortable: true,
 		align: "right",
 		width: "w-[9%]",

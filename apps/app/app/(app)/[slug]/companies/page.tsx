@@ -30,7 +30,7 @@ export default function CompaniesPage({
 				<PageShellHeading>
 					<PageShellTitle>Companies</PageShellTitle>
 					<PageShellDescription>
-						Every account involved in a project.
+						Every account in the pipeline.
 					</PageShellDescription>
 				</PageShellHeading>
 				<PageShellActions>

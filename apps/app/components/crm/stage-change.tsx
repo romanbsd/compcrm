@@ -135,7 +135,7 @@ export function CloseReasonDialog() {
 	};
 
 	const setStage = useStageMutation(() => {
-		toast.success("Project marked lost.");
+		toast.success("Deal closed.");
 		close();
 	});
 
@@ -146,10 +146,13 @@ export function CloseReasonDialog() {
 		<Dialog open={open} onOpenChange={(next) => !next && close()}>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>Mark project as lost</DialogTitle>
+					<DialogTitle>
+						{stage === "LOST" ? "Close as lost" : "Mark as unqualified"}
+					</DialogTitle>
 					<DialogDescription>
-						What did we lose it to? This answer is recorded on the project
-						timeline.
+						{stage === "LOST"
+							? "What did we lose it to? This is the only place that answer gets recorded."
+							: "Why is this not a fit? It goes on the timeline so nobody re-runs the same deal."}
 					</DialogDescription>
 				</DialogHeader>
 

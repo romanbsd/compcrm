@@ -84,11 +84,11 @@ function SuggestedActions() {
 					Slack
 				</Chip>
 				<span className="shrink-0">
-					channel and invite the owner when a project hits
+					channel and invite the owner when a deal hits
 				</span>
 				<Chip className="gap-1.5 px-2">
 					<span className="size-1.5 shrink-0 rounded-full bg-success" />
-					Complete
+					Closed won
 				</Chip>
 			</SuggestedAction>
 

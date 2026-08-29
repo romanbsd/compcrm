@@ -19,7 +19,7 @@ const PRESENTATION: ActivityPresentation = {
 	EMAIL: { icon: Email, label: "Email" },
 	MEETING: { icon: Events, label: "Meeting" },
 	TASK: { icon: Task, label: "Task" },
-	STAGE_CHANGE: { icon: ArrowRight, label: "Status change" },
+	STAGE_CHANGE: { icon: ArrowRight, label: "Stage change" },
 	ENRICHMENT: { icon: MagicWand, label: "Enrichment" },
 };
 

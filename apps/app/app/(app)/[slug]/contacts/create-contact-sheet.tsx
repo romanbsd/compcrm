@@ -28,7 +28,6 @@ import { parseAsBoolean, useQueryState } from "nuqs";
 import { type ComponentProps, Suspense, useId, useState } from "react";
 import { toast } from "sonner";
 import { CompanyPicker } from "@/components/crm/company-picker";
-import { contactName } from "@/components/crm/contact-name";
 import { useOpenRecord } from "@/components/crm/record-sheet/record-stack";
 import { SEARCH_PARAM } from "@/lib/search-param-keys";
 import { useCrmCache } from "@/lib/trpc/cache";
@@ -80,7 +79,9 @@ function CreateContactForm({ companyId }: { companyId?: string }) {
 		trpc.contacts.create.mutationOptions({
 			onSuccess: async (contact) => {
 				await cache.contact(contact.id);
-				toast.success(`${contactName(contact)} added.`);
+				toast.success(
+					`${[contact.firstName, contact.lastName].filter(Boolean).join(" ")} added.`,
+				);
 				await setOpen(null);
 				setFirstName("");
 				setLastName("");

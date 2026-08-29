@@ -12,14 +12,14 @@ import { CompanyMark } from "./company-mark";
 const TABS = [
 	{ label: "Overview" },
 	{ label: "Contacts", count: "1" },
-	{ label: "Projects" },
+	{ label: "Deals" },
 	{ label: "Activity" },
 	{ label: "Agent", active: true },
 ];
 
 const STATS = [
-	{ label: "Open project value", value: "$0" },
-	{ label: "Open projects", value: "0" },
+	{ label: "Open pipeline", value: "$0" },
+	{ label: "Open deals", value: "0" },
 	{ label: "Next close", value: "—", muted: true },
 ];
 
@@ -97,8 +97,8 @@ function SheetStats({ compact }: { compact?: boolean }) {
 	if (compact) {
 		return (
 			<div className="grid shrink-0 grid-cols-2 border-border border-b bg-muted/40">
-				<Stat label="Open project value" value="$0" className="border-r" />
-				<Stat label="Open projects" value="0" />
+				<Stat label="Open pipeline" value="$0" className="border-r" />
+				<Stat label="Open deals" value="0" />
 			</div>
 		);
 	}

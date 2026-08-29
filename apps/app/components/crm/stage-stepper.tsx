@@ -25,7 +25,7 @@ export function StageStepper({
 		trpc.deals.setStage.mutationOptions({
 			onSuccess: async (result) => {
 				await cache.deal(dealId);
-				if (result.changed) toast.success("Project status updated.");
+				if (result.changed) toast.success("Stage updated.");
 			},
 			onError: (error) => toast.error(error.message),
 		}),

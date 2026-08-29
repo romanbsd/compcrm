@@ -67,6 +67,6 @@ export const COMPANY_COLUMNS = [
 	{ label: "Industry", width: "16%" },
 	{ label: "Owner", width: "16%" },
 	{ label: "Contacts", width: "9%" },
-	{ label: "Projects", width: "9%" },
+	{ label: "Deals", width: "9%" },
 	{ label: "Last activity", width: "12%" },
 ] as const;

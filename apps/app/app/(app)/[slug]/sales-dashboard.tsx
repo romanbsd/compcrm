@@ -25,8 +25,8 @@ import { useWorkspaceUrl } from "@/lib/use-workspace-url";
 type Summary = RouterOutputs["dashboard"]["summary"];
 
 const TREND_CONFIG: ChartConfig = {
-	won: { label: "Completed", color: "var(--success)" },
-	created: { label: "New projects", color: "var(--chart-1)" },
+	won: { label: "Closed won", color: "var(--success)" },
+	created: { label: "New pipeline", color: "var(--chart-1)" },
 };
 
 function changeDelta(
@@ -81,19 +81,19 @@ export function SalesDashboard({ summary }: { summary: Summary }) {
 		<div className="flex flex-col gap-6">
 			<StatGroup>
 				<StatCard
-					label="Completed projects this month"
+					label="Closed won this month"
 					value={money(wonThisMonth.valueCents)}
 					delta={changeDelta(
 						wonThisMonth.valueCents,
 						wonPrevMonth.valueCents,
 						"vs. last month",
 					)}
-					description={`${formatCount(wonThisMonth.count, "project")} · ${money(wonPrevMonth.valueCents)} last month`}
+					description={`${formatCount(wonThisMonth.count, "deal")} · ${money(wonPrevMonth.valueCents)} last month`}
 				/>
 				<StatCard
-					label="Open project value"
+					label="Open pipeline"
 					value={money(pipeline.totalCents)}
-					description={`${formatCount(pipeline.totalDeals, "project")} in progress · ${money(closingThisMonthTotal.valueCents)} targeted this month`}
+					description={`${formatCount(pipeline.totalDeals, "deal")} in progress · ${money(closingThisMonthTotal.valueCents)} due this month`}
 				/>
 				<StatCard
 					label={`Win rate (${performance.windowDays}d)`}
@@ -109,7 +109,7 @@ export function SalesDashboard({ summary }: { summary: Summary }) {
 					}
 				/>
 				<StatCard
-					label={`Average project (${performance.windowDays}d)`}
+					label={`Average deal (${performance.windowDays}d)`}
 					value={
 						performance.avgDealCents === null
 							? "—"
@@ -126,7 +126,7 @@ export function SalesDashboard({ summary }: { summary: Summary }) {
 			{unconverted.count > 0 ? (
 				<p className="text-muted-foreground text-xs">
 					Every figure above is in {reportingCurrency}.{" "}
-					{formatCount(unconverted.count, "project")} in{" "}
+					{formatCount(unconverted.count, "deal")} in{" "}
 					{unconverted.currencies.join(", ")}{" "}
 					{unconverted.count === 1 ? "is" : "are"} not included — there is no
 					rate to convert {unconverted.currencies.length === 1 ? "it" : "them"}{" "}
@@ -143,8 +143,8 @@ export function SalesDashboard({ summary }: { summary: Summary }) {
 
 			<DashboardRow split="hero">
 				<ChartPanel
-					title="Completed vs. new projects"
-					description="Last six months, by the month a project completed or was created"
+					title="Closed won vs. new pipeline"
+					description="Last six months, by the month a deal closed or was created"
 				>
 					{hasTrend ? (
 						<div className="flex flex-1 flex-col justify-center py-4">
@@ -160,12 +160,12 @@ export function SalesDashboard({ summary }: { summary: Summary }) {
 							/>
 						</div>
 					) : (
-						<EmptyChart label="No projects completed or created yet" />
+						<EmptyChart label="No deals closed or created yet" />
 					)}
 				</ChartPanel>
 
 				<ChartPanel
-					title="Open projects by status"
+					title="Open pipeline by stage"
 					description="Where the value sits right now"
 				>
 					{stageSlices.length > 0 ? (

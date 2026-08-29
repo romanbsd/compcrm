@@ -172,7 +172,7 @@ describe("deal list presentation", () => {
 	const deal = {
 		id: "deal-1",
 		name: "Notion — expansion",
-		stage: "CONTRACTED",
+		stage: "CONTRACT_SENT",
 		amount: 14_000,
 		currency: "USD",
 		company: {

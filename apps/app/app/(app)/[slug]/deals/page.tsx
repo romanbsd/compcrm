@@ -18,7 +18,7 @@ import { dealsSearchParams } from "./deals-search-params";
 import { DealsTable } from "./deals-table";
 
 export const metadata: Metadata = {
-	title: "Projects",
+	title: "Deals",
 };
 
 export default function DealsPage({
@@ -28,9 +28,9 @@ export default function DealsPage({
 		<PageShell className="min-h-0">
 			<PageShellHeader>
 				<PageShellHeading>
-					<PageShellTitle>Projects</PageShellTitle>
+					<PageShellTitle>Deals</PageShellTitle>
 					<PageShellDescription>
-						Track every construction project from lead to completion.
+						The pipeline, and everything that has already closed.
 					</PageShellDescription>
 				</PageShellHeading>
 				<PageShellActions>

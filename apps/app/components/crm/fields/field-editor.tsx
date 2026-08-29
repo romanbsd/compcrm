@@ -71,7 +71,7 @@ import { type FieldEntity, kindOf } from "./fields-entity";
 const COVERAGE_NOUN = {
 	COMPANY: "companies",
 	CONTACT: "contacts",
-	DEAL: "projects",
+	DEAL: "deals",
 } satisfies Record<FieldEntity, string>;
 
 type FieldRecord = RouterOutputs["fields"]["list"][number];

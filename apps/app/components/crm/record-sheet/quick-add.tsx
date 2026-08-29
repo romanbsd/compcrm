@@ -85,7 +85,7 @@ export function QuickAddContact({
 		trpc.contacts.create.mutationOptions({
 			onSuccess: async (contact) => {
 				await cache.contact(contact.id);
-				toast.success(`${contactName(contact)} added.`);
+				toast.success(`${contact.firstName} added.`);
 				onDone();
 			},
 			onError: (error) => toast.error(error.message),
@@ -182,8 +182,8 @@ export function AttachDealContact({
 				await cache.deal(dealId);
 				toast.success(
 					person
-						? `${contactName(person)} is on the project.`
-						: "Added to the project.",
+						? `${contactName(person)} is on the deal.`
+						: "Added to the deal.",
 				);
 				onDone();
 			},
@@ -197,22 +197,18 @@ export function AttachDealContact({
 		? "Loading…"
 		: nobody
 			? companyName
-				? `Everybody at ${companyName} is already attached`
-				: "All active contacts are already attached"
+				? `Everybody at ${companyName} is already on it`
+				: "Everybody is already on it"
 			: "Choose somebody";
 
 	return (
 		<QuickAddForm
-			submitLabel="Add to project"
+			submitLabel="Add to deal"
 			pending={attach.isPending}
 			ready={contactId !== ""}
 			onCancel={onDone}
 			onSubmit={() =>
-				attach.mutate({
-					dealId,
-					contactId,
-					role: role.trim() || null,
-				})
+				attach.mutate({ dealId, contactId, role: role.trim() || null })
 			}
 		>
 			<Field>
@@ -283,7 +279,7 @@ export function QuickAddDeal({
 
 	const submit = () => {
 		if (!owner) {
-			toast.error("Could not work out who should own this project.");
+			toast.error("Could not work out who should own this deal.");
 			return;
 		}
 
@@ -308,7 +304,7 @@ export function QuickAddDeal({
 
 	return (
 		<QuickAddForm
-			submitLabel="Create project"
+			submitLabel="Create deal"
 			pending={create.isPending}
 			ready={name.trim() !== ""}
 			onCancel={onDone}
@@ -321,7 +317,7 @@ export function QuickAddDeal({
 					autoFocus
 					value={name}
 					onChange={(event) => setName(event.target.value)}
-					placeholder={`${companyName} — kitchen remodel`}
+					placeholder={`${companyName} — Comp AI`}
 					autoComplete="off"
 				/>
 			</Field>
@@ -336,7 +332,7 @@ export function QuickAddDeal({
 				/>
 			</Field>
 			<Field>
-				<FieldLabel htmlFor={closeId}>Target date</FieldLabel>
+				<FieldLabel htmlFor={closeId}>Expected close</FieldLabel>
 				<DatePicker
 					id={closeId}
 					value={closeDate}
