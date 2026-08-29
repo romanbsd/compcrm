@@ -9,8 +9,8 @@ retained database or parameter change.
 | Base branch | `origin/master` |
 | Base SHA | `c7fc76ee5074152f691c55a9ce5fb017521fefc4` |
 | Audited branch | `feat/construction-crm` |
-| Audited SHA before this implementation | `f910fe37eb318015773eab50fffd574818a98711` |
-| Last updated | 2026-08-28 |
+| Audited SHA before this implementation | `c505c3e1e868de74f68666a1011fe51d4d9d2856` |
+| Last updated | 2026-08-29 |
 
 ## Vocabulary and boundary
 
@@ -123,43 +123,15 @@ Index: `(dealId, createdAt)`.
 
 Index: `(documentId, position)`.
 
-## Immutable migration history
+## Additive migration
 
-The four branch migrations are retained byte-for-byte because they were
-already pushed and applied locally. They are historical migration records and
-must not be edited, deleted, renamed, reordered, or squashed.
+`20260829120000_add_deal_metadata_documents` is the single branch migration.
+It adds the seven optional Deal text fields, the optional AgentRun Deal
+relation and index, and the Artifact, Document, and DocumentLineItem tables
+with their required indexes and delete behavior.
 
-`20260827210000_gc_os_poc` temporarily drops the Deal Company foreign key,
-makes `Deal.companyId` nullable, removes the stage default, replaces the
-seven-value enum with six temporary values, rewrites Activity stage metadata,
-rewrites SavedView stage filters, adds temporary Contact and DealContact
-fields, and adds the retained project fields, agent link, and three tables.
-
-The temporary stage conversion is many-to-one:
-
-- `DEMO_BOOKED` becomes `LEAD`.
-- `QUALIFIED_TO_BUY` and `DECISION_MAKER_BOUGHT_IN` become `ESTIMATING`.
-- `CONTRACT_SENT` becomes `CONTRACTED`.
-- `CLOSED_WON` becomes `COMPLETE`.
-- `CLOSED_LOST` and `UNQUALIFIED_TO_BUY` become `LOST`.
-
-`20260828203000_remove_unsupported_contact_fields` drops the temporary
-`Contact.displayName`, `Contact.businessName`, and `DealContact.isPrimary`
-columns when they exist.
-
-`20260829010000_require_deal_company` checks for orphan Deals, restores
-`Deal.companyId` to `NOT NULL`, and restores the Company foreign key with
-`ON DELETE CASCADE`. It does not backfill or delete data.
-
-`20260829011000_restore_deal_stage` restores the original seven-value enum,
-default, Activity metadata, SavedView filters, and `Stage changed` subject.
-The earlier conversion cannot recover whether an `ESTIMATING` value came from
-`QUALIFIED_TO_BUY` or `DECISION_MAKER_BOUGHT_IN`, or whether a `LOST` value came
-from `CLOSED_LOST` or `UNQUALIFIED_TO_BUY`.
-
-The final schema therefore contains the retained additive tables and fields,
-plus the original Company and DealStage definitions. The temporary migration
-effects remain documented here and are not repeated in application code.
+The migration adds no data changes. It does not change DealStage, Deal.companyId,
+Contact, DealContact, Activity, or SavedView.
 
 ## Retained API parameters and behavior
 
@@ -169,7 +141,7 @@ effects remain documented here and are not repeated in application code.
 | Deal update | Accepts the same seven optional text fields. Blank strings become null. Existing physical CRM parameters remain unchanged. |
 | Deal list | Returns the seven fields on each row. Existing physical output names remain unchanged. |
 | Deal detail | Returns the seven fields. Existing physical output names remain unchanged. |
-| Company purge | Rejects deletion while a Deal references the Company, with a conflict asking the caller to delete the customer's projects first. Other original purge behavior remains. |
+| Company purge | Rejects deletion while a Deal references the Company, with the original CRM conflict text. Other original purge behavior remains. |
 | Agent runs | Event-triggered runs store `dealId` for physical Deal records. Retry loading and creation copy the nullable `dealId`. |
 
 No API alias, primary-contact output, cross-Company attach behavior, closed-stage
