@@ -1,6 +1,5 @@
 import { WORKSPACE_ID } from "@crm/auth";
 import { type Db, type Prisma, Prisma as PrismaNamespace } from "@crm/db";
-import { contactName } from "@crm/db/contact-name";
 import { readAgentManifestSummary } from "@crm/validation/agent-manifest";
 import {
 	type BuilderQuestion,
@@ -229,7 +228,7 @@ export class ConversationsService {
 			...contacts.map((contact) => ({
 				kind: "contact" as const,
 				id: contact.id,
-				label: contactName(contact),
+				label: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
 				detail: contact.company?.name ?? contact.email,
 				imageUrl: contact.imageUrl,
 			})),
@@ -939,7 +938,7 @@ export class ConversationsService {
 
 		if (!recordId || recordIds.length !== 1) {
 			throw new BadRequestException(
-				"Choose exactly one contact, company or project.",
+				"Choose exactly one contact, company or deal.",
 			);
 		}
 

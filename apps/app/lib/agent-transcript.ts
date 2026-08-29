@@ -431,7 +431,6 @@ export type DealListItem = {
 		iconTone: string | null;
 		logoUrl: string | null;
 	};
-	primaryContact: { id: string; name: string } | null;
 	owner: {
 		id: string;
 		name: string;
@@ -476,10 +475,6 @@ const dealListItem = z.object({
 		iconTone: optionalText,
 		logoUrl: optionalText,
 	}),
-	primaryContact: z
-		.object({ id: requiredText, name: requiredText })
-		.nullable()
-		.default(null),
 	owner: z
 		.object({
 			id: requiredText,

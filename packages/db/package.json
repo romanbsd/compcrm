@@ -9,7 +9,6 @@
 		"./attribution": "./src/attribution.ts",
 		"./blob": "./src/blob.ts",
 		"./client": "./src/client.ts",
-		"./contact-name": "./src/contact-name.ts",
 		"./currency": "./src/currency.ts",
 		"./crm-events": "./src/crm-events.ts",
 		"./deal-stage": "./src/deal-stage.ts",

@@ -853,21 +853,16 @@ async function seedDeals(
 			const companyContacts = contacts.filter(
 				(contact) => contact.companyId === company.id,
 			);
-			const attached = companyContacts.slice(0, integer(1, 2));
-			for (const contact of attached) {
-				const existing = await db.dealContact.findUnique({
+			for (const contact of companyContacts.slice(0, integer(1, 2))) {
+				await db.dealContact.upsert({
 					where: { dealId_contactId: { dealId: id, contactId: contact.id } },
-					select: { dealId: true },
+					create: {
+						dealId: id,
+						contactId: contact.id,
+						role: chance(0.5) ? "Champion" : "Decision maker",
+					},
+					update: {},
 				});
-				if (!existing) {
-					await db.dealContact.create({
-						data: {
-							dealId: id,
-							contactId: contact.id,
-							role: chance(0.5) ? "Champion" : "Decision maker",
-						},
-					});
-				}
 			}
 
 			deals.push({ id, companyId: company.id, ownerId, closed });

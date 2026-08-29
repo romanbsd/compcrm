@@ -9,7 +9,7 @@ const MAX_DAYS = 730;
 
 export default defineTool({
 	description:
-		"Decide when this contact is worth looking at again, and say why. Use a short interval for people whose job change would move a live project, a long one for quiet records, and skip it entirely for addresses nobody will ever sell to.",
+		"Decide when this contact is worth looking at again, and say why. Use a short interval for people whose job change would move a live deal, a long one for quiet records, and skip it entirely for addresses nobody will ever sell to.",
 	inputSchema: z.object({
 		contactId: z.string(),
 		days: z
@@ -18,13 +18,13 @@ export default defineTool({
 			.min(MIN_DAYS)
 			.max(MAX_DAYS)
 			.describe(
-				"14 for a champion on an open project; 90 for a named contact with no project; 365 when two attempts have found nothing.",
+				"14 for a champion on an open deal; 90 for a named contact with no deal; 365 when two attempts have found nothing.",
 			),
 		reason: z
 			.string()
 			.min(10)
 			.describe(
-				"Why this interval, for this person. A rep reads it: 'a job change here would move the Acme project', not 'scheduled recheck'.",
+				"Why this interval, for this person. A rep reads it: 'a job change here would move the Acme deal', not 'scheduled recheck'.",
 			),
 		budget: z
 			.number()

@@ -271,7 +271,7 @@ describe("durable custom-agent runtime", () => {
 						occurredAt,
 						data: { from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 					},
-					record: { kind: "deal", id: `event-deal-${suffix}` },
+					record: { kind: "deal", id: eventDeal.id },
 				},
 			},
 		]);

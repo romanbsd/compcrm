@@ -7,7 +7,6 @@ import {
 	Prisma as PrismaNamespace,
 	type RecordSource,
 } from "@crm/db";
-import { contactName } from "@crm/db/contact-name";
 import type { FieldDefinitionWithOptions } from "@crm/db/fields";
 import {
 	ConflictException,
@@ -263,8 +262,6 @@ export class ContactsService {
 
 	async create(input: ContactCreateInput) {
 		const email = normalizeEmail(input.email ?? "");
-		const firstName = input.firstName.trim();
-		const lastName = blankToNull(input.lastName ?? "");
 
 		if (email) {
 			const existing = await this.db.contact.findFirst({
@@ -272,15 +269,11 @@ export class ContactsService {
 					email: { equals: email, mode: "insensitive" },
 					archivedAt: null,
 				},
-				select: {
-					id: true,
-					firstName: true,
-					lastName: true,
-				},
+				select: { id: true, firstName: true, lastName: true },
 			});
 			if (existing) {
 				throw new ConflictException(
-					`${contactName(existing)} already uses ${email}.`,
+					`${[existing.firstName, existing.lastName].filter(Boolean).join(" ")} already uses ${email}.`,
 				);
 			}
 		}
@@ -298,8 +291,8 @@ export class ContactsService {
 
 			const created = await tx.contact.create({
 				data: {
-					firstName,
-					lastName,
+					firstName: input.firstName.trim(),
+					lastName: blankToNull(input.lastName ?? ""),
 					email,
 					phone: blankToNull(input.phone ?? ""),
 					title: blankToNull(input.title ?? ""),
@@ -364,7 +357,7 @@ export class ContactsService {
 
 			this.logger.log({ message: "Contact archived", contactId: id });
 
-			return { id, name: contactName(contact) };
+			return { id, name: nameOf(contact) };
 		} catch (error) {
 			throw this.translate(error, id);
 		}
@@ -380,7 +373,7 @@ export class ContactsService {
 
 			this.logger.log({ message: "Contact restored", contactId: id });
 
-			return { id, name: contactName(contact) };
+			return { id, name: nameOf(contact) };
 		} catch (error) {
 			throw this.translate(error, id);
 		}
@@ -425,14 +418,10 @@ export class ContactsService {
 
 				const contact = await tx.contact.delete({
 					where: { id },
-					select: {
-						firstName: true,
-						lastName: true,
-						email: true,
-					},
+					select: { firstName: true, lastName: true, email: true },
 				});
 
-				const name = contactName(contact);
+				const name = nameOf(contact);
 				const suppress = normalizeEmail(contact.email ?? "");
 
 				if (suppress) {
@@ -518,11 +507,7 @@ export class ContactsService {
 				const updated = await tx.contact.update({
 					where: { id },
 					data,
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-					},
+					select: { id: true, firstName: true, lastName: true },
 				});
 
 				if (email !== null) {
@@ -678,7 +663,9 @@ export class ContactsService {
 				: null,
 			colleagues: colleagues.map((colleague) => ({
 				id: colleague.id,
-				name: contactName(colleague),
+				name: [colleague.firstName, colleague.lastName]
+					.filter(Boolean)
+					.join(" "),
 				title: colleague.title,
 			})),
 		};
@@ -932,4 +919,11 @@ export class ContactsService {
 		}
 		throw cause;
 	}
+}
+
+function nameOf(contact: {
+	firstName: string;
+	lastName: string | null;
+}): string {
+	return [contact.firstName, contact.lastName].filter(Boolean).join(" ");
 }

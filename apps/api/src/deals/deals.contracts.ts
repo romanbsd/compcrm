@@ -1,5 +1,4 @@
 import { DealStage } from "@crm/db";
-import { OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
 import { FIELD_ENTITIES, FIELD_TYPES } from "@crm/db/fields";
 import { z } from "zod";
 import { bulkIdsInput } from "../crm/bulk";
@@ -42,21 +41,11 @@ const stageEnum = z.enum(
 	Object.values(DealStage) as [DealStage, ...DealStage[]],
 );
 
-const projectCreateStageEnum = stageEnum.superRefine((stage, context) => {
-	if (!OPEN_DEAL_STAGES.includes(stage as (typeof OPEN_DEAL_STAGES)[number])) {
-		context.addIssue({
-			code: "custom",
-			message: "A new project must start in an open status.",
-		});
-	}
-});
-
 export const dealCreateInput = z.object({
-	name: z.string().trim().min(1, "A project needs a name."),
-	companyId: z.string().min(1, "A project needs a customer."),
-	ownerId: z.string().min(1, "A project needs an owner."),
-	stage: projectCreateStageEnum.optional(),
-	description: z.string().nullable().optional(),
+	name: z.string().trim().min(1, "A deal needs a name."),
+	companyId: z.string().min(1, "A deal belongs to a company."),
+	ownerId: z.string().min(1, "A deal needs an owner."),
+	stage: stageEnum.optional(),
 	amountCents,
 	currency: currencyCode.optional(),
 	expectedCloseDate: z.string().nullable().optional(),
@@ -74,7 +63,7 @@ export type DealCreateInput = z.infer<typeof dealCreateInput>;
 const dealUpdateInput = z.object({
 	name: z.string().trim().min(1).optional(),
 	description: z.string().nullable().optional(),
-	companyId: z.string().min(1, "A project needs a customer.").optional(),
+	companyId: z.string().optional(),
 	ownerId: z.string().optional(),
 	amountCents,
 	currency: currencyCode.optional(),
@@ -116,7 +105,7 @@ export const dealContactsInput = z.object({ dealId: z.string() });
 
 export const dealAttachContactInput = z.object({
 	dealId: z.string(),
-	contactId: z.string().min(1, "Choose somebody to bring onto the project."),
+	contactId: z.string().min(1, "Choose somebody to bring onto the deal."),
 	role: dealContactRole.optional(),
 });
 
@@ -140,7 +129,7 @@ export type DealContactRoleInput = z.infer<typeof dealContactRoleInput>;
 export const dealBulkInput = bulkIdsInput;
 
 export const dealBulkOwnerInput = bulkIdsInput.extend({
-	ownerId: z.string().min(1, "A project needs an owner."),
+	ownerId: z.string().min(1, "A deal needs an owner."),
 });
 
 export type DealBulkOwnerInput = z.infer<typeof dealBulkOwnerInput>;
@@ -224,7 +213,6 @@ const dealListRowOutput = z.object({
 	stage: stageEnum,
 	currency: z.string(),
 	company: dealCompanyOutput,
-	primaryContact: dealContactSummaryOutput.nullable(),
 	owner: dealOwnerOutput,
 	leadSource: z.string().nullable(),
 	projectType: z.string().nullable(),
@@ -322,8 +310,6 @@ export const dealContactLinkOutput = z.object({
 });
 
 export type DealContactLink = z.infer<typeof dealContactLinkOutput>;
-
-export const dealContactAttachOutput = dealContactLinkOutput;
 
 export const dealContactRoleOutput = z.object({
 	dealId: z.string(),

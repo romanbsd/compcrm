@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const permissions = [
 	{ id: "post", label: "Post a message" },
-	{ id: "mention", label: "Mention the project owner" },
+	{ id: "mention", label: "Mention the deal owner" },
 	{ id: "thread", label: "Reply in a thread" },
 	{ id: "history", label: "Read the channel history" },
 ] as const;

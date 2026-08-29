@@ -38,13 +38,10 @@ export function focusOn(input: {
 }): void {
 	focus.update((current) => ({
 		...current,
-		contactId:
-			input.contactId === undefined ? current.contactId : input.contactId,
-		companyId:
-			input.companyId === undefined ? current.companyId : input.companyId,
-		sessionId:
-			input.sessionId === undefined ? current.sessionId : input.sessionId,
-		taskKind: input.taskKind === undefined ? current.taskKind : input.taskKind,
+		contactId: input.contactId ?? current.contactId,
+		companyId: input.companyId ?? current.companyId,
+		sessionId: input.sessionId ?? current.sessionId,
+		taskKind: input.taskKind ?? current.taskKind,
 	}));
 }
 

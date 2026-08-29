@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { ActivityType, DealStage, db, EmailDirection } from "@crm/db";
 import { readCompanyHistory, readDealHistory } from "../agent/lib/accounts";
-import { constructionStatus } from "../agent/lib/construction-status";
 
 const suffix = process.env.TEST_RUN_ID ?? "accounts-spec";
 const domain = `fernhill-${suffix}.test`;
@@ -76,9 +75,7 @@ beforeAll(async () => {
 			currency: "USD",
 			expectedCloseDate: daysAhead(14),
 			lastActivityAt: daysAgo(3),
-			contacts: {
-				create: [{ contactId: paulaId, role: "Champion" }],
-			},
+			contacts: { create: [{ contactId: paulaId, role: "Champion" }] },
 		},
 		select: { id: true },
 	});
@@ -230,7 +227,7 @@ describe("readCompanyHistory", () => {
 		const history = await readCompanyHistory(companyId);
 		const deal = history?.deals.find((row) => row.id === dealId);
 
-		expect(deal?.stage).toBe("Contracted");
+		expect(deal?.stage).toBe("CONTRACT_SENT");
 		expect(deal?.open).toBe(true);
 		expect(deal?.amount).toBe(48_000);
 		expect(deal?.contacts).toEqual([
@@ -288,7 +285,7 @@ describe("readDealHistory", () => {
 	it("reports the stage clock, not just the stage", async () => {
 		const history = await readDealHistory(dealId);
 
-		expect(history?.deal.stage).toBe("Contracted");
+		expect(history?.deal.stage).toBe("CONTRACT_SENT");
 		expect(history?.deal.open).toBe(true);
 		expect(history?.deal.daysInStage).toBeGreaterThanOrEqual(41);
 	});
@@ -297,8 +294,8 @@ describe("readDealHistory", () => {
 		const history = await readDealHistory(dealId);
 
 		expect(history?.stageHistory.map((change) => change.to)).toEqual([
-			"Estimating",
-			"Contracted",
+			"QUALIFIED_TO_BUY",
+			"CONTRACT_SENT",
 		]);
 	});
 
@@ -322,7 +319,7 @@ describe("readDealHistory", () => {
 
 		expect(history?.threads).toHaveLength(1);
 		expect(history?.stats.theyReplied).toBe(true);
-		expect(history?.note).toContain("never against a project");
+		expect(history?.note).toContain("never against a deal");
 	});
 
 	it("omits deal correspondence when connected sources are not approved", async () => {
@@ -340,26 +337,5 @@ describe("readDealHistory", () => {
 
 	it("returns null for a deal that does not exist", async () => {
 		expect(await readDealHistory("nope")).toBeNull();
-	});
-});
-
-describe("construction stage presentation", () => {
-	it("maps every physical DealStage value for agents", () => {
-		expect(
-			Object.fromEntries(
-				Object.values(DealStage).map((stage) => [
-					stage,
-					constructionStatus(stage),
-				]),
-			),
-		).toEqual({
-			DEMO_BOOKED: "Lead",
-			QUALIFIED_TO_BUY: "Estimating",
-			UNQUALIFIED_TO_BUY: "Disqualified",
-			DECISION_MAKER_BOUGHT_IN: "In progress",
-			CONTRACT_SENT: "Contracted",
-			CLOSED_WON: "Complete",
-			CLOSED_LOST: "Lost",
-		});
 	});
 });

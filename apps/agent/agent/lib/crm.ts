@@ -1,6 +1,5 @@
 import { db, EnrichmentStatus, type Prisma } from "@crm/db";
-import { constructionStatus } from "./construction-status";
-import { contactName, domainOf, isDerivedName } from "./names";
+import { domainOf, isDerivedName } from "./names";
 import type { Person } from "./socials";
 
 export type WorkItem = {
@@ -44,7 +43,7 @@ export async function contactsNeedingWork(limit: number): Promise<WorkItem[]> {
 
 	return rows.map((row) => ({
 		id: row.id,
-		fullName: contactName(row),
+		fullName: [row.firstName, row.lastName].filter(Boolean).join(" "),
 		email: row.email,
 		title: row.title,
 		companyName: row.company?.name ?? null,
@@ -78,7 +77,7 @@ export async function personForVerification(
 	return {
 		firstName: contact.firstName,
 		lastName: contact.lastName,
-		fullName: contactName(contact),
+		fullName: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
 		title: contact.title,
 		companyName: contact.company?.name ?? null,
 		companyDomain:
@@ -250,12 +249,7 @@ export async function readCrmHistory(
 		contact.companyId
 			? db.contact.findMany({
 					where: { companyId: contact.companyId, id: { not: contactId } },
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						title: true,
-					},
+					select: { id: true, firstName: true, lastName: true, title: true },
 					take: 8,
 					orderBy: { lastActivityAt: "desc" },
 				})
@@ -274,7 +268,7 @@ export async function readCrmHistory(
 
 	return {
 		contact: {
-			fullName: contactName(contact),
+			fullName: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
 			email: contact.email,
 			title: contact.title,
 			companyName: contact.company?.name ?? null,
@@ -283,7 +277,7 @@ export async function readCrmHistory(
 		deals: contact.deals.map(({ role, deal }) => ({
 			id: deal.id,
 			name: deal.name,
-			stage: constructionStatus(deal.stage),
+			stage: deal.stage,
 			role,
 			amount: deal.amount === null ? null : Number(deal.amount),
 			currency: deal.currency,
@@ -323,7 +317,7 @@ export async function readCrmHistory(
 		},
 		colleagues: colleagues.map((colleague) => ({
 			id: colleague.id,
-			name: contactName(colleague),
+			name: [colleague.firstName, colleague.lastName].filter(Boolean).join(" "),
 			title: colleague.title,
 		})),
 	};

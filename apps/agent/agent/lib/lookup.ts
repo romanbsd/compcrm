@@ -1,7 +1,6 @@
 import { DealStage, db } from "@crm/db";
 import { LOSING_DEAL_STAGES, OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
-import { constructionStatus } from "./construction-status";
-import { contactName, domainOf, normalise } from "./names";
+import { domainOf, normalise } from "./names";
 
 export type RecordKind = "contact" | "company" | "deal";
 
@@ -33,7 +32,6 @@ export type DealHit = {
 	amount: number | null;
 	currency: string;
 	company: { id: string; name: string };
-	primaryContact: { id: string; name: string } | null;
 };
 
 export type SearchHit = ContactHit | CompanyHit | DealHit;
@@ -57,19 +55,6 @@ export type DealListOptions = {
 	cursor?: string;
 	now?: Date;
 };
-
-function toPrimaryContact(deal: {
-	company: {
-		primaryContact: {
-			id: string;
-			firstName: string;
-			lastName: string | null;
-		} | null;
-	};
-}): { id: string; name: string } | null {
-	const contact = deal.company.primaryContact;
-	return contact ? { id: contact.id, name: contactName(contact) } : null;
-}
 
 export async function listDeals(options: DealListOptions = {}) {
 	const status = options.status ?? "open";
@@ -128,9 +113,6 @@ export async function listDeals(options: DealListOptions = {}) {
 					iconDarkUrl: true,
 					iconTone: true,
 					logoUrl: true,
-					primaryContact: {
-						select: { id: true, firstName: true, lastName: true },
-					},
 				},
 			},
 			owner: { select: { id: true, name: true, email: true, image: true } },
@@ -149,16 +131,13 @@ export async function listDeals(options: DealListOptions = {}) {
 		asOf: now.toISOString(),
 		deals: page.map((deal) => {
 			const activityDate = deal.lastActivityAt ?? deal.createdAt;
-			const company = (({ primaryContact: _primaryContact, ...summary }) =>
-				summary)(deal.company);
 			return {
 				id: deal.id,
 				name: deal.name,
-				stage: constructionStatus(deal.stage),
+				stage: deal.stage,
 				amount: deal.amount === null ? null : Number(deal.amount),
 				currency: deal.currency,
-				company,
-				primaryContact: toPrimaryContact(deal),
+				company: deal.company,
 				owner: deal.owner,
 				createdAt: deal.createdAt.toISOString(),
 				lastActivityAt: deal.lastActivityAt?.toISOString() ?? null,
@@ -244,15 +223,9 @@ async function searchContacts(
 
 	return rows
 		.map((row) => {
-			const name = contactName(row);
+			const name = [row.firstName, row.lastName].filter(Boolean).join(" ");
 			return {
-				score: score(term, [
-					name,
-					row.firstName,
-					row.lastName ?? "",
-					row.email ?? "",
-					row.company?.name ?? "",
-				]),
+				score: score(term, [name, row.email ?? "", row.company?.name ?? ""]),
 				hit: {
 					kind: "contact" as const,
 					id: row.id,
@@ -339,36 +312,23 @@ async function searchDeals(
 			stage: true,
 			amount: true,
 			currency: true,
-			company: {
-				select: {
-					id: true,
-					name: true,
-					primaryContact: {
-						select: { id: true, firstName: true, lastName: true },
-					},
-				},
-			},
+			company: { select: { id: true, name: true } },
 		},
 	});
 
 	return rows
-		.map((row) => {
-			const company = (({ primaryContact: _primaryContact, ...summary }) =>
-				summary)(row.company);
-			return {
-				score: score(term, [row.name, row.company.name]),
-				hit: {
-					kind: "deal" as const,
-					id: row.id,
-					name: row.name,
-					stage: constructionStatus(row.stage),
-					amount: row.amount === null ? null : Number(row.amount),
-					currency: row.currency,
-					company,
-					primaryContact: toPrimaryContact(row),
-				},
-			};
-		})
+		.map((row) => ({
+			score: score(term, [row.name, row.company.name]),
+			hit: {
+				kind: "deal" as const,
+				id: row.id,
+				name: row.name,
+				stage: row.stage,
+				amount: row.amount === null ? null : Number(row.amount),
+				currency: row.currency,
+				company: row.company,
+			},
+		}))
 		.sort((a, b) => b.score - a.score)
 		.slice(0, limit)
 		.map((row) => row.hit);

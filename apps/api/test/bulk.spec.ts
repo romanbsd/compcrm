@@ -59,14 +59,7 @@ async function clean() {
 	});
 	const companyIds = owned.map((row) => row.id);
 
-	await db.deal.deleteMany({
-		where: {
-			OR: [
-				{ companyId: { in: companyIds } },
-				{ ownerId: { in: [ownerId, secondOwnerId] } },
-			],
-		},
-	});
+	await db.deal.deleteMany({ where: { companyId: { in: companyIds } } });
 	await db.activity.deleteMany({ where: { companyId: { in: companyIds } } });
 	await db.agentTask.deleteMany({ where: { companyId: { in: companyIds } } });
 	await db.contact.deleteMany({ where: ours });

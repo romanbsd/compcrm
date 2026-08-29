@@ -1,7 +1,6 @@
 import { db } from "@crm/db";
 import { blobEnabled, isMirrored, mirror } from "@crm/db/blob";
 import { CONTEXT_DEV_PEOPLE, enabled } from "./capabilities";
-import { contactName } from "./names";
 import { findPortrait, type PortraitSource } from "./portrait-sources";
 
 export type PortraitResult = {
@@ -134,7 +133,8 @@ export async function runPortrait({
 	const found = await findPortrait(
 		{
 			id: contact.id,
-			name: contactName(contact) || null,
+			name:
+				[contact.firstName, contact.lastName].filter(Boolean).join(" ") || null,
 			linkedinUrl: contact.linkedinUrl,
 			githubUrl: contact.githubUrl,
 			companyName: contact.company?.name ?? null,

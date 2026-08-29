@@ -1,5 +1,4 @@
 import type { Db } from "@crm/db";
-import { contactName } from "@crm/db/contact-name";
 import { Injectable } from "@nestjs/common";
 import { InjectDatabase } from "../database/database.constants";
 
@@ -99,7 +98,9 @@ export class SearchService {
 					(contact): SearchHit => ({
 						kind: "contact",
 						id: contact.id,
-						label: contactName(contact) || (contact.email ?? "Unnamed"),
+						label:
+							[contact.firstName, contact.lastName].filter(Boolean).join(" ") ||
+							(contact.email ?? "Unnamed"),
 						detail: contact.company?.name ?? contact.email,
 						iconUrl: null,
 						iconDarkUrl: null,

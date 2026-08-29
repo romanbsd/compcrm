@@ -385,20 +385,20 @@ describe("builder persistence", () => {
 			triggers: [
 				{
 					type: "EVENT",
-					name: "Project created",
-					summary: "Run when a project is created.",
+					name: "Deal created",
+					summary: "Run when a deal is created.",
 					event: "deal.created",
 				},
 				{
 					type: "EVENT",
-					name: "Project opened",
-					summary: "Run when a closed project returns to the open pipeline.",
+					name: "Deal opened",
+					summary: "Run when a closed deal returns to the open pipeline.",
 					event: "deal.opened",
 				},
 				{
 					type: "EVENT",
-					name: "Project closed",
-					summary: "Run when an open project enters a closed status.",
+					name: "Deal closed",
+					summary: "Run when an open deal enters a closed stage.",
 					event: "deal.closed",
 				},
 			],

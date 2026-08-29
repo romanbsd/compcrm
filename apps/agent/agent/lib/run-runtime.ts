@@ -13,7 +13,6 @@ import { AGENT_ACTION_EXECUTORS, isAgentActionType } from "./agent-actions";
 import { readCrmHistory } from "./crm";
 import { DISPATCH } from "./dispatch-config";
 import { searchCrm } from "./lookup";
-import { contactName } from "./names";
 import {
 	type LockedAgentRun,
 	lockAgentRun,
@@ -1109,16 +1108,13 @@ async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 	if (kind === "contact") {
 		const contact = await db.contact.findUnique({
 			where: { id },
-			select: {
-				id: true,
-				firstName: true,
-				lastName: true,
-				companyId: true,
-			},
+			select: { id: true, firstName: true, lastName: true, companyId: true },
 		});
 		return contact
 			? {
-					label: contactName(contact),
+					label: [contact.firstName, contact.lastName]
+						.filter(Boolean)
+						.join(" "),
 					companyId: contact.companyId,
 					contactId: contact.id,
 					dealId: null,

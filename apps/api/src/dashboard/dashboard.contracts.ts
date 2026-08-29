@@ -31,15 +31,6 @@ const companyBriefOutput = z.object({
 
 const linkedRecordOutput = z.object({ id: z.string(), name: z.string() });
 
-const primaryContactOutput = z.object({
-	id: z.string(),
-	firstName: z.string(),
-	lastName: z.string().nullable(),
-	email: z.string().nullable(),
-	title: z.string().nullable(),
-	imageUrl: z.string().nullable(),
-});
-
 const monthlyTotalOutput = z.object({
 	count: z.number(),
 	valueCents: z.number(),
@@ -68,7 +59,6 @@ const biggestOpenDealOutput = z.object({
 	stage: stageEnum,
 	currency: z.string(),
 	company: companyBriefOutput,
-	primaryContact: primaryContactOutput.nullable(),
 	owner: ownerOutput,
 	amountCents: z.number().nullable(),
 	baseAmountCents: z.number().nullable(),

@@ -1,8 +1,6 @@
 import { db } from "@crm/db";
 import { websiteUrl } from "@crm/db/workspace";
 import { capabilitiesMarkdown } from "./capabilities";
-import { constructionStatus } from "./construction-status";
-import { contactName } from "./names";
 import { identity, usMarkdown, type WorkspaceIdentity } from "./workspace";
 
 export type Opened = {
@@ -105,7 +103,7 @@ export async function contactPreamble(
 		return { markdown: await closing(), focus: { contactId } };
 	}
 
-	const name = contactName(contact);
+	const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
 
 	const known =
 		contact._count.emailThreads > 0 || contact._count.calendarEvents > 0
@@ -115,7 +113,7 @@ export async function contactPreamble(
 	const deals = contact.deals
 		.map(
 			({ role, deal }) =>
-				`${deal.name} (${constructionStatus(deal.stage)}${role ? `, ${role}` : ""}) \`${deal.id}\``,
+				`${deal.name} (${deal.stage}${role ? `, ${role}` : ""}) \`${deal.id}\``,
 		)
 		.join("; ");
 
@@ -142,7 +140,7 @@ export async function contactPreamble(
 					contact.company.domain ? ` (${contact.company.domain})` : ""
 				}, company id \`${contact.company.id}\` — pass that straight to \`read_company_history\`, \`enrich_company\` or \`research_company\` when the question reaches past this one person.`
 			: "They are not attached to a company. `search_crm` will find one by name or domain if the conversation needs it.",
-		deals ? `They are on: ${deals}.` : "They are not on any project.",
+		deals ? `They are on: ${deals}.` : "They are not on any deal.",
 		"",
 		known,
 		contact.brief
@@ -176,12 +174,7 @@ export async function companyPreamble(
 			contacts: {
 				orderBy: [{ lastActivityAt: "desc" }, { createdAt: "asc" }],
 				take: 12,
-				select: {
-					id: true,
-					firstName: true,
-					lastName: true,
-					title: true,
-				},
+				select: { id: true, firstName: true, lastName: true, title: true },
 			},
 			deals: {
 				orderBy: [{ lastActivityAt: "desc" }, { createdAt: "desc" }],
@@ -198,7 +191,9 @@ export async function companyPreamble(
 
 	const people = company.contacts
 		.map((person) => {
-			const name = contactName(person);
+			const name = [person.firstName, person.lastName]
+				.filter(Boolean)
+				.join(" ");
 			return `- ${name}${person.title ? ` — ${person.title}` : ""} \`${person.id}\``;
 		})
 		.join("\n");
@@ -209,10 +204,7 @@ export async function companyPreamble(
 			: "";
 
 	const deals = company.deals
-		.map(
-			(deal) =>
-				`${deal.name} (${constructionStatus(deal.stage)}) \`${deal.id}\``,
-		)
+		.map((deal) => `${deal.name} (${deal.stage}) \`${deal.id}\``)
 		.join("; ");
 
 	const markdown = [
@@ -232,12 +224,12 @@ export async function companyPreamble(
 			? `### Who we know there (${company._count.contacts})\n\n${people}${more}\n\nThose are contact ids. Use them directly — with \`read_crm_history\`, \`identify_contact\` or \`record_fact\`. Never ask a rep which contact they mean without naming these first.`
 			: "We have no contacts on file here yet.",
 		"",
-		deals ? `Projects: ${deals}.` : "There are no projects here.",
+		deals ? `Deals: ${deals}.` : "There are no deals here.",
 		company.description
 			? "There is already a description on the record."
 			: "There is no description on the record yet.",
 		"",
-		"Start with `read_company_history` on this company id — it returns the people, the projects, the correspondence and the notes in one free call.",
+		"Start with `read_company_history` on this company id — it returns the people, the deals, the correspondence and the notes in one free call.",
 		"",
 		await closing(),
 	]
@@ -266,12 +258,7 @@ export async function dealPreamble(
 				select: {
 					role: true,
 					contact: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							title: true,
-						},
+						select: { id: true, firstName: true, lastName: true, title: true },
 					},
 				},
 			},
@@ -280,9 +267,11 @@ export async function dealPreamble(
 
 	if (!deal) return { markdown: await closing(), focus: {} };
 
-	const people = [...deal.contacts]
+	const people = deal.contacts
 		.map(({ role, contact }) => {
-			const name = contactName(contact);
+			const name = [contact.firstName, contact.lastName]
+				.filter(Boolean)
+				.join(" ");
 			return `${name}${contact.title ? ` (${contact.title})` : ""}${
 				role ? ` — ${role}` : ""
 			} \`${contact.id}\``;
@@ -292,25 +281,27 @@ export async function dealPreamble(
 	const markdown = [
 		"## This session",
 		"",
-		`Project: **${deal.name}** at ${deal.company.name} — project id \`${dealId}\`, company id \`${deal.company.id}\`.`,
-		`Status: **${constructionStatus(deal.stage)}**${
+		`You are working on the deal **${deal.name}**${
+			deal.company ? ` at ${deal.company.name}` : ""
+		} — deal id \`${dealId}\`${
+			deal.company ? `, company id \`${deal.company.id}\`` : ""
+		}.`,
+		`Stage: **${deal.stage}**${
 			deal.amount
 				? `. Amount: ${deal.amount} ${deal.currency ?? ""}`.trim()
 				: ""
 		}${
 			deal.expectedCloseDate
-				? `. Target date: ${deal.expectedCloseDate.toDateString()}`
+				? `. Expected close: ${deal.expectedCloseDate.toDateString()}`
 				: ""
 		}.`,
 		deal.lastActivityAt
 			? `Last touched ${deal.lastActivityAt.toDateString()}.`
 			: "Nothing has happened on it yet.",
 		...(deal.description
-			? [`The user's own description of it: "${deal.description}"`]
+			? [`The rep's own description of it: "${deal.description}"`]
 			: []),
-		people
-			? `Customer contacts: ${people}`
-			: "No customer contacts are attached yet.",
+		people ? `People on it: ${people}` : "Nobody is attached to it yet.",
 		fieldBackfillLine(opened),
 		"",
 		opening(
@@ -318,18 +309,18 @@ export async function dealPreamble(
 			"where this stands, who else should be involved, or what the risk is",
 		),
 		"",
-		"Start with `read_deal_history` on this project id. It returns the status clock, every status this project has moved through, the last reply from their side and the next meeting — which is how you answer *where does this stand* rather than reciting the status field back.",
+		"Start with `read_deal_history` on this deal id. It returns the stage clock, every stage this deal has moved through, the last reply from their side and the next meeting — which is how you answer *where does this stand* rather than reciting the stage field back.",
 		"",
 		opened.fieldKeys && opened.fieldKeys.length > 0
-			? "You can research the people and the company behind it with the usual tools too — most of what you learn about them is recorded against them, not the project."
-			: "You can research the people and the company behind it with the usual tools — a project itself has no fields to enrich, so anything you learn is recorded against them.",
+			? "You can research the people and the company behind it with the usual tools too — most of what you learn about them is recorded against them, not the deal."
+			: "You can research the people and the company behind it with the usual tools — a deal itself has no fields to enrich, so anything you learn is recorded against them.",
 		"",
 		await closing(),
 	]
 		.filter(Boolean)
 		.join("\n");
 
-	return { markdown, focus: { companyId: deal.company.id } };
+	return { markdown, focus: { companyId: deal.company?.id ?? null } };
 }
 
 export async function noRecordPreamble(): Promise<Preamble> {
@@ -339,7 +330,7 @@ export async function noRecordPreamble(): Promise<Preamble> {
 			"",
 			"No record was named, so nothing is in focus yet.",
 			"`list_outstanding_work` shows contacts with research outstanding, and",
-			"`search_crm` finds any contact, company or project by name, email address or",
+			"`search_crm` finds any contact, company or deal by name, email address or",
 			"domain. Look the record up rather than asking for an id.",
 			"",
 			await closing(),

@@ -59,10 +59,6 @@ beforeAll(async () => {
 		select: { id: true },
 	});
 	paulaId = paula.id;
-	await db.company.update({
-		where: { id: northwindId },
-		data: { primaryContactId: paulaId },
-	});
 
 	const peter = await db.contact.create({
 		data: {
@@ -164,17 +160,6 @@ describe("searchCrm", () => {
 		expect(result.companies[0]?.id).toBe(northwindId);
 	});
 
-	it("finds and returns a contact by name", async () => {
-		const result = await searchCrm("Paula Marchetti", {
-			kinds: ["contact"],
-		});
-
-		expect(result.contacts[0]).toMatchObject({
-			id: paulaId,
-			name: "Paula Marchetti",
-		});
-	});
-
 	it("treats a bare domain as the company", async () => {
 		const result = await searchCrm(domain);
 
@@ -186,7 +171,6 @@ describe("searchCrm", () => {
 
 		expect(result.deals[0]?.id).toBe(dealId);
 		expect(result.deals[0]?.amount).toBe(12_000);
-		expect(result.deals[0]?.stage).toBe("Estimating");
 	});
 
 	it("narrows to the kinds asked for", async () => {
@@ -229,7 +213,6 @@ describe("listDeals", () => {
 		expect(ids).not.toContain(freshDealId);
 		expect(ids).not.toContain(closedDealId);
 		expect(result.deals.find((deal) => deal.id === dealId)).toMatchObject({
-			stage: "Estimating",
 			daysSinceLastActivity: 65,
 			neverActive: false,
 			company: {

@@ -23,7 +23,3 @@ const CLOSED = new Set<DealStage>(CLOSED_DEAL_STAGES);
 export function isClosedStage(stage: DealStage): boolean {
 	return CLOSED.has(stage);
 }
-
-export function isOpenStage(stage: DealStage): boolean {
-	return !CLOSED.has(stage);
-}

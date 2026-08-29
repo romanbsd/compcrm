@@ -109,10 +109,10 @@ async function clean() {
 		},
 	});
 	await db.agentEvent.deleteMany({ where: { contactId: { in: contactIds } } });
-	await db.contact.deleteMany({ where: ours });
 	await db.deal.deleteMany({
 		where: { OR: [{ companyId: { in: companyIds } }, { ownerId: userId }] },
 	});
+	await db.contact.deleteMany({ where: ours });
 	await db.company.deleteMany({ where: { domain: { in: domains } } });
 	await db.suppressedContact.deleteMany({ where: ours });
 	await db.user.deleteMany({ where: { id: userId } });
@@ -378,7 +378,7 @@ describe("the activity stamps a purge leaves behind", () => {
 		});
 
 		const at = new Date();
-		const activity = await db.activity.create({
+		await db.activity.create({
 			data: {
 				type: "MEETING",
 				subject: "Only ever attached to the deal",
@@ -388,7 +388,6 @@ describe("the activity stamps a purge leaves behind", () => {
 				createdById: userId,
 				createdAt: at,
 			},
-			select: { id: true },
 		});
 		await stamp.touch({ contactId: contact.id, dealId: deal.id }, at);
 
@@ -403,8 +402,8 @@ describe("the activity stamps a purge leaves behind", () => {
 			}),
 		).toEqual({ companyId: company.id });
 		expect(
-			await db.activity.findUnique({
-				where: { id: activity.id },
+			await db.activity.findFirst({
+				where: { dealId: deal.id },
 				select: { companyId: true, dealId: true },
 			}),
 		).toEqual({ companyId: company.id, dealId: deal.id });

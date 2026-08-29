@@ -5,7 +5,6 @@ import { sensitiveWrite } from "../lib/approval";
 import { writeTimelineNote } from "../lib/crm";
 import { lastEmployerChange } from "../lib/facts";
 import { focusOn } from "../lib/focus";
-import { contactName } from "../lib/names";
 import { assertResearchPurpose } from "../lib/session-purpose";
 
 export default defineTool({
@@ -46,7 +45,9 @@ export default defineTool({
 		});
 		if (!contact) return { raised: false as const, reason: "No such contact." };
 
-		const name = contactName(contact);
+		const name = [contact.firstName, contact.lastName]
+			.filter(Boolean)
+			.join(" ");
 
 		await writeTimelineNote(
 			contactId,

@@ -76,13 +76,7 @@ beforeAll(async () => {
 			ownerId: user.id,
 			stage: DealStage.CONTRACT_SENT,
 			amount: 48_000,
-			expectedCloseDate: new Date("2026-09-01"),
-			contacts: {
-				create: [
-					{ contactId: paulaId, role: "Champion" },
-					{ contactId: tomiId, role: "Estimator" },
-				],
-			},
+			contacts: { create: [{ contactId: paulaId, role: "Champion" }] },
 		},
 		select: { id: true },
 	});
@@ -122,7 +116,7 @@ describe("companyPreamble", () => {
 		const { markdown, focus } = await companyPreamble(companyId, rep);
 
 		expect(markdown).toContain(`company id \`${companyId}\``);
-		expect(markdown).toContain(`(Contracted) \`${dealId}\``);
+		expect(markdown).toContain(`(CONTRACT_SENT) \`${dealId}\``);
 		expect(focus).toEqual({ companyId });
 	});
 
@@ -144,7 +138,7 @@ describe("contactPreamble", () => {
 	it("lists the deals they are on", async () => {
 		const { markdown } = await contactPreamble(paulaId, rep);
 
-		expect(markdown).toContain(`(Contracted, Champion) \`${dealId}\``);
+		expect(markdown).toContain(`(CONTRACT_SENT, Champion) \`${dealId}\``);
 	});
 
 	it("offers a way out when they have no company", async () => {
@@ -161,24 +155,12 @@ describe("contactPreamble", () => {
 });
 
 describe("dealPreamble", () => {
-	it("carries the project, company and customer contacts, all with ids", async () => {
+	it("carries the deal, the company and the people, all with ids", async () => {
 		const { markdown, focus } = await dealPreamble(dealId, rep);
 
-		expect(markdown).toContain(`Project: **Fernhill platform ${suffix}**`);
-		expect(markdown).toContain(`project id \`${dealId}\``);
-		expect(markdown).toContain("Status: **Contracted**");
-		expect(markdown).toContain("Target date");
+		expect(markdown).toContain(`deal id \`${dealId}\``);
 		expect(markdown).toContain(`company id \`${companyId}\``);
-		expect(markdown).toContain(
-			`Paula Marchetti (Growth Specialist) — Champion \`${paulaId}\``,
-		);
-		expect(markdown).toContain(
-			`Tomi Okonkwo (Head of Security) — Estimator \`${tomiId}\``,
-		);
-		expect(markdown.indexOf("Paula Marchetti")).toBeLessThan(
-			markdown.indexOf("Tomi Okonkwo"),
-		);
-		expect(markdown).toContain("Customer contacts:");
+		expect(markdown).toContain(`Champion \`${paulaId}\``);
 		expect(focus).toEqual({ companyId });
 	});
 });

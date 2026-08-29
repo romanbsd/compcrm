@@ -1,8 +1,6 @@
-import { ActivityType, type DealStage, db, EmailDirection } from "@crm/db";
-import { isOpenStage } from "@crm/db/deal-stage";
+import { ActivityType, db, EmailDirection } from "@crm/db";
 import { z } from "zod";
-import { constructionStatus } from "./construction-status";
-import { contactName, isDerivedName } from "./names";
+import { isDerivedName } from "./names";
 
 const BODY_LIMIT = 4000;
 
@@ -168,11 +166,7 @@ export async function readCompanyHistory(
 						select: {
 							role: true,
 							contact: {
-								select: {
-									id: true,
-									firstName: true,
-									lastName: true,
-								},
+								select: { id: true, firstName: true, lastName: true },
 							},
 						},
 					},
@@ -188,11 +182,7 @@ export async function readCompanyHistory(
 							messageCount: true,
 							lastMessageAt: true,
 							contact: {
-								select: {
-									id: true,
-									firstName: true,
-									lastName: true,
-								},
+								select: { id: true, firstName: true, lastName: true },
 							},
 							messages: {
 								orderBy: { sentAt: "desc" },
@@ -272,7 +262,7 @@ export async function readCompanyHistory(
 		},
 		people: people.map((person) => ({
 			id: person.id,
-			name: contactName(person),
+			name: fullName(person),
 			title: person.title,
 			email: person.email,
 			linkedinUrl: person.linkedinUrl,
@@ -394,24 +384,13 @@ export async function readDealHistory(
 	const includeEmail = options.includeEmail ?? true;
 	const includeCalendar = options.includeCalendar ?? true;
 
-	const contacts = [...deal.contacts];
-	const contactIds = contacts.map(({ contact }) => contact.id);
+	const contactIds = deal.contacts.map(({ contact }) => contact.id);
 
 	const relatedThreads =
 		contactIds.length > 0
 			? {
 					OR: [
 						{ contactId: { in: contactIds } },
-						{ companyId: deal.company.id },
-					],
-				}
-			: { companyId: deal.company.id };
-	const relatedCalendar =
-		contactIds.length > 0
-			? {
-					OR: [
-						{ contactId: { in: contactIds } },
-						{ attendees: { some: { contactId: { in: contactIds } } } },
 						{ companyId: deal.company.id },
 					],
 				}
@@ -435,11 +414,7 @@ export async function readDealHistory(
 							messageCount: true,
 							lastMessageAt: true,
 							contact: {
-								select: {
-									id: true,
-									firstName: true,
-									lastName: true,
-								},
+								select: { id: true, firstName: true, lastName: true },
 							},
 							messages: {
 								orderBy: { sentAt: "desc" },
@@ -458,7 +433,18 @@ export async function readDealHistory(
 				: Promise.resolve([]),
 			includeCalendar
 				? db.calendarEvent.findMany({
-						where: relatedCalendar,
+						where:
+							contactIds.length > 0
+								? {
+										OR: [
+											{ contactId: { in: contactIds } },
+											{
+												attendees: { some: { contactId: { in: contactIds } } },
+											},
+											{ companyId: deal.company.id },
+										],
+									}
+								: { companyId: deal.company.id },
 						orderBy: { startsAt: "desc" },
 						take: 10,
 						select: {
@@ -488,7 +474,7 @@ export async function readDealHistory(
 			id: deal.id,
 			name: deal.name,
 			description: deal.description,
-			stage: constructionStatus(deal.stage),
+			stage: deal.stage,
 			open: isOpen(deal.stage),
 			daysInStage: daysSince(deal.stageChangedAt, now),
 			stageChangedAt: deal.stageChangedAt.toISOString(),
@@ -501,9 +487,9 @@ export async function readDealHistory(
 			createdAt: deal.createdAt.toISOString(),
 		},
 		company: deal.company,
-		people: contacts.map(({ role, contact }) => ({
+		people: deal.contacts.map(({ role, contact }) => ({
 			id: contact.id,
-			name: contactName(contact),
+			name: fullName(contact),
 			title: contact.title,
 			email: contact.email,
 			role,
@@ -511,8 +497,8 @@ export async function readDealHistory(
 		stageHistory: stageChanges.map((change) => {
 			const meta = stageChangeMeta.parse(change.meta);
 			return {
-				from: meta.from ? constructionStatus(meta.from) : null,
-				to: meta.to ? constructionStatus(meta.to) : null,
+				from: meta.from,
+				to: meta.to,
 				at: change.createdAt.toISOString(),
 			};
 		}),
@@ -537,14 +523,18 @@ export async function readDealHistory(
 		note:
 			includeEmail || includeCalendar
 				? contactIds.length > 0
-					? "Connected account history is filed against people and companies, never against a project. The history here belongs to the people on this project and the rest of the account — read the details before treating any of it as being about this project."
-					: "Nobody is attached to this project, so the correspondence here is the whole account's. Attaching the people on it would make this answer sharper."
+					? "Connected account history is filed against people and companies, never against a deal. The history here belongs to the people on this deal and the rest of the account — read the details before treating any of it as being about this deal."
+					: "Nobody is attached to this deal, so the correspondence here is the whole account's. Attaching the people on it would make this answer sharper."
 				: "Connected email and calendar history are outside this agent version's approved data sources.",
 	};
 }
 
 function isOpen(stage: string): boolean {
-	return isOpenStage(stage as DealStage);
+	return (
+		stage !== "CLOSED_WON" &&
+		stage !== "CLOSED_LOST" &&
+		stage !== "UNQUALIFIED_TO_BUY"
+	);
 }
 
 async function recentNotes(
@@ -585,11 +575,7 @@ function toAccountThread(thread: {
 	subject: string | null;
 	messageCount: number;
 	lastMessageAt: Date;
-	contact: {
-		id: string;
-		firstName: string;
-		lastName: string | null;
-	} | null;
+	contact: { id: string; firstName: string; lastName: string | null } | null;
 	messages: {
 		direction: string;
 		fromEmail: string;
@@ -602,7 +588,7 @@ function toAccountThread(thread: {
 	return {
 		subject: thread.subject,
 		contact: thread.contact
-			? { id: thread.contact.id, name: contactName(thread.contact) }
+			? { id: thread.contact.id, name: fullName(thread.contact) }
 			: null,
 		messageCount: thread.messageCount,
 		lastMessageAt: thread.lastMessageAt.toISOString(),
@@ -642,17 +628,13 @@ function toCompanyDeal(deal: {
 	lastActivityAt: Date | null;
 	contacts: {
 		role: string | null;
-		contact: {
-			id: string;
-			firstName: string;
-			lastName: string | null;
-		};
+		contact: { id: string; firstName: string; lastName: string | null };
 	}[];
 }): CompanyDeal {
 	return {
 		id: deal.id,
 		name: deal.name,
-		stage: constructionStatus(deal.stage),
+		stage: deal.stage,
 		open: isOpen(deal.stage),
 		amount: deal.amount === null ? null : Number(deal.amount),
 		currency: deal.currency,
@@ -660,10 +642,17 @@ function toCompanyDeal(deal: {
 		lastActivityAt: deal.lastActivityAt?.toISOString() ?? null,
 		contacts: deal.contacts.map(({ role, contact }) => ({
 			id: contact.id,
-			name: contactName(contact),
+			name: fullName(contact),
 			role,
 		})),
 	};
+}
+
+function fullName(person: {
+	firstName: string;
+	lastName: string | null;
+}): string {
+	return [person.firstName, person.lastName].filter(Boolean).join(" ");
 }
 
 function daysSince(date: Date, now: Date): number {

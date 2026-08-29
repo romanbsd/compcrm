@@ -51,7 +51,7 @@ const hasExactlyOneRecord = (input: {
 }) =>
 	[input.contactId, input.companyId, input.dealId].filter(Boolean).length === 1;
 
-const recordMessage = "Choose exactly one contact, company or project.";
+const recordMessage = "Choose exactly one contact, company or deal.";
 
 export const conversationListInput = z
 	.object(recordShape)

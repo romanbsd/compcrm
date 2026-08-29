@@ -126,7 +126,6 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 					className="flex-1 overflow-y-auto px-4"
 					onSubmit={(event) => {
 						event.preventDefault();
-						if (!ready) return;
 						const parsed = Number.parseFloat(amount);
 						create.mutate({
 							name,

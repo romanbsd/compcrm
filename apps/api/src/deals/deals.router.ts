@@ -17,7 +17,6 @@ import {
 	dealBulkOwnerInput,
 	dealBulkResultOutput,
 	dealBulkStageInput,
-	dealContactAttachOutput,
 	dealContactLinkOutput,
 	dealContactOptionsOutput,
 	dealContactRoleInput,
@@ -45,7 +44,7 @@ export class DealsRouter {
 	@Query({
 		input: dealListInput,
 		output: dealListOutput,
-		meta: restMeta("POST", "/deals/search", ["Projects"]),
+		meta: restMeta("POST", "/deals/search", ["Deals"]),
 	})
 	async list(@Input() input: z.infer<typeof dealListInput>) {
 		return this.deals.list(input);
@@ -54,7 +53,7 @@ export class DealsRouter {
 	@Query({
 		input: dealIdInput,
 		output: dealDetailOutput,
-		meta: restMeta("GET", "/deals/{id}", ["Projects"]),
+		meta: restMeta("GET", "/deals/{id}", ["Deals"]),
 	})
 	async byId(@Input("id") id: string) {
 		return this.deals.byId(id);
@@ -63,7 +62,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealCreateInput,
 		output: dealCreateOutput,
-		meta: restMeta("POST", "/deals", ["Projects"]),
+		meta: restMeta("POST", "/deals", ["Deals"]),
 	})
 	async create(@Input() input: z.infer<typeof dealCreateInput>) {
 		return this.deals.create(input);
@@ -72,7 +71,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealUpdateArgs,
 		output: dealMutateOutput,
-		meta: restMeta("PATCH", "/deals/{id}", ["Projects"]),
+		meta: restMeta("PATCH", "/deals/{id}", ["Deals"]),
 	})
 	async update(@Input() input: z.infer<typeof dealUpdateArgs>) {
 		return this.deals.update(input.id, input.data);
@@ -81,7 +80,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealIdInput,
 		output: dealMutateOutput,
-		meta: restMeta("POST", "/deals/{id}/archive", ["Projects"]),
+		meta: restMeta("POST", "/deals/{id}/archive", ["Deals"]),
 	})
 	async archive(@Input("id") id: string) {
 		return this.deals.archive(id);
@@ -90,7 +89,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealIdInput,
 		output: dealMutateOutput,
-		meta: restMeta("POST", "/deals/{id}/restore", ["Projects"]),
+		meta: restMeta("POST", "/deals/{id}/restore", ["Deals"]),
 	})
 	async restore(@Input("id") id: string) {
 		return this.deals.restore(id);
@@ -99,7 +98,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealIdInput,
 		output: dealMutateOutput,
-		meta: restMeta("DELETE", "/deals/{id}", ["Projects"]),
+		meta: restMeta("DELETE", "/deals/{id}", ["Deals"]),
 	})
 	async purge(@Input("id") id: string) {
 		return this.deals.purge(id);
@@ -108,7 +107,7 @@ export class DealsRouter {
 	@Mutation({
 		input: setStageInput,
 		output: dealSetStageOutput,
-		meta: restMeta("PATCH", "/deals/{id}/stage", ["Projects"]),
+		meta: restMeta("PATCH", "/deals/{id}/stage", ["Deals"]),
 	})
 	async setStage(
 		@Ctx() ctx: AuthedTrpcContext,
@@ -120,7 +119,7 @@ export class DealsRouter {
 	@Query({
 		input: dealContactsInput,
 		output: dealContactOptionsOutput,
-		meta: restMeta("GET", "/deals/{dealId}/contact-options", ["Projects"]),
+		meta: restMeta("GET", "/deals/{dealId}/contact-options", ["Deals"]),
 	})
 	async contactOptions(@Input("dealId") dealId: string) {
 		return this.deals.contactOptions(dealId);
@@ -128,8 +127,8 @@ export class DealsRouter {
 
 	@Mutation({
 		input: dealAttachContactInput,
-		output: dealContactAttachOutput,
-		meta: restMeta("POST", "/deals/{dealId}/contacts", ["Projects"]),
+		output: dealContactLinkOutput,
+		meta: restMeta("POST", "/deals/{dealId}/contacts", ["Deals"]),
 	})
 	async attachContact(@Input() input: z.infer<typeof dealAttachContactInput>) {
 		return this.deals.attachContact(input);
@@ -138,9 +137,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealDetachContactInput,
 		output: dealContactLinkOutput,
-		meta: restMeta("DELETE", "/deals/{dealId}/contacts/{contactId}", [
-			"Projects",
-		]),
+		meta: restMeta("DELETE", "/deals/{dealId}/contacts/{contactId}", ["Deals"]),
 	})
 	async detachContact(@Input() input: z.infer<typeof dealDetachContactInput>) {
 		return this.deals.detachContact(input);
@@ -150,7 +147,7 @@ export class DealsRouter {
 		input: dealContactRoleInput,
 		output: dealContactRoleOutput,
 		meta: restMeta("PATCH", "/deals/{dealId}/contacts/{contactId}/role", [
-			"Projects",
+			"Deals",
 		]),
 	})
 	async setContactRole(@Input() input: z.infer<typeof dealContactRoleInput>) {
@@ -160,7 +157,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealBulkOwnerInput,
 		output: dealBulkResultOutput,
-		meta: restMeta("POST", "/deals/bulk-assign-owner", ["Projects"]),
+		meta: restMeta("POST", "/deals/bulk-assign-owner", ["Deals"]),
 	})
 	async bulkAssignOwner(@Input() input: z.infer<typeof dealBulkOwnerInput>) {
 		return this.deals.bulkAssignOwner(input);
@@ -169,7 +166,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealBulkStageInput,
 		output: dealBulkResultOutput,
-		meta: restMeta("POST", "/deals/bulk-set-stage", ["Projects"]),
+		meta: restMeta("POST", "/deals/bulk-set-stage", ["Deals"]),
 	})
 	async bulkSetStage(
 		@Ctx() ctx: AuthedTrpcContext,
@@ -181,7 +178,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealBulkInput,
 		output: dealBulkResultOutput,
-		meta: restMeta("POST", "/deals/bulk-archive", ["Projects"]),
+		meta: restMeta("POST", "/deals/bulk-archive", ["Deals"]),
 	})
 	async bulkArchive(@Input("ids") ids: string[]) {
 		return this.deals.bulkArchive(ids);
@@ -190,7 +187,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealBulkInput,
 		output: dealBulkResultOutput,
-		meta: restMeta("POST", "/deals/bulk-restore", ["Projects"]),
+		meta: restMeta("POST", "/deals/bulk-restore", ["Deals"]),
 	})
 	async bulkRestore(@Input("ids") ids: string[]) {
 		return this.deals.bulkRestore(ids);
@@ -199,7 +196,7 @@ export class DealsRouter {
 	@Mutation({
 		input: dealBulkInput,
 		output: dealBulkResultOutput,
-		meta: restMeta("POST", "/deals/bulk-purge", ["Projects"]),
+		meta: restMeta("POST", "/deals/bulk-purge", ["Deals"]),
 	})
 	async bulkPurge(@Input("ids") ids: string[]) {
 		return this.deals.bulkPurge(ids);
