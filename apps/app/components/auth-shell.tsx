@@ -75,3 +75,12 @@ export function AuthHeading({
 		</div>
 	);
 }
+
+export function InvalidOAuthRequest() {
+	return (
+		<AuthHeading
+			title="Invalid OAuth request"
+			description="The authorization request is missing required values or contains invalid values."
+		/>
+	);
+}
