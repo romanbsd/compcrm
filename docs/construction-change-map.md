@@ -9,24 +9,26 @@ the fetched `origin/master` base. The comparison is `origin/master...HEAD`.
 | --- | --- |
 | Base branch | `origin/master` |
 | Base SHA | `c7fc76ee5074152f691c55a9ce5fb017521fefc4` |
-| Reviewed implementation head SHA | `96c7105d8db431f906a90c56dd0001e6f5f874db` |
+| Reviewed implementation head SHA | `020f36c71065f7dc360f3e2cba3fd84cd8d57bf0` |
 | Refresh date | 2026-08-28 |
 
-This SHA is the implementation state audited by the map. A later
-documentation-only commit can give the branch a different head without
-changing the mapped product behavior.
+This SHA is the implementation state audited by the map. The following
+documentation-only map correction is intentionally excluded, so the branch
+head can differ without changing the mapped implementation behavior.
 
-The map records intentional product, API, agent, interface, and database
-changes. Physical model and API names stay in the text where they are useful
-for implementation. Construction meanings are shown beside them.
+The map records intentional product, API, agent, database, and necessary
+application type or invariant changes. It does not claim a construction web
+UI redesign. Physical model and API names stay in the text where they are
+useful for implementation. Construction meanings apply to the headless agent
+interface.
 
 ## Construction vocabulary and boundary
 
 | Existing name | Construction meaning | Boundary |
 | --- | --- | --- |
-| `Deal` | Project | The physical table and API identifiers remain `Deal` and `deal`. Product copy calls this a Project. |
-| `DealStage` and `stage` | Project status | The physical enum and API field remain `DealStage` and `stage`. Product copy calls the value a status. |
-| `Company` | Customer | One Company stores either a household customer name or a business customer name. |
+| `Deal` | Project | The physical table and API identifiers remain `Deal` and `deal`. Agent-facing construction language calls this a Project. The web UI retains Deal. |
+| `DealStage` and `stage` | Project status | The physical enum and API field remain `DealStage` and `stage`. Agent-facing construction language calls the value a status. The web UI retains Stage. |
+| `Company` | Customer | One Company stores either a household customer name or a business customer name. Agent-facing construction language calls this a Customer. The web UI retains Company. |
 | `DealContact` | Project contact | The link connects a Contact to a Project and stores one optional `role`. |
 | `Activity` with a deal link | Project history | Existing physical fields remain. Stage-change records use the new status values. |
 | `Artifact` | Project file | Stores a file reference for a Project. |
@@ -53,7 +55,7 @@ one Member row with role `owner`.
 | `Company` | Customer | No final schema change. Purge behavior now protects customers that have Projects. |
 | `Contact` | Homeowner or spouse | No final schema change. Contact labels are calculated from name parts. |
 | `DealContact` | Project contact | No final schema change. The final link has only `dealId`, `contactId`, and optional `role`. |
-| Product labels and forms | GC workflow | Deal language changes to Project language, and the Project form adds customer, job-site, and construction fields. |
+| Web UI and landing copy | Upstream interface | Restored to upstream wording and controls. Only the necessary `apps/app` enum, response-type, invariant, and test differences remain. |
 
 ## Database changes
 
@@ -212,7 +214,7 @@ persisted database field.
 
 | Surface | Input parameters changed | Output parameters or behavior changed |
 | --- | --- | --- |
-| Company | No Company input schema fields were added, removed, or renamed. | Purge now returns a conflict while any Project still references the Company. The deletion dialog states that Projects must be deleted before the Customer can be permanently deleted. Allowed purge continues to clear Company links from Project-related activities and agent tasks before deleting the Company. |
+| Company | No Company input schema fields were added, removed, or renamed. | Purge now returns a conflict while any Project still references the Company. The retained web deletion copy states that linked deals must be deleted first. Allowed purge continues to clear Company links from Project-related activities and agent tasks before deleting the Company. |
 | Contact | No Contact input schema fields were added, removed, or renamed. | No Contact output field is added. Display text is calculated from `firstName` and optional `lastName` through `contactName`. This applies to conflict, archive, restore, purge, colleague, search, and agent-facing labels. |
 | Deal create | `companyId` remains named `companyId` but is required and must be non-empty. `stage` is optional and accepts only open statuses. Added optional `description`, `leadSource`, `projectType`, `addressLine1`, `addressLine2`, `city`, `state`, and `postalCode`. Existing `amountCents`, `currency`, and `expectedCloseDate` inputs remain. | `dealCreateOutput.companyId` is nullable because the physical column is nullable. Default stage is `LEAD`. |
 | Deal update | Added the seven Project text fields. `companyId` is optional for a partial update but, when present, must be non-empty and connects a Company. No null clear operation is accepted through this input. Existing `amountCents`, `currency`, and `expectedCloseDate` inputs remain. | Deal list rows add the seven Project fields and calculated `primaryContact`. Company is nullable. Deal detail adds the seven Project fields and makes Company nullable. |
@@ -226,8 +228,9 @@ persisted database field.
 | Agent runs | No new public run input is required. | `AgentRun.dealId` is selected and copied when a run is retried. Event-triggered runs set it when the source record kind is physical `deal`. |
 
 The API continues to expose physical names such as `deals`, `dealId`, and
-`stage` for compatibility. Construction UI and messages use Project, Project
-Contact, Customer, and Status.
+`stage` for compatibility. Construction terminology remains in agent-facing
+tools, context, and messages because agents are the headless interface. The
+main web UI retains upstream Deal, Company, and Stage wording.
 
 ## Agent tools and context
 
@@ -247,62 +250,31 @@ status semantics, nullable customer handling, and calculated Contact labels.
 | Agent preambles and transcript | Project context uses Project, Project ID, Status, Target date, and Customer contacts. `DealListItem.company` is nullable and `primaryContact` is nullable with a default of `null`. Contact labels use `firstName` plus optional `lastName`. |
 | Focus state | `focusOn` now treats explicit `null` as a clear operation. This lets a no-Company Project remove a prior Company focus. |
 
-## Interface forms, labels, filters, and actions
+## Interface UI
 
-### Project creation and editing
+The upstream web UI, landing copy, terminology, forms, fields, columns,
+filters, menus, dashboards, and controls are restored. The branch does not
+ship a construction Project or Customer web UI. Agent-facing construction
+terminology remains in the agent tools and context described above, because
+agents are the headless interface.
 
-The creation sheet is named New project. It submits these fields:
+These are the exact remaining effective `apps/app` differences from
+`origin/master` and their required reason:
 
-- Required: Project name, Customer, Owner.
-- Status: defaults to Lead and lists only open statuses.
-- Optional: Project type, Lead source, Description, Job-site address,
-  Address line 2, City, State, Postal code, Amount, Currency, and Target date
-  (`expectedCloseDate`).
-
-The Customer picker accepts a household or business customer name. It does not
-store a household or business discriminator.
-
-The Project sheet edits Project type, Lead source, Customer, Description,
-Address, Address line 2, City, State, Postal code, Amount, Currency, and
-Target date. It calls the status section Status and the contacts section
-Project contacts. A Project without a customer is rendered as No customer
-attached.
-
-The Project list uses these changed columns and labels:
-
-- Project, Customer, Status, Project type, and Target date.
-- Search placeholder: Search projects by name or customer.
-- Status filter label: Status.
-- Target-date filter label: Target date.
-- Target-date options: Past target date, Target this month, Target next month,
-  Target later, and No target date.
-- Bulk action: Change status.
-- Bulk close action: Mark projects as lost, with a reason.
-
-The Customer cell shows the calculated Company primary Contact when one is
-set. Otherwise it shows the Company. The Company sheet still provides the
-Make primary action, which writes `Company.primaryContactId`.
-
-### Other interface changes
-
-- Dashboard tables use Project and Status. Project rows show the primary
-  Contact avatar and calculated name when available, otherwise the Customer.
-- Dashboard metrics and charts use Completed projects, New projects, Open
-  project value, and Projects by status.
-- Company pages use Projects, Open projects, and Open project value.
-- Contact pages use Projects and describe Contacts as people involved in
-  Projects.
-- The Company deletion dialog states, "The one Project must be deleted before
-  this Customer can be permanently deleted." It also states that linked people
-  stay in the CRM without a Company when that applies.
-- Quick switcher and agent builder copy use Project while physical route and
-  resource identifiers remain unchanged.
-- Custom field settings call `DEAL` fields Project fields and use Project sheet,
-  Projects table, and Projects table filters labels.
-- Standard Project fields in the custom-field reference configuration include
-  `Project type`, `Lead source`, and `Job-site address`.
-- Project contact rows show Name, Role, Title, and Email. They have no primary
-  checkbox or primary action. Contacts can be attached from any Company.
+| File | Required reason |
+| --- | --- |
+| `app/(app)/[slug]/dashboard-summary.tsx` | Renders nullable API Company output safely. |
+| `app/(app)/[slug]/deals/create-deal-sheet.tsx` | Uses current `DealStage` values and blocks create submission without `companyId`. |
+| `app/(app)/[slug]/deals/deals-bulk-actions.tsx` | Uses current `LOST` enum value. |
+| `components/crm/record-sheet/company-sheet.tsx` | States the retained customer-deletion rule. |
+| `components/crm/record-sheet/deal-sheet.tsx` | Handles nullable API Company output without offering a clear operation. |
+| `components/crm/record-sheet/quick-add.tsx` | Supports the nullable Company display path. |
+| `components/crm/stage-change.tsx` | Uses current `LOST` enum value. |
+| `components/crm/stage-stepper.tsx` | Uses current `COMPLETE` enum value. |
+| `lib/agent-transcript.ts` | Preserves nullable Company and `primaryContact` agent response types. |
+| `lib/contact-name.test.ts` | Retains contact-name behavior coverage. |
+| `lib/deal-stage.ts` | Maps only current `DealStage` enum values. |
+| `test/agent-transcript.spec.ts` | Verifies the current agent deal-list response shape. |
 
 ## Validation and business rules
 
@@ -311,7 +283,7 @@ Make primary action, which writes `Company.primaryContactId`.
 | Every construction Project has a Customer. | `dealCreateInput` requires a non-empty `companyId`, and the creation sheet disables submit until a Customer is selected. PostgreSQL keeps `Deal.companyId` nullable for upstream compatibility. |
 | A Customer with Projects cannot be purged. | `CompaniesService` rejects purge while a Project references the Company. The Project remains and is not cascaded by Company deletion. |
 | Contact labels are calculated. | `contactName` joins `firstName` and optional `lastName`. No persisted display label is used. |
-| A Company has one primary Contact at most. | `Company.primaryContactId` remains the persisted primary-contact field. Project list and dashboard primary Contact values are calculated from it. |
+| A Company has one primary Contact at most. | `Company.primaryContactId` remains the persisted primary-contact field. Deal-list and dashboard API primary-Contact values are calculated from it. |
 | A Project can have several Contacts. | `DealContact` uses composite primary key `(dealId, contactId)`, optional `role`, and no primary flag. Each active Contact can be attached once to a Project. |
 | New Projects start open. | Default is `LEAD`. Create input rejects `COMPLETE` and `LOST` as initial statuses. |
 | Lost Projects require a reason. | Single and bulk status changes reject `LOST` without `closedReason`. The reason is stored in the status-change Activity body and the Project `closedReason`. |
@@ -368,10 +340,12 @@ The compared branch adds or updates focused coverage for:
 - Company primary Contact output, multiple Project Contacts, cross-Company
   Contact attachment, optional Project roles, and draft Documents without an
   issue date.
-- Activity output, SavedView status filters, dashboard Project rows, agent
-  Project lists, and agent transcript handling for nullable customers and
-  primary Contacts.
-- Ordered Project statuses and closed-status behavior in application helpers.
+- Activity output, SavedView status filters, dashboard API rows with nullable
+  Companies, agent Project lists, and agent transcript handling for nullable
+  customers and primary Contacts.
+- Retained application coverage for calculated Contact names and the current
+  agent deal-list response shape. Project creation and deletion invariants are
+  covered by focused API tests.
 
 No full-suite result is recorded in this map because this change map does not
 run the full suite.
