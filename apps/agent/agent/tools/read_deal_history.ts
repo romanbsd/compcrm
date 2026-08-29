@@ -20,8 +20,7 @@ export default defineTool({
 		const history = await readDealHistory(dealId, { threads });
 		if (!history) return { found: false as const, reason: "No such project." };
 
-		if (history.company) focusOn({ companyId: history.company.id });
-		else focusOn({ companyId: null });
+		focusOn({ companyId: history.company.id });
 
 		return { found: true as const, ...history };
 	},

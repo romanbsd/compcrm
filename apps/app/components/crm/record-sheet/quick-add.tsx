@@ -158,7 +158,7 @@ export function AttachDealContact({
 	onDone,
 }: {
 	dealId: string;
-	companyName?: string;
+	companyName: string;
 	onDone: () => void;
 }) {
 	const trpc = useTRPC();
@@ -196,9 +196,7 @@ export function AttachDealContact({
 	const placeholder = options.isPending
 		? "Loading…"
 		: nobody
-			? companyName
-				? `Everybody at ${companyName} is already on it`
-				: "Everybody is already on it"
+			? `Everybody at ${companyName} is already on it`
 			: "Choose somebody";
 
 	return (

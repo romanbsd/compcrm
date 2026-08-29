@@ -169,12 +169,13 @@ model RateLimit {
 }
 
 enum DealStage {
-  LEAD
-  ESTIMATING
-  CONTRACTED
-  IN_PROGRESS
-  COMPLETE
-  LOST
+  DEMO_BOOKED
+  QUALIFIED_TO_BUY
+  UNQUALIFIED_TO_BUY
+  DECISION_MAKER_BOUGHT_IN
+  CONTRACT_SENT
+  CLOSED_WON
+  CLOSED_LOST
 }
 
 enum ActivityType {
@@ -965,12 +966,12 @@ model Deal {
   agentRuns     AgentRun[]
   name          String
   description   String?
-  companyId     String?
-  company       Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  companyId     String
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ownerId       String
   owner         User                @relation("DealOwner", fields: [ownerId], references: [id])
 
-  stage             DealStage @default(LEAD)
+  stage             DealStage @default(DEMO_BOOKED)
   stageChangedAt    DateTime  @default(now())
   amount            Decimal?  @db.Decimal(14, 2)
   currency          String    @default("USD")

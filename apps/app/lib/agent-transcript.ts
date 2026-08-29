@@ -430,7 +430,7 @@ export type DealListItem = {
 		iconDarkUrl: string | null;
 		iconTone: string | null;
 		logoUrl: string | null;
-	} | null;
+	};
 	primaryContact: { id: string; name: string } | null;
 	owner: {
 		id: string;
@@ -467,17 +467,15 @@ const dealListItem = z.object({
 	stage: requiredText,
 	amount: finiteNumber.nullable(),
 	currency: requiredText,
-	company: z
-		.object({
-			id: requiredText,
-			name: requiredText,
-			domain: optionalText,
-			iconUrl: optionalText,
-			iconDarkUrl: optionalText,
-			iconTone: optionalText,
-			logoUrl: optionalText,
-		})
-		.nullable(),
+	company: z.object({
+		id: requiredText,
+		name: requiredText,
+		domain: optionalText,
+		iconUrl: optionalText,
+		iconDarkUrl: optionalText,
+		iconTone: optionalText,
+		logoUrl: optionalText,
+	}),
 	primaryContact: z
 		.object({ id: requiredText, name: requiredText })
 		.nullable()

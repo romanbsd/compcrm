@@ -102,6 +102,17 @@ beforeAll(async () => {
 afterAll(clean);
 
 describe("bringing a contact onto a deal", () => {
+	it("rejects a database project without a customer", async () => {
+		const attempt =
+			db.$executeRaw`INSERT INTO "deal" ("id", "name", "ownerId", "updatedAt") VALUES (${`no-company-${suffix}`}, ${`No customer ${suffix}`}, ${userId}, ${new Date()})`.then(
+				async () => {
+					await db.deal.delete({ where: { id: `no-company-${suffix}` } });
+				},
+			);
+
+		await expect(attempt).rejects.toThrow();
+	});
+
 	it("creates a project for a customer and keeps its project fields", async () => {
 		const project = await deals.create({
 			name: `Kitchen ${suffix}`,
@@ -117,8 +128,8 @@ describe("bringing a contact onto a deal", () => {
 		});
 
 		const detail = await deals.byId(project.id);
-		expect(detail.stage).toBe("LEAD");
-		expect(detail.company?.id).toBe(companyId);
+		expect(detail.stage).toBe("DEMO_BOOKED");
+		expect(detail.company.id).toBe(companyId);
 		expect(detail.leadSource).toBe("Referral");
 		expect(detail.addressLine1).toBe("1 Main Street");
 
@@ -160,7 +171,7 @@ describe("bringing a contact onto a deal", () => {
 				lastName: "Champion",
 			},
 		});
-		expect(companyRow?.company?.id).toBe(companyId);
+		expect(companyRow?.company.id).toBe(companyId);
 		expect(companyRow?.primaryContact).toMatchObject({
 			id: championId,
 			firstName: "Ada",
@@ -237,23 +248,28 @@ describe("bringing a contact onto a deal", () => {
 			dealCreateInput.safeParse({ ...base, companyId: null }).success,
 		).toBe(false);
 
-		expect(dealCreateInput.safeParse({ ...base, stage: "LOST" }).success).toBe(
-			false,
-		);
 		expect(
-			dealCreateInput.safeParse({ ...base, stage: "COMPLETE" }).success,
+			dealCreateInput.safeParse({ ...base, stage: "CLOSED_LOST" }).success,
 		).toBe(false);
 		expect(
-			dealCreateInput.safeParse({ ...base, stage: "IN_PROGRESS" }).success,
+			dealCreateInput.safeParse({ ...base, stage: "CLOSED_WON" }).success,
+		).toBe(false);
+		expect(
+			dealCreateInput.safeParse({
+				...base,
+				stage: "DECISION_MAKER_BOUGHT_IN",
+			}).success,
 		).toBe(true);
 
 		const project = await deals.create({
 			name: "Open stage project",
 			companyId,
 			ownerId: userId,
-			stage: "IN_PROGRESS",
+			stage: "DECISION_MAKER_BOUGHT_IN",
 		});
-		expect((await deals.byId(project.id)).stage).toBe("IN_PROGRESS");
+		expect((await deals.byId(project.id)).stage).toBe(
+			"DECISION_MAKER_BOUGHT_IN",
+		);
 		await deals.purge(project.id);
 	});
 

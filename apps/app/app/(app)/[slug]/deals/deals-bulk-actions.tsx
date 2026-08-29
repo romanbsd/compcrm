@@ -205,7 +205,7 @@ export function DealsBulkActions({
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>
-							{closing === "LOST"
+							{closing === "CLOSED_LOST"
 								? `Close ${deals(ids.length)} as lost`
 								: `Mark ${deals(ids.length)} as unqualified`}
 						</DialogTitle>

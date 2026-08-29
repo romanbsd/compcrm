@@ -184,12 +184,11 @@ export class DealsService {
 					company,
 					...row
 				}) => {
-					const primaryContact = company?.primaryContact ?? null;
-					const companySummary = company
-						? (({ primaryContact: _primaryContact, ...summary }) => summary)(
-								company,
-							)
-						: null;
+					const primaryContact = company.primaryContact ?? null;
+					const companySummary = (({
+						primaryContact: _primaryContact,
+						...summary
+					}) => summary)(company);
 					return {
 						...row,
 						company: companySummary,
@@ -290,7 +289,7 @@ export class DealsService {
 	}
 
 	async create(input: DealCreateInput) {
-		const stage = input.stage ?? "LEAD";
+		const stage = input.stage ?? "DEMO_BOOKED";
 		const closed = isClosedStage(stage);
 		const now = new Date();
 

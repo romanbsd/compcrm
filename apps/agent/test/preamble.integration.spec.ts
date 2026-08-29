@@ -74,7 +74,7 @@ beforeAll(async () => {
 			name: `Fernhill platform ${suffix}`,
 			companyId,
 			ownerId: user.id,
-			stage: DealStage.CONTRACTED,
+			stage: DealStage.CONTRACT_SENT,
 			amount: 48_000,
 			expectedCloseDate: new Date("2026-09-01"),
 			contacts: {
@@ -122,7 +122,7 @@ describe("companyPreamble", () => {
 		const { markdown, focus } = await companyPreamble(companyId, rep);
 
 		expect(markdown).toContain(`company id \`${companyId}\``);
-		expect(markdown).toContain(`(CONTRACTED) \`${dealId}\``);
+		expect(markdown).toContain(`(Contracted) \`${dealId}\``);
 		expect(focus).toEqual({ companyId });
 	});
 
@@ -144,7 +144,7 @@ describe("contactPreamble", () => {
 	it("lists the deals they are on", async () => {
 		const { markdown } = await contactPreamble(paulaId, rep);
 
-		expect(markdown).toContain(`(CONTRACTED, Champion) \`${dealId}\``);
+		expect(markdown).toContain(`(Contracted, Champion) \`${dealId}\``);
 	});
 
 	it("offers a way out when they have no company", async () => {
@@ -166,7 +166,7 @@ describe("dealPreamble", () => {
 
 		expect(markdown).toContain(`Project: **Fernhill platform ${suffix}**`);
 		expect(markdown).toContain(`project id \`${dealId}\``);
-		expect(markdown).toContain("Status: **CONTRACTED**");
+		expect(markdown).toContain("Status: **Contracted**");
 		expect(markdown).toContain("Target date");
 		expect(markdown).toContain(`company id \`${companyId}\``);
 		expect(markdown).toContain(

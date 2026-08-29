@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { ActivityType, DealStage, db, EmailDirection } from "@crm/db";
 import { readCompanyHistory, readDealHistory } from "../agent/lib/accounts";
+import { constructionStatus } from "../agent/lib/construction-status";
 
 const suffix = process.env.TEST_RUN_ID ?? "accounts-spec";
 const domain = `fernhill-${suffix}.test`;
@@ -9,7 +10,6 @@ let companyId: string;
 let dealId: string;
 let paulaId: string;
 let placeholderId: string;
-let noCompanyDealId: string;
 let userId: string;
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
@@ -70,7 +70,7 @@ beforeAll(async () => {
 			name: `Fernhill platform ${suffix}`,
 			companyId,
 			ownerId: userId,
-			stage: DealStage.CONTRACTED,
+			stage: DealStage.CONTRACT_SENT,
 			stageChangedAt: daysAgo(42),
 			amount: 48_000,
 			currency: "USD",
@@ -93,7 +93,7 @@ beforeAll(async () => {
 				dealId,
 				createdById: userId,
 				createdAt: daysAgo(60),
-				meta: { from: "LEAD", to: "ESTIMATING" },
+				meta: { from: "DEMO_BOOKED", to: "QUALIFIED_TO_BUY" },
 			},
 			{
 				type: ActivityType.STAGE_CHANGE,
@@ -102,7 +102,7 @@ beforeAll(async () => {
 				dealId,
 				createdById: userId,
 				createdAt: daysAgo(42),
-				meta: { from: "ESTIMATING", to: "CONTRACTED" },
+				meta: { from: "QUALIFIED_TO_BUY", to: "CONTRACT_SENT" },
 			},
 			{
 				type: ActivityType.NOTE,
@@ -179,15 +179,6 @@ beforeAll(async () => {
 			},
 		},
 	});
-
-	const noCompanyDeal = await db.deal.create({
-		data: {
-			name: `Fernhill unassigned project ${suffix}`,
-			ownerId: userId,
-		},
-		select: { id: true },
-	});
-	noCompanyDealId = noCompanyDeal.id;
 });
 
 afterAll(cleanup);
@@ -205,10 +196,6 @@ async function cleanup(): Promise<void> {
 		await db.deal.deleteMany({ where: { companyId: company.id } });
 		await db.contact.deleteMany({ where: { companyId: company.id } });
 		await db.company.delete({ where: { id: company.id } });
-	}
-
-	if (noCompanyDealId) {
-		await db.deal.delete({ where: { id: noCompanyDealId } });
 	}
 
 	await db.user.deleteMany({ where: { email: `rep.${suffix}@example.test` } });
@@ -243,7 +230,7 @@ describe("readCompanyHistory", () => {
 		const history = await readCompanyHistory(companyId);
 		const deal = history?.deals.find((row) => row.id === dealId);
 
-		expect(deal?.stage).toBe("CONTRACTED");
+		expect(deal?.stage).toBe("Contracted");
 		expect(deal?.open).toBe(true);
 		expect(deal?.amount).toBe(48_000);
 		expect(deal?.contacts).toEqual([
@@ -301,7 +288,7 @@ describe("readDealHistory", () => {
 	it("reports the stage clock, not just the stage", async () => {
 		const history = await readDealHistory(dealId);
 
-		expect(history?.deal.stage).toBe("CONTRACTED");
+		expect(history?.deal.stage).toBe("Contracted");
 		expect(history?.deal.open).toBe(true);
 		expect(history?.deal.daysInStage).toBeGreaterThanOrEqual(41);
 	});
@@ -310,18 +297,9 @@ describe("readDealHistory", () => {
 		const history = await readDealHistory(dealId);
 
 		expect(history?.stageHistory.map((change) => change.to)).toEqual([
-			"ESTIMATING",
-			"CONTRACTED",
+			"Estimating",
+			"Contracted",
 		]);
-	});
-
-	it("reads a project history without a company", async () => {
-		const history = await readDealHistory(noCompanyDealId);
-
-		expect(history?.company).toBeNull();
-		expect(history?.deal.open).toBe(true);
-		expect(history?.threads).toEqual([]);
-		expect(history?.meetings).toEqual([]);
 	});
 
 	it("names who is on it, with ids and roles", async () => {
@@ -362,5 +340,26 @@ describe("readDealHistory", () => {
 
 	it("returns null for a deal that does not exist", async () => {
 		expect(await readDealHistory("nope")).toBeNull();
+	});
+});
+
+describe("construction stage presentation", () => {
+	it("maps every physical DealStage value for agents", () => {
+		expect(
+			Object.fromEntries(
+				Object.values(DealStage).map((stage) => [
+					stage,
+					constructionStatus(stage),
+				]),
+			),
+		).toEqual({
+			DEMO_BOOKED: "Lead",
+			QUALIFIED_TO_BUY: "Estimating",
+			UNQUALIFIED_TO_BUY: "Disqualified",
+			DECISION_MAKER_BOUGHT_IN: "In progress",
+			CONTRACT_SENT: "Contracted",
+			CLOSED_WON: "Complete",
+			CLOSED_LOST: "Lost",
+		});
 	});
 });

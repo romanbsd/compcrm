@@ -2,7 +2,6 @@
 
 import Add from "@carbon/icons-react/es/Add";
 import { CURRENCIES } from "@crm/db/currency";
-import { DealStage } from "@crm/db/enums";
 import { Button } from "@crm/ui/components/button";
 import { DatePicker } from "@crm/ui/components/date-picker";
 import {
@@ -73,7 +72,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 	const [name, setName] = useState("");
 	const [company, setCompany] = useState(companyId ?? UNSET);
 	const [ownerId, setOwnerId] = useState(UNSET);
-	const [stage, setStage] = useState<DealStage>(DealStage.LEAD);
+	const [stage, setStage] = useState<string>("DEMO_BOOKED");
 	const [amount, setAmount] = useState("");
 	const [currency, setCurrency] = useState("");
 	const [closeDate, setCloseDate] = useState("");
@@ -133,7 +132,7 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 							name,
 							companyId: company,
 							ownerId: resolvedOwner,
-							stage,
+							stage: stage as never,
 							amountCents: Number.isFinite(parsed)
 								? Math.round(parsed * 100)
 								: null,
@@ -182,17 +181,14 @@ function CreateDealForm({ companyId }: { companyId?: string }) {
 
 						<Field>
 							<FieldLabel htmlFor="create-deal-stage">Stage</FieldLabel>
-							<Select
-								value={stage}
-								onValueChange={(value) => setStage(value as DealStage)}
-							>
+							<Select value={stage} onValueChange={setStage}>
 								<SelectTrigger id="create-deal-stage">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									{OPEN_STAGES.map((option) => (
-										<SelectItem key={option} value={option}>
-											{dealStageLabel(option)}
+									{OPEN_STAGES.map((value) => (
+										<SelectItem key={value} value={value}>
+											{dealStageLabel(value)}
 										</SelectItem>
 									))}
 								</SelectContent>

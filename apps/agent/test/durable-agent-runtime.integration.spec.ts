@@ -246,7 +246,7 @@ describe("durable custom-agent runtime", () => {
 				type: "deal.closed",
 				record: { kind: "deal", id: eventDeal.id },
 				occurredAt,
-				data: { from: "IN_PROGRESS", to: "COMPLETE" },
+				data: { from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 			},
 		};
 
@@ -269,7 +269,7 @@ describe("durable custom-agent runtime", () => {
 					event: {
 						type: "deal.closed",
 						occurredAt,
-						data: { from: "IN_PROGRESS", to: "COMPLETE" },
+						data: { from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 					},
 					record: { kind: "deal", id: `event-deal-${suffix}` },
 				},

@@ -65,8 +65,6 @@ import { useOpenRecord, useRecordSheetView } from "./record-stack";
 
 type Deal = RouterOutputs["deals"]["byId"];
 
-const NONE = "none";
-
 const CURRENCY_OPTIONS = CURRENCIES.map((entry) => ({
 	value: entry.code,
 	label: `${entry.code} · ${entry.name}`,
@@ -176,32 +174,24 @@ export function DealSheet({ dealId }: { dealId: string }) {
 			title={deal?.name ?? "Deal"}
 			description={
 				deal ? (
-					deal.company ? (
-						<button
-							type="button"
-							onClick={() =>
-								openRecord({ kind: "company", id: deal.company?.id ?? "" })
-							}
-							className="text-foreground underline-offset-2 hover:underline"
-						>
-							{deal.company.name}
-						</button>
-					) : (
-						<span className="text-muted-foreground">No company attached</span>
-					)
+					<button
+						type="button"
+						onClick={() => openRecord({ kind: "company", id: deal.company.id })}
+						className="text-foreground underline-offset-2 hover:underline"
+					>
+						{deal.company.name}
+					</button>
 				) : undefined
 			}
 			media={
 				deal ? (
-					deal.company ? (
-						<EntityLogo
-							src={deal.company.iconUrl}
-							darkSrc={deal.company.iconDarkUrl}
-							tone={deal.company.iconTone as EntityLogoTone | null | undefined}
-							name={deal.company.name}
-							size="lg"
-						/>
-					) : null
+					<EntityLogo
+						src={deal.company.iconUrl}
+						darkSrc={deal.company.iconDarkUrl}
+						tone={deal.company.iconTone as EntityLogoTone | null | undefined}
+						name={deal.company.name}
+						size="lg"
+					/>
 				) : null
 			}
 			actions={
@@ -215,7 +205,7 @@ export function DealSheet({ dealId }: { dealId: string }) {
 						<RecordActions
 							record={{ kind: "deal", id: deal.id }}
 							name={deal.name}
-							consequence={`Its stage history, notes and agent conversations go too. ${deal.company?.name ?? "The company"} and the ${deal.contacts.length === 1 ? "person" : "people"} on it stay in the CRM.`}
+							consequence={`Its stage history, notes and agent conversations go too. ${deal.company.name} and the ${deal.contacts.length === 1 ? "person" : "people"} on it stay in the CRM.`}
 							archivedAt={deal.archivedAt}
 						/>
 					</>
@@ -344,7 +334,7 @@ function DealOverview({ deal }: { deal: Deal }) {
 						onSave={(next) => save({ expectedCloseDate: next || null })}
 					/>
 					<InlineCompanyField
-						value={deal.company?.id ?? NONE}
+						value={deal.company.id}
 						company={deal.company}
 						saving={isSaving("companyId")}
 						onSave={(companyId) => save({ companyId })}
@@ -370,7 +360,7 @@ function DealOverview({ deal }: { deal: Deal }) {
 				<InlineTextArea
 					label="Description"
 					value={deal.description}
-					placeholder={`What ${deal.company?.name ?? "the company"} is buying, why now, and what stands in the way.`}
+					placeholder={`What ${deal.company.name} is buying, why now, and what stands in the way.`}
 					saving={isSaving("description")}
 					onSave={(description) => save({ description })}
 				/>
@@ -410,7 +400,7 @@ function WhereItStands({ deal }: { deal: Deal }) {
 				<DetailSheetProperty label="On it" wide>
 					{deal.contacts.length === 0 ? (
 						<span className="text-muted-foreground">
-							Nobody from {deal.company?.name ?? "the company"} is attached yet.
+							Nobody from {deal.company.name} is attached yet.
 						</span>
 					) : (
 						<span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -472,7 +462,7 @@ function DealContacts({
 	const form = adding ? (
 		<AttachDealContact
 			dealId={deal.id}
-			companyName={deal.company?.name}
+			companyName={deal.company.name}
 			onDone={onDone}
 		/>
 	) : null;
@@ -485,7 +475,7 @@ function DealContacts({
 					<DetailSheetEmpty
 						icon={UserMultiple}
 						title="No contacts on this deal"
-						description={`Nobody from ${deal.company?.name ?? "the company"} is attached yet. Bring the people you are selling to onto the deal and it says who to chase.`}
+						description={`Nobody from ${deal.company.name} is attached yet. Bring the people you are selling to onto the deal and it says who to chase.`}
 						action={
 							<Button variant="outline" size="sm" onClick={onAdd}>
 								<Icon icon={Add} data-icon="inline-start" />

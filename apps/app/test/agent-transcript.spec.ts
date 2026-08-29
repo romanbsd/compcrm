@@ -226,25 +226,6 @@ describe("deal list presentation", () => {
 		expect(dealListResultOf({ deals: [] })).toBeNull();
 	});
 
-	it("keeps a no-company project renderable", () => {
-		const result = dealListResultOf({
-			...output,
-			deals: [
-				{ ...deal, name: "Kitchen remodel", company: null, primaryContact },
-			],
-		});
-
-		expect(result).toMatchObject({
-			deals: [
-				{
-					name: "Kitchen remodel",
-					company: null,
-					primaryContact: { id: "contact-1", name: "Priya Raman" },
-				},
-			],
-		});
-	});
-
 	it("normalizes old list_deals results without a primary contact", () => {
 		const result = dealListResultOf({ ...output, deals: [deal] });
 

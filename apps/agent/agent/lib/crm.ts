@@ -1,4 +1,5 @@
 import { db, EnrichmentStatus, type Prisma } from "@crm/db";
+import { constructionStatus } from "./construction-status";
 import { contactName, domainOf, isDerivedName } from "./names";
 import type { Person } from "./socials";
 
@@ -282,7 +283,7 @@ export async function readCrmHistory(
 		deals: contact.deals.map(({ role, deal }) => ({
 			id: deal.id,
 			name: deal.name,
-			stage: deal.stage,
+			stage: constructionStatus(deal.stage),
 			role,
 			amount: deal.amount === null ? null : Number(deal.amount),
 			currency: deal.currency,

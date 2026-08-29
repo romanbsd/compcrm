@@ -9,7 +9,7 @@ import { dealStageLabel, isClosedStage, OPEN_STAGES } from "@/lib/deal-stage";
 import { useCrmCache } from "@/lib/trpc/cache";
 import { useTRPC } from "@/lib/trpc/client";
 
-const RAIL = [...OPEN_STAGES, DealStage.COMPLETE] as readonly DealStage[];
+const RAIL = [...OPEN_STAGES, DealStage.CLOSED_WON] as readonly DealStage[];
 
 export function StageStepper({
 	dealId,
@@ -31,7 +31,7 @@ export function StageStepper({
 		}),
 	);
 
-	const exited = isClosedStage(stage) && stage !== DealStage.COMPLETE;
+	const exited = isClosedStage(stage) && stage !== DealStage.CLOSED_WON;
 	const steps = exited ? OPEN_STAGES : RAIL;
 	const currentIndex = steps.indexOf(stage);
 
@@ -56,7 +56,7 @@ export function StageStepper({
 							)}
 						>
 							<span className="block truncate">
-								{current && option === DealStage.COMPLETE ? (
+								{current && option === DealStage.CLOSED_WON ? (
 									<DealStageIndicator stage={stage} className="text-xs" />
 								) : (
 									dealStageLabel(option)

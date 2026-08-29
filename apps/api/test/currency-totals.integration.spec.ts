@@ -450,14 +450,11 @@ describe("the dashboard only values what it can convert", () => {
 
 	afterAll(async () => {
 		await db.deal.deleteMany({ where: { ownerId: analystId } });
-		await db.contact.deleteMany({
-			where: { email: `dashboard-contact@${domain}` },
-		});
 		await db.user.deleteMany({ where: { id: analystId } });
 	});
 
 	async function stale(name: string, stage: DealStage) {
-		const closed = stage === DealStage.COMPLETE;
+		const closed = stage === DealStage.CLOSED_WON;
 
 		return db.deal.create({
 			data: {
@@ -484,10 +481,10 @@ describe("the dashboard only values what it can convert", () => {
 			ownerId: analystId,
 			amountCents: 10_000,
 			currency: "USD",
-			stage: DealStage.COMPLETE,
+			stage: DealStage.CLOSED_WON,
 		});
 
-		const unvalued = await stale("Stale win", DealStage.COMPLETE);
+		const unvalued = await stale("Stale win", DealStage.CLOSED_WON);
 
 		const summary = await dashboard.summary(analystId, { scope: "me" });
 
@@ -507,7 +504,7 @@ describe("the dashboard only values what it can convert", () => {
 			currency: "USD",
 		});
 
-		const unvalued = await stale("Stale open", DealStage.LEAD);
+		const unvalued = await stale("Stale open", DealStage.DEMO_BOOKED);
 
 		const summary = await dashboard.summary(analystId, { scope: "me" });
 
@@ -519,42 +516,5 @@ describe("the dashboard only values what it can convert", () => {
 		).toBeNull();
 
 		await db.deal.deleteMany({ where: { id: { in: [open.id, unvalued.id] } } });
-	});
-
-	it("does not infer a primary contact for a project without a company", async () => {
-		const contact = await db.contact.create({
-			data: {
-				firstName: "Homeowner",
-				lastName: "Contact",
-				email: `dashboard-contact@${domain}`,
-			},
-			select: { id: true },
-		});
-		const project = await db.deal.create({
-			data: {
-				name: `Homeowner project ${suffix}`,
-				ownerId: analystId,
-				stage: DealStage.LEAD,
-				amount: 999_999,
-				currency: "USD",
-				baseAmount: 999_999,
-				baseCurrency: "USD",
-				contacts: {
-					create: { contactId: contact.id },
-				},
-			},
-			select: { id: true },
-		});
-
-		const summary = await dashboard.summary(analystId, { scope: "me" });
-		expect(
-			summary.biggestOpen.find((deal) => deal.id === project.id),
-		).toMatchObject({
-			company: null,
-			primaryContact: null,
-		});
-
-		await db.deal.delete({ where: { id: project.id } });
-		await db.contact.delete({ where: { id: contact.id } });
 	});
 });

@@ -1,5 +1,6 @@
 import { DealStage, db } from "@crm/db";
 import { LOSING_DEAL_STAGES, OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
+import { constructionStatus } from "./construction-status";
 import { contactName, domainOf, normalise } from "./names";
 
 export type RecordKind = "contact" | "company" | "deal";
@@ -31,7 +32,7 @@ export type DealHit = {
 	stage: string;
 	amount: number | null;
 	currency: string;
-	company: { id: string; name: string } | null;
+	company: { id: string; name: string };
 	primaryContact: { id: string; name: string } | null;
 };
 
@@ -64,9 +65,9 @@ function toPrimaryContact(deal: {
 			firstName: string;
 			lastName: string | null;
 		} | null;
-	} | null;
+	};
 }): { id: string; name: string } | null {
-	const contact = deal.company?.primaryContact;
+	const contact = deal.company.primaryContact;
 	return contact ? { id: contact.id, name: contactName(contact) } : null;
 }
 
@@ -84,7 +85,7 @@ export async function listDeals(options: DealListOptions = {}) {
 		status === "open"
 			? [...OPEN_DEAL_STAGES]
 			: status === "won"
-				? [DealStage.COMPLETE]
+				? [DealStage.CLOSED_WON]
 				: status === "lost"
 					? [...LOSING_DEAL_STAGES]
 					: null;
@@ -148,15 +149,12 @@ export async function listDeals(options: DealListOptions = {}) {
 		asOf: now.toISOString(),
 		deals: page.map((deal) => {
 			const activityDate = deal.lastActivityAt ?? deal.createdAt;
-			const company = deal.company
-				? (({ primaryContact: _primaryContact, ...summary }) => summary)(
-						deal.company,
-					)
-				: null;
+			const company = (({ primaryContact: _primaryContact, ...summary }) =>
+				summary)(deal.company);
 			return {
 				id: deal.id,
 				name: deal.name,
-				stage: deal.stage,
+				stage: constructionStatus(deal.stage),
 				amount: deal.amount === null ? null : Number(deal.amount),
 				currency: deal.currency,
 				company,
@@ -355,18 +353,15 @@ async function searchDeals(
 
 	return rows
 		.map((row) => {
-			const company = row.company
-				? (({ primaryContact: _primaryContact, ...summary }) => summary)(
-						row.company,
-					)
-				: null;
+			const company = (({ primaryContact: _primaryContact, ...summary }) =>
+				summary)(row.company);
 			return {
-				score: score(term, [row.name, row.company?.name ?? ""]),
+				score: score(term, [row.name, row.company.name]),
 				hit: {
 					kind: "deal" as const,
 					id: row.id,
 					name: row.name,
-					stage: row.stage,
+					stage: constructionStatus(row.stage),
 					amount: row.amount === null ? null : Number(row.amount),
 					currency: row.currency,
 					company,

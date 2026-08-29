@@ -1,6 +1,7 @@
 import { ActivityType, type DealStage, db, EmailDirection } from "@crm/db";
 import { isOpenStage } from "@crm/db/deal-stage";
 import { z } from "zod";
+import { constructionStatus } from "./construction-status";
 import { contactName, isDerivedName } from "./names";
 
 const BODY_LIMIT = 4000;
@@ -324,7 +325,7 @@ export type DealHistory = {
 		owner: string | null;
 		createdAt: string;
 	};
-	company: { id: string; name: string; domain: string | null } | null;
+	company: { id: string; name: string; domain: string | null };
 	people: {
 		id: string;
 		name: string;
@@ -396,23 +397,25 @@ export async function readDealHistory(
 	const contacts = [...deal.contacts];
 	const contactIds = contacts.map(({ contact }) => contact.id);
 
-	const relatedThreads = {
-		OR: [
-			...(contactIds.length > 0 ? [{ contactId: { in: contactIds } }] : []),
-			...(deal.company ? [{ companyId: deal.company.id }] : []),
-		],
-	};
-	const relatedCalendar = {
-		OR: [
-			...(contactIds.length > 0
-				? [
+	const relatedThreads =
+		contactIds.length > 0
+			? {
+					OR: [
+						{ contactId: { in: contactIds } },
+						{ companyId: deal.company.id },
+					],
+				}
+			: { companyId: deal.company.id };
+	const relatedCalendar =
+		contactIds.length > 0
+			? {
+					OR: [
 						{ contactId: { in: contactIds } },
 						{ attendees: { some: { contactId: { in: contactIds } } } },
-					]
-				: []),
-			...(deal.company ? [{ companyId: deal.company.id }] : []),
-		],
-	};
+						{ companyId: deal.company.id },
+					],
+				}
+			: { companyId: deal.company.id };
 
 	const [stageChanges, threads, meetings, notes, lastInbound] =
 		await Promise.all([
@@ -485,7 +488,7 @@ export async function readDealHistory(
 			id: deal.id,
 			name: deal.name,
 			description: deal.description,
-			stage: deal.stage,
+			stage: constructionStatus(deal.stage),
 			open: isOpen(deal.stage),
 			daysInStage: daysSince(deal.stageChangedAt, now),
 			stageChangedAt: deal.stageChangedAt.toISOString(),
@@ -508,8 +511,8 @@ export async function readDealHistory(
 		stageHistory: stageChanges.map((change) => {
 			const meta = stageChangeMeta.parse(change.meta);
 			return {
-				from: meta.from,
-				to: meta.to,
+				from: meta.from ? constructionStatus(meta.from) : null,
+				to: meta.to ? constructionStatus(meta.to) : null,
 				at: change.createdAt.toISOString(),
 			};
 		}),
@@ -535,9 +538,7 @@ export async function readDealHistory(
 			includeEmail || includeCalendar
 				? contactIds.length > 0
 					? "Connected account history is filed against people and companies, never against a project. The history here belongs to the people on this project and the rest of the account — read the details before treating any of it as being about this project."
-					: deal.company
-						? "Nobody is attached to this project, so the correspondence here is the whole account's. Attaching the people on it would make this answer sharper."
-						: "This project has no company and nobody on it, so there is no related correspondence to show. Attaching the company or the people on it would make this answer sharper."
+					: "Nobody is attached to this project, so the correspondence here is the whole account's. Attaching the people on it would make this answer sharper."
 				: "Connected email and calendar history are outside this agent version's approved data sources.",
 	};
 }
@@ -651,7 +652,7 @@ function toCompanyDeal(deal: {
 	return {
 		id: deal.id,
 		name: deal.name,
-		stage: deal.stage,
+		stage: constructionStatus(deal.stage),
 		open: isOpen(deal.stage),
 		amount: deal.amount === null ? null : Number(deal.amount),
 		currency: deal.currency,

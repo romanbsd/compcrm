@@ -90,10 +90,8 @@ function companyConsequence(company: Company): string {
 
 	const gone =
 		deals > 0
-			? deals === 1
-				? "Its one deal must be deleted before this company can be permanently deleted."
-				: `All ${deals} deals must be deleted before this company can be permanently deleted.`
-			: "This company has no deals and can be permanently deleted.";
+			? `${deals === 1 ? "Its one deal" : `All ${deals} of its deals`} and everything filed against the account go too.`
+			: "Everything filed against the account goes too.";
 
 	const kept =
 		contacts > 0

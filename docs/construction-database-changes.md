@@ -1,14 +1,19 @@
-# Construction database changes
+# CompCRM construction database changes
 
 ## Scope and comparison base
 
-This document compares the current construction PR with `origin/master` at `c7fc76ee5074152f691c55a9ce5fb017521fefc4`.
+This supporting document records the construction database changes against the
+original CompCRM platform, `origin/master` at
+`c7fc76ee5074152f691c55a9ce5fb017521fefc4`. The canonical term, API, agent,
+and database map is in [construction-change-map.md](construction-change-map.md).
 
 The comparison covers:
 
 - `packages/db/prisma/schema.prisma`
 - `packages/db/prisma/migrations/20260827210000_gc_os_poc/migration.sql`
 - `packages/db/prisma/migrations/20260828203000_remove_unsupported_contact_fields/migration.sql`
+- `packages/db/prisma/migrations/20260829010000_require_deal_company/migration.sql`
+- `packages/db/prisma/migrations/20260829011000_restore_deal_stage/migration.sql`
 
 The first migration adds the construction data model. The later compatibility migration removes three fields from databases that already applied the first migration. The final schema does not contain those three fields.
 
@@ -18,9 +23,9 @@ The POC has one human role, GC. Secretary and PM are agents. Organization and Me
 
 | Existing model or enum | Construction meaning | Change type |
 | --- | --- | --- |
-| `DealStage` | Project status | Replaced the inherited status values with the six construction statuses. Existing values are mapped during migration. |
+| `DealStage` | Project status | Final enum and default are unchanged from `origin/master`. A temporary replacement is restored by a forward migration. |
 | `AgentRun` | Agent execution | Added an optional Project link, foreign key, and index. |
-| `Deal` | Project | Made the customer link physically optional for upstream compatibility, changed its delete action, changed the default status, and added construction fields and relations. |
+| `Deal` | Project | Final customer link is required with `ON DELETE CASCADE`. Added construction fields and relations. The temporary nullable link and status replacement are reversed. |
 | `Artifact` | Project file | Added table. |
 | `Document` | Estimate or invoice | Added table. |
 | `DocumentLineItem` | Estimate or invoice line | Added table. |
@@ -38,9 +43,9 @@ The POC has one human role, GC. Secretary and PM are agents. Organization and Me
 
 | Model field or relation | `origin/master` | Current schema and migration | Reason |
 | --- | --- | --- | --- |
-| `Deal.companyId` | Required `String`. | Optional `String?`. The migration drops `NOT NULL`. | The database keeps upstream compatibility for an unassigned row. The construction application still requires a customer when it creates a Project. |
-| `Deal.company` | Required relation with `ON DELETE CASCADE`. | Optional relation with `ON DELETE SET NULL`. | Deleting a Company must not delete a Project. |
-| `Deal.stage` | Default `DEMO_BOOKED`. | Default `LEAD`. The enum and old stored values are migrated. | `LEAD` is the first construction status. |
+| `Deal.companyId` | Required `String`. | Required `String` in the final schema. Migration `20260829010000_require_deal_company` restores `NOT NULL` after the temporary nullable change. | Every Deal has one Company. |
+| `Deal.company` | Required relation with `ON DELETE CASCADE`. | Required relation with `ON DELETE CASCADE` in the final schema. | The API purge guard still refuses Company deletion while Deals exist. |
+| `Deal.stage` | Default `DEMO_BOOKED`. | Default `DEMO_BOOKED` in the final schema. Migration `20260829011000_restore_deal_stage` restores the original enum after the temporary replacement. | Agent-facing construction labels are documented separately. |
 | `AgentRun.dealId` | No field or relation. | Optional `String` field with an optional `Deal` relation and `ON DELETE SET NULL`. | An agent execution can carry Project context. |
 | `Deal.agentRuns` | No relation field. | `AgentRun[]` relation. | Supports the reverse Project-to-agent lookup. |
 | `Deal.artifacts` | No relation field. | `Artifact[]` relation. | Connects Project files to a Project. |
@@ -128,27 +133,33 @@ The final contact label is derived from `firstName` and optional `lastName`. `Co
 
 ## Enum changes
 
-`DealStage` changes from these inherited values:
+The final `DealStage` enum remains these original physical values:
 
 `DEMO_BOOKED`, `QUALIFIED_TO_BUY`, `UNQUALIFIED_TO_BUY`, `DECISION_MAKER_BOUGHT_IN`, `CONTRACT_SENT`, `CLOSED_WON`, `CLOSED_LOST`
 
-to these construction values:
+`DEMO_BOOKED`, `QUALIFIED_TO_BUY`, `UNQUALIFIED_TO_BUY`, `DECISION_MAKER_BOUGHT_IN`, `CONTRACT_SENT`, `CLOSED_WON`, `CLOSED_LOST`.
 
-`LEAD`, `ESTIMATING`, `CONTRACTED`, `IN_PROGRESS`, `COMPLETE`, `LOST`
+Agent-facing construction status labels are:
 
-The migration maps stored values as follows:
-
-| Old value | New value |
+| Physical DealStage | Construction status |
 | --- | --- |
-| `DEMO_BOOKED` | `LEAD` |
-| `QUALIFIED_TO_BUY` | `ESTIMATING` |
-| `UNQUALIFIED_TO_BUY` | `LOST` |
-| `DECISION_MAKER_BOUGHT_IN` | `ESTIMATING` |
-| `CONTRACT_SENT` | `CONTRACTED` |
-| `CLOSED_WON` | `COMPLETE` |
-| `CLOSED_LOST` | `LOST` |
+| `DEMO_BOOKED` | Lead |
+| `QUALIFIED_TO_BUY` | Estimating |
+| `CONTRACT_SENT` | Contracted |
+| `DECISION_MAKER_BOUGHT_IN` | In progress |
+| `CLOSED_WON` | Complete |
+| `CLOSED_LOST` | Lost |
+| `UNQUALIFIED_TO_BUY` | Disqualified |
 
-No other enum changes are in the compared schema.
+The temporary migration maps `DEMO_BOOKED` to `LEAD`, `QUALIFIED_TO_BUY` to
+`ESTIMATING`, `UNQUALIFIED_TO_BUY` and `CLOSED_LOST` to `LOST`,
+`DECISION_MAKER_BOUGHT_IN` to `ESTIMATING`, `CONTRACT_SENT` to `CONTRACTED`,
+and `CLOSED_WON` to `COMPLETE`. The forward migration deterministically maps
+`LEAD` to `DEMO_BOOKED`, `ESTIMATING` to `QUALIFIED_TO_BUY`, `CONTRACTED` to
+`CONTRACT_SENT`, `IN_PROGRESS` to `DECISION_MAKER_BOUGHT_IN`, `COMPLETE` to
+`CLOSED_WON`, and `LOST` to `CLOSED_LOST`. It cannot recover whether an
+`ESTIMATING` row was formerly `DECISION_MAKER_BOUGHT_IN` or whether a `LOST`
+row was formerly `UNQUALIFIED_TO_BUY`.
 
 ## Indexes, foreign keys, and delete behavior
 
@@ -156,7 +167,7 @@ The migrations make these database changes:
 
 | Object | Change |
 | --- | --- |
-| `deal_companyId_fkey` | Replaced after `Deal.companyId` becomes nullable. It references `company.id` with `ON DELETE SET NULL` and `ON UPDATE CASCADE`. |
+| `deal_companyId_fkey` | Final foreign key references `company.id` with `ON DELETE CASCADE` and `ON UPDATE CASCADE`. The temporary `ON DELETE SET NULL` foreign key is restored by `20260829010000_require_deal_company`. |
 | `agentRun_dealId_createdAt_idx` | Added on `AgentRun(dealId, createdAt)`. |
 | `agentRun_dealId_fkey` | Added from `AgentRun.dealId` to `Deal.id` with `ON DELETE SET NULL` and `ON UPDATE CASCADE`. |
 | `artifact_dealId_createdAt_idx` | Added on `Artifact(dealId, createdAt)`. |
@@ -173,7 +184,7 @@ Existing `DealContact` primary key `(dealId, contactId)` and index on `contactId
 
 Both migrations use one transaction.
 
-`20260827210000_gc_os_poc`:
+`20260827210000_gc_os_poc` temporarily:
 
 - Replaces the `DealStage` PostgreSQL enum and maps stored `Deal.stage` values.
 - Updates old `from` and `to` values in `Activity.meta` for stage-change records.
@@ -182,6 +193,20 @@ Both migrations use one transaction.
 - Backfills the temporary `Contact.displayName` from the first and last names. The later cleanup migration removes that temporary column, so it is not retained.
 - Adds nullable Project fields and the nullable `AgentRun.dealId` without backfilling them.
 - Creates the three new tables. They start empty.
+
+`20260829010000_require_deal_company`:
+
+- Verifies that no Deal has a null `companyId`.
+- Sets `deal.companyId` to `NOT NULL`.
+- Restores the Deal-to-Company foreign key to `ON DELETE CASCADE`.
+- Does not backfill, delete, or invent Company data.
+
+`20260829011000_restore_deal_stage`:
+
+- Restores the original seven-value `DealStage` enum and default.
+- Applies the deterministic forward mapping to Deal rows, Activity stage
+  metadata, and SavedView Deal-stage filters.
+- Restores `Stage changed` subjects changed by the temporary migration.
 
 `20260828203000_remove_unsupported_contact_fields`:
 
@@ -216,6 +241,7 @@ There is no final schema change compared with `origin/master`. It remains the ma
 
 ## Application rule and physical database rule for `Deal.companyId`
 
-The physical database keeps `Deal.companyId` nullable and uses `ON DELETE SET NULL` so upstream data can contain an unassigned Project and deleting a Company does not delete its Projects.
-
-The construction application has the stricter rule. Project creation requires `companyId`, and the construction interface does not provide an unassigned customer path. Therefore, a normal construction Project has one Company customer even though the physical column remains nullable for compatibility.
+The physical database and construction application both require
+`Deal.companyId`. The foreign key uses `ON DELETE CASCADE`, while the Company
+service refuses to purge a Company while Deals reference it. The temporary
+nullable database change is reversed by the forward migration.

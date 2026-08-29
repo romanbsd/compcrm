@@ -1,6 +1,7 @@
 import { db } from "@crm/db";
 import { websiteUrl } from "@crm/db/workspace";
 import { capabilitiesMarkdown } from "./capabilities";
+import { constructionStatus } from "./construction-status";
 import { contactName } from "./names";
 import { identity, usMarkdown, type WorkspaceIdentity } from "./workspace";
 
@@ -114,7 +115,7 @@ export async function contactPreamble(
 	const deals = contact.deals
 		.map(
 			({ role, deal }) =>
-				`${deal.name} (${deal.stage}${role ? `, ${role}` : ""}) \`${deal.id}\``,
+				`${deal.name} (${constructionStatus(deal.stage)}${role ? `, ${role}` : ""}) \`${deal.id}\``,
 		)
 		.join("; ");
 
@@ -208,7 +209,10 @@ export async function companyPreamble(
 			: "";
 
 	const deals = company.deals
-		.map((deal) => `${deal.name} (${deal.stage}) \`${deal.id}\``)
+		.map(
+			(deal) =>
+				`${deal.name} (${constructionStatus(deal.stage)}) \`${deal.id}\``,
+		)
 		.join("; ");
 
 	const markdown = [
@@ -288,12 +292,8 @@ export async function dealPreamble(
 	const markdown = [
 		"## This session",
 		"",
-		`Project: **${deal.name}**${
-			deal.company ? ` at ${deal.company.name}` : ""
-		} — project id \`${dealId}\`${
-			deal.company ? `, company id \`${deal.company.id}\`` : ""
-		}.`,
-		`Status: **${deal.stage}**${
+		`Project: **${deal.name}** at ${deal.company.name} — project id \`${dealId}\`, company id \`${deal.company.id}\`.`,
+		`Status: **${constructionStatus(deal.stage)}**${
 			deal.amount
 				? `. Amount: ${deal.amount} ${deal.currency ?? ""}`.trim()
 				: ""
@@ -329,7 +329,7 @@ export async function dealPreamble(
 		.filter(Boolean)
 		.join("\n");
 
-	return { markdown, focus: { companyId: deal.company?.id ?? null } };
+	return { markdown, focus: { companyId: deal.company.id } };
 }
 
 export async function noRecordPreamble(): Promise<Preamble> {

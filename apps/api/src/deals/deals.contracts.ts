@@ -223,7 +223,7 @@ const dealListRowOutput = z.object({
 	name: z.string(),
 	stage: stageEnum,
 	currency: z.string(),
-	company: dealCompanyOutput.nullable(),
+	company: dealCompanyOutput,
 	primaryContact: dealContactSummaryOutput.nullable(),
 	owner: dealOwnerOutput,
 	leadSource: z.string().nullable(),
@@ -264,7 +264,7 @@ export const dealDetailOutput = z.object({
 	stage: stageEnum,
 	currency: z.string(),
 	closedReason: z.string().nullable(),
-	company: dealCompanyDetailOutput.nullable(),
+	company: dealCompanyDetailOutput,
 	owner: dealOwnerOutput,
 	leadSource: z.string().nullable(),
 	projectType: z.string().nullable(),
@@ -292,7 +292,7 @@ export type DealDetail = z.infer<typeof dealDetailOutput>;
 export const dealCreateOutput = z.object({
 	id: z.string(),
 	name: z.string(),
-	companyId: z.string().nullable(),
+	companyId: z.string(),
 });
 
 export type DealCreated = z.infer<typeof dealCreateOutput>;

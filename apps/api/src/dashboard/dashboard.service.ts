@@ -205,7 +205,7 @@ export class DashboardService {
 
 			const { closedAt, stage } = deal;
 			if (!closedAt) continue;
-			const won = stage === DealStage.COMPLETE;
+			const won = stage === DealStage.CLOSED_WON;
 
 			if (won) {
 				const closed = trend[monthKey(closedAt) - firstBucket];
@@ -228,7 +228,7 @@ export class DashboardService {
 					wonCents += cents;
 				}
 				cycleDays += (closedAt.getTime() - deal.createdAt.getTime()) / DAY_MS;
-			} else if (stage === DealStage.LOST) {
+			} else if (stage === DealStage.CLOSED_LOST) {
 				losses += 1;
 			}
 		}
@@ -272,12 +272,9 @@ export class DashboardService {
 						...deal
 					}) => ({
 						...deal,
-						company: company
-							? (({ primaryContact: _primaryContact, ...summary }) => summary)(
-									company,
-								)
-							: null,
-						primaryContact: company?.primaryContact ?? null,
+						company: (({ primaryContact: _primaryContact, ...summary }) =>
+							summary)(company),
+						primaryContact: company.primaryContact ?? null,
 						amountCents: toCents(amount),
 						baseAmountCents: baseCurrency === base ? toCents(baseAmount) : null,
 						expectedCloseDate: expectedCloseDate?.toISOString() ?? null,

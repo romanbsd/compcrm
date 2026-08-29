@@ -25,7 +25,7 @@ afterAll(async () => {
 });
 
 describe("GC saved-view migration", () => {
-	it("upgrades legacy project stage filters for current saved-view queries", async () => {
+	it("restores physical stage filters and metadata after the temporary mapping", async () => {
 		await db.savedView.create({
 			data: {
 				entity: "DEAL",
@@ -38,7 +38,7 @@ describe("GC saved-view migration", () => {
 					dir: "asc",
 					archived: false,
 					filters: {
-						stage: ["DEMO_BOOKED", "CLOSED_WON", "IN_PROGRESS"],
+						stage: ["DEMO_BOOKED", "CLOSED_WON", "DECISION_MAKER_BOUGHT_IN"],
 						owner: ["owner-1"],
 					},
 				},
@@ -68,27 +68,58 @@ describe("GC saved-view migration", () => {
 			},
 		});
 
-		const migrationPath = join(
+		const temporaryMigrationPath = join(
 			import.meta.dir,
 			"../../../packages/db/prisma/migrations/20260827210000_gc_os_poc/migration.sql",
 		);
-		const migration = readFileSync(migrationPath, "utf8");
-		const activityStart = migration.indexOf('UPDATE "activity"');
-		const start = migration.indexOf('UPDATE "savedView"');
-		const end = migration.indexOf('\n\nALTER TABLE "contact"', start);
+		const temporaryMigration = readFileSync(temporaryMigrationPath, "utf8");
+		const activityStart = temporaryMigration.indexOf('UPDATE "activity"');
+		const savedViewStart = temporaryMigration.indexOf('UPDATE "savedView"');
+		const savedViewEnd = temporaryMigration.indexOf(
+			'\n\nALTER TABLE "contact"',
+			savedViewStart,
+		);
 		expect(activityStart).toBeGreaterThanOrEqual(0);
-		expect(start).toBeGreaterThan(activityStart);
-		expect(start).toBeGreaterThanOrEqual(0);
-		expect(end).toBeGreaterThan(start);
-		await db.$executeRawUnsafe(migration.slice(activityStart, start));
-		await db.$executeRawUnsafe(migration.slice(start, end));
+		expect(savedViewStart).toBeGreaterThan(activityStart);
+		expect(savedViewEnd).toBeGreaterThan(savedViewStart);
+		await db.$executeRawUnsafe(
+			temporaryMigration.slice(activityStart, savedViewStart),
+		);
+		await db.$executeRawUnsafe(
+			temporaryMigration.slice(savedViewStart, savedViewEnd),
+		);
+
+		const restoreMigrationPath = join(
+			import.meta.dir,
+			"../../../packages/db/prisma/migrations/20260829011000_restore_deal_stage/migration.sql",
+		);
+		const restoreMigration = readFileSync(restoreMigrationPath, "utf8");
+		const restoreActivityStart = restoreMigration.indexOf('UPDATE "activity"');
+		const restoreSavedViewStart =
+			restoreMigration.indexOf('UPDATE "savedView"');
+		const restoreSavedViewEnd = restoreMigration.indexOf(
+			"\n\nCOMMIT;",
+			restoreSavedViewStart,
+		);
+		expect(restoreActivityStart).toBeGreaterThanOrEqual(0);
+		expect(restoreSavedViewStart).toBeGreaterThan(restoreActivityStart);
+		expect(restoreSavedViewEnd).toBeGreaterThan(restoreSavedViewStart);
+		await db.$executeRawUnsafe(
+			restoreMigration.slice(restoreActivityStart, restoreSavedViewStart),
+		);
+		await db.$executeRawUnsafe(
+			restoreMigration.slice(restoreSavedViewStart, restoreSavedViewEnd),
+		);
 
 		expect(
 			await db.activity.findUnique({
 				where: { id: migrated.id },
-				select: { subject: true },
+				select: { subject: true, meta: true },
 			}),
-		).toEqual({ subject: "Status changed" });
+		).toEqual({
+			subject: "Stage changed",
+			meta: { from: "DEMO_BOOKED", to: "CLOSED_WON" },
+		});
 		expect(
 			await db.activity.findUnique({
 				where: { id: custom.id },
@@ -104,7 +135,7 @@ describe("GC saved-view migration", () => {
 
 		const [view] = await service.list("DEAL", userId);
 		expect(view?.filters.filters).toEqual({
-			stage: ["LEAD", "COMPLETE", "IN_PROGRESS"],
+			stage: ["DEMO_BOOKED", "CLOSED_WON", "QUALIFIED_TO_BUY"],
 			owner: ["owner-1"],
 		});
 	});

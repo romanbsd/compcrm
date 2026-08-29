@@ -12,6 +12,7 @@ const outsiderId = `agent-run-outsider-${suffix}`;
 const memberId = `agent-run-member-${suffix}`;
 let agentId = "";
 let versionId = "";
+let companyId = "";
 let dealId = "";
 let pokeCount = 0;
 let cancelPokes: string[] = [];
@@ -78,8 +79,13 @@ beforeAll(async () => {
 		select: { id: true },
 	});
 	versionId = version.id;
+	const company = await db.company.create({
+		data: { name: `Agent run company ${suffix}` },
+		select: { id: true },
+	});
+	companyId = company.id;
 	const deal = await db.deal.create({
-		data: { name: "Agent run project", ownerId: userId },
+		data: { name: "Agent run project", companyId, ownerId: userId },
 		select: { id: true },
 	});
 	dealId = deal.id;
@@ -122,6 +128,7 @@ afterAll(async () => {
 	}
 	await db.member.deleteMany({ where: { id: memberId } });
 	await db.deal.deleteMany({ where: { id: dealId } });
+	await db.company.deleteMany({ where: { id: companyId } });
 	await db.user.deleteMany({ where: { id: { in: [userId, outsiderId] } } });
 });
 
