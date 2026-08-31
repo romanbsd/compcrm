@@ -273,6 +273,7 @@ Below is `purge`'s contract — everything that used to be `delete`'s:
   transaction**. Never automatic.
 - **Purging a company does not suppress its domain** — its people survive with no
   company, and domain suppression stays the explicit Settings → Connections control.
+- **A company with a deal cannot be purged.** Delete its deals first.
 - **Clear `AgentTask` and `AgentEvent` yourself** — they carry `contactId`/`companyId`
   with no foreign key, so nothing cascades.
 - **Recompute `lastActivityAt` on exactly the records the purge reached.**

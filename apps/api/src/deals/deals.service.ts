@@ -87,6 +87,17 @@ const CONTACT_SELECT = {
 
 const LOSING = new Set<DealStage>(LOSING_DEAL_STAGES);
 
+const DEAL_TEXT_FIELDS = [
+	"leadSource",
+	"projectType",
+	"addressLine1",
+	"addressLine2",
+	"city",
+	"state",
+	"postalCode",
+] as const;
+type DealTextField = (typeof DEAL_TEXT_FIELDS)[number];
+
 const SORTABLE: OrderByColumns<Prisma.DealOrderByWithRelationInput[]> = {
 	name: (dir) => [{ name: dir }],
 	company: (dir) => [{ company: { name: dir } }, { name: "asc" }],
@@ -130,6 +141,13 @@ export class DealsService {
 						id: true,
 						name: true,
 						stage: true,
+						leadSource: true,
+						projectType: true,
+						addressLine1: true,
+						addressLine2: true,
+						city: true,
+						state: true,
+						postalCode: true,
 						amount: true,
 						currency: true,
 						baseAmount: true,
@@ -199,6 +217,13 @@ export class DealsService {
 				name: true,
 				description: true,
 				stage: true,
+				leadSource: true,
+				projectType: true,
+				addressLine1: true,
+				addressLine2: true,
+				city: true,
+				state: true,
+				postalCode: true,
 				stageChangedAt: true,
 				amount: true,
 				currency: true,
@@ -277,6 +302,7 @@ export class DealsService {
 						currency,
 						...fx,
 						expectedCloseDate: parseDate(input.expectedCloseDate),
+						...dealTextInput(input),
 					},
 					select: { id: true, name: true, companyId: true },
 				});
@@ -329,6 +355,10 @@ export class DealsService {
 		}
 		if (input.expectedCloseDate !== undefined) {
 			data.expectedCloseDate = parseDate(input.expectedCloseDate);
+		}
+		const dealFields = dealTextInput(input);
+		for (const field of DEAL_TEXT_FIELDS) {
+			if (dealFields[field] !== undefined) data[field] = dealFields[field];
 		}
 
 		if (input.amountCents !== undefined || input.currency !== undefined) {
@@ -879,6 +909,28 @@ function closingFilter(window: ClosingWindow): Prisma.DealWhereInput {
 
 function roleOrNull(value: string | null): string | null {
 	return value === null ? null : blankToNull(value);
+}
+
+function textOrNull(
+	value: string | null | undefined,
+): string | null | undefined {
+	return value === undefined
+		? undefined
+		: value === null
+			? null
+			: blankToNull(value);
+}
+
+type DealTextFields = Record<DealTextField, string | null | undefined>;
+
+function dealTextInput(
+	input: Pick<DealCreateInput | DealUpdateInput, DealTextField>,
+): DealTextFields {
+	const out = {} as DealTextFields;
+	for (const field of DEAL_TEXT_FIELDS) {
+		out[field] = textOrNull(input[field]);
+	}
+	return out;
 }
 
 function parseDate(value: string | null | undefined): Date | null {

@@ -71,7 +71,11 @@ const ours = {
 	OR: domains.map((host) => ({ email: { endsWith: `@${host}` } })),
 };
 
-async function parked(subject: { contactId?: string; companyId?: string }) {
+async function parked(subject: {
+	contactId?: string;
+	companyId?: string;
+	dealId?: string;
+}) {
 	return db.agentTask.create({
 		data: {
 			...subject,
@@ -105,6 +109,9 @@ async function clean() {
 		},
 	});
 	await db.agentEvent.deleteMany({ where: { contactId: { in: contactIds } } });
+	await db.deal.deleteMany({
+		where: { OR: [{ companyId: { in: companyIds } }, { ownerId: userId }] },
+	});
 	await db.contact.deleteMany({ where: ours });
 	await db.company.deleteMany({ where: { domain: { in: domains } } });
 	await db.suppressedContact.deleteMany({ where: ours });
@@ -246,7 +253,7 @@ describe("purging a contact", () => {
 });
 
 describe("purging a company", () => {
-	it("takes its deals and leaves its people without a company", async () => {
+	it("refuses to delete a company that still has deals", async () => {
 		const company = await companies.create({
 			name: "Doomed",
 			domain: doomedDomain,
@@ -262,25 +269,47 @@ describe("purging a company", () => {
 			select: { id: true },
 		});
 
-		await parked({ companyId: company.id });
-
-		expect(await companies.purge(company.id)).toEqual({
-			id: company.id,
-			name: "Doomed",
+		const companyTask = await parked({ companyId: company.id });
+		const dealTask = await parked({
+			companyId: company.id,
+			dealId: deal.id,
 		});
 
-		expect(await db.deal.findUnique({ where: { id: deal.id } })).toBeNull();
-		expect(await db.agentTask.count({ where: { companyId: company.id } })).toBe(
-			0,
+		await expect(companies.purge(company.id)).rejects.toThrow(
+			"Delete this company's deals before deleting the company.",
 		);
+
+		expect(
+			await db.deal.findUnique({
+				where: { id: deal.id },
+				select: { companyId: true },
+			}),
+		).toEqual({ companyId: company.id });
+		expect(await db.agentTask.count({ where: { companyId: company.id } })).toBe(
+			2,
+		);
+		expect(
+			await db.agentTask.findUnique({ where: { id: companyTask.id } }),
+		).not.toBe(null);
+		expect(
+			await db.agentTask.findUnique({
+				where: { id: dealTask.id },
+				select: { companyId: true, dealId: true },
+			}),
+		).toEqual({ companyId: company.id, dealId: deal.id });
 
 		const survivor = await db.contact.findUnique({
 			where: { id: contact.id },
 			select: { companyId: true },
 		});
-		expect(survivor?.companyId).toBeNull();
+		expect(survivor?.companyId).toBe(company.id);
 
+		await db.agentTask.deleteMany({
+			where: { id: { in: [companyTask.id, dealTask.id] } },
+		});
+		await db.deal.delete({ where: { id: deal.id } });
 		await db.contact.delete({ where: { id: contact.id } });
+		await db.company.delete({ where: { id: company.id } });
 	});
 });
 
@@ -333,7 +362,7 @@ describe("the activity stamps a purge leaves behind", () => {
 		).toEqual({ lastActivityAt: null });
 	});
 
-	it("follow a deleted company through the deals it takes with it", async () => {
+	it("keeps deal activity when company deletion is refused", async () => {
 		const company = await companies.create({
 			name: "Orphaner",
 			domain: orphanDomain,
@@ -353,6 +382,7 @@ describe("the activity stamps a purge leaves behind", () => {
 			data: {
 				type: "MEETING",
 				subject: "Only ever attached to the deal",
+				companyId: company.id,
 				contactId: contact.id,
 				dealId: deal.id,
 				createdById: userId,
@@ -361,15 +391,32 @@ describe("the activity stamps a purge leaves behind", () => {
 		});
 		await stamp.touch({ contactId: contact.id, dealId: deal.id }, at);
 
-		await companies.purge(company.id);
+		await expect(companies.purge(company.id)).rejects.toThrow(
+			"Delete this company's deals before deleting the company.",
+		);
 
 		expect(
-			await db.contact.findUnique({
-				where: { id: contact.id },
-				select: { companyId: true, lastActivityAt: true },
+			await db.deal.findUnique({
+				where: { id: deal.id },
+				select: { companyId: true },
 			}),
-		).toEqual({ companyId: null, lastActivityAt: null });
+		).toEqual({ companyId: company.id });
+		expect(
+			await db.activity.findFirst({
+				where: { dealId: deal.id },
+				select: { companyId: true, dealId: true },
+			}),
+		).toEqual({ companyId: company.id, dealId: deal.id });
+
+		const survivor = await db.contact.findUnique({
+			where: { id: contact.id },
+			select: { companyId: true, lastActivityAt: true },
+		});
+		expect(survivor?.companyId).toBe(company.id);
+		expect(survivor?.lastActivityAt).not.toBeNull();
 
 		await db.contact.delete({ where: { id: contact.id } });
+		await db.deal.delete({ where: { id: deal.id } });
+		await db.company.delete({ where: { id: company.id } });
 	});
 });

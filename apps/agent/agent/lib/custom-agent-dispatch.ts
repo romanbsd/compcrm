@@ -361,6 +361,7 @@ export async function queueEventAgentRuns(
 					versionId: trigger.versionId,
 					triggerId: trigger.id,
 					triggerType: "EVENT",
+					dealId: recordKind === "deal" ? recordId : null,
 					idempotencyKey,
 					correlationId: `trigger:${trigger.id}:event:${task.id}`,
 					input: {

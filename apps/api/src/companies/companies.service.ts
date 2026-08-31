@@ -453,6 +453,16 @@ export class CompaniesService {
 					return null;
 				}
 
+				const deal = await tx.deal.findFirst({
+					where: { companyId: id },
+					select: { id: true },
+				});
+				if (deal) {
+					throw new ConflictException(
+						"Delete this company's deals before deleting the company.",
+					);
+				}
+
 				const targets = await this.stamp.targetsOf(
 					{ OR: [{ companyId: id }, { deal: { companyId: id } }] },
 					tx,

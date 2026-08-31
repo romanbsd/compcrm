@@ -122,7 +122,7 @@ describe("CRM agent events", () => {
 				type: "deal.closed",
 				record: { kind: "deal", id: dealId },
 				occurredAt: closedAt,
-				data: { companyId, from: "NEGOTIATION", to: "CLOSED_WON" },
+				data: { companyId, from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 			});
 		});
 
@@ -155,7 +155,7 @@ describe("CRM agent events", () => {
 				type: "deal.closed",
 				record: { kind: "deal", id: dealId },
 				occurredAt: closedAt.toISOString(),
-				data: { companyId, from: "NEGOTIATION", to: "CLOSED_WON" },
+				data: { companyId, from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 			},
 			finishedAt: null,
 		});

@@ -260,6 +260,7 @@ export class AgentRunsService {
 					versionId: true,
 					triggerId: true,
 					triggerType: true,
+					dealId: true,
 					input: true,
 				},
 			});
@@ -302,6 +303,7 @@ export class AgentRunsService {
 					initiatedById: userId,
 					triggerId: previous.triggerId,
 					triggerType: previous.triggerType,
+					dealId: previous.dealId,
 					input: previous.input ?? Prisma.DbNull,
 					idempotencyKey: input.clientRequestId,
 					correlationId: randomUUID(),

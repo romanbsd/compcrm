@@ -227,17 +227,26 @@ describe("durable custom-agent runtime", () => {
 			},
 			select: { id: true },
 		});
+		const eventDeal = await db.deal.create({
+			data: {
+				id: `event-deal-${suffix}`,
+				name: "Event deal",
+				ownerId: userId,
+				companyId,
+			},
+			select: { id: true },
+		});
 		const occurredAt = new Date().toISOString();
 		const task = {
 			id: `event-task-${suffix}`,
 			contactId: null,
 			companyId: null,
-			dealId: `event-deal-${suffix}`,
+			dealId: eventDeal.id,
 			payload: {
 				type: "deal.closed",
-				record: { kind: "deal", id: `event-deal-${suffix}` },
+				record: { kind: "deal", id: eventDeal.id },
 				occurredAt,
-				data: { from: "NEGOTIATION", to: "CLOSED_WON" },
+				data: { from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 			},
 		};
 
@@ -249,22 +258,24 @@ describe("durable custom-agent runtime", () => {
 
 		const runs = await db.agentRun.findMany({
 			where: { triggerId: trigger.id },
-			select: { triggerType: true, status: true, input: true },
+			select: { triggerType: true, status: true, dealId: true, input: true },
 		});
 		expect(runs).toEqual([
 			{
 				triggerType: "EVENT",
 				status: "QUEUED",
+				dealId: eventDeal.id,
 				input: {
 					event: {
 						type: "deal.closed",
 						occurredAt,
-						data: { from: "NEGOTIATION", to: "CLOSED_WON" },
+						data: { from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
 					},
-					record: { kind: "deal", id: `event-deal-${suffix}` },
+					record: { kind: "deal", id: eventDeal.id },
 				},
 			},
 		]);
+		await db.deal.delete({ where: { id: eventDeal.id } });
 	});
 
 	it("advances a due trigger only when its run is committed", async () => {

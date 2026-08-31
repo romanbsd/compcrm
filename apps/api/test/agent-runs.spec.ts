@@ -12,6 +12,8 @@ const outsiderId = `agent-run-outsider-${suffix}`;
 const memberId = `agent-run-member-${suffix}`;
 let agentId = "";
 let versionId = "";
+let companyId = "";
+let dealId = "";
 let pokeCount = 0;
 let cancelPokes: string[] = [];
 const trigger = {
@@ -77,6 +79,16 @@ beforeAll(async () => {
 		select: { id: true },
 	});
 	versionId = version.id;
+	const company = await db.company.create({
+		data: { name: `Agent run company ${suffix}` },
+		select: { id: true },
+	});
+	companyId = company.id;
+	const deal = await db.deal.create({
+		data: { name: "Agent run deal", companyId, ownerId: userId },
+		select: { id: true },
+	});
+	dealId = deal.id;
 	await db.agentDefinition.update({
 		where: { id: agentId },
 		data: { currentVersionId: versionId },
@@ -115,6 +127,8 @@ afterAll(async () => {
 		});
 	}
 	await db.member.deleteMany({ where: { id: memberId } });
+	await db.deal.deleteMany({ where: { id: dealId } });
+	await db.company.deleteMany({ where: { id: companyId } });
 	await db.user.deleteMany({ where: { id: { in: [userId, outsiderId] } } });
 });
 
@@ -322,6 +336,7 @@ describe("manual agent runs", () => {
 		await db.agentRun.update({
 			where: { id: first.id },
 			data: {
+				dealId,
 				status: "FAILED",
 				errorCode: "TEST_FAILURE",
 				errorMessage: "Broke before the retry.",
@@ -359,6 +374,12 @@ describe("manual agent runs", () => {
 					select: { versionId: true },
 				}),
 			).toEqual({ versionId });
+			expect(
+				await db.agentRun.findUniqueOrThrow({
+					where: { id: retried.id },
+					select: { dealId: true },
+				}),
+			).toEqual({ dealId });
 			expect(
 				await db.agentAuditEvent.findFirstOrThrow({
 					where: { agentId, type: "run.requested", requestId: clientRequestId },

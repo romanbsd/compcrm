@@ -208,7 +208,7 @@ describe("purging a selection", () => {
 		).toBeNull();
 	});
 
-	it("takes a company's deals with it", async () => {
+	it("refuses to delete a company that still has deals", async () => {
 		const doomed = await companies.create({
 			name: `Doomed Co ${suffix}`,
 			domain: `doomed-${domain}`,
@@ -221,13 +221,20 @@ describe("purging a selection", () => {
 
 		expect(await companies.bulkPurge([doomed.id])).toEqual({
 			requested: 1,
-			succeeded: 1,
+			succeeded: 0,
 			skipped: 0,
-			failed: 0,
-			message: null,
+			failed: 1,
+			message: "Delete this company's deals before deleting the company.",
 		});
 
-		expect(await db.deal.findUnique({ where: { id: deal.id } })).toBeNull();
+		expect(
+			await db.deal.findUnique({
+				where: { id: deal.id },
+				select: { companyId: true },
+			}),
+		).toEqual({ companyId: doomed.id });
+		await db.deal.delete({ where: { id: deal.id } });
+		await db.company.delete({ where: { id: doomed.id } });
 	});
 });
 

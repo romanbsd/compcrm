@@ -93,6 +93,118 @@ beforeAll(async () => {
 afterAll(clean);
 
 describe("bringing a contact onto a deal", () => {
+	it("rejects a database deal without a company", async () => {
+		const attempt =
+			db.$executeRaw`INSERT INTO "deal" ("id", "name", "ownerId", "updatedAt") VALUES (${`no-company-${suffix}`}, ${`No company ${suffix}`}, ${userId}, ${new Date()})`.then(
+				async () => {
+					await db.deal.delete({ where: { id: `no-company-${suffix}` } });
+				},
+			);
+
+		await expect(attempt).rejects.toThrow();
+	});
+
+	it("creates, updates, lists, and reads deal fields", async () => {
+		const deal = await deals.create({
+			name: `Deal ${suffix}`,
+			companyId,
+			ownerId: userId,
+			leadSource: "Referral",
+			projectType: "Type A",
+			addressLine1: "1 Main Street",
+			addressLine2: "Unit 2",
+			city: "Austin",
+			state: "TX",
+			postalCode: "78701",
+		});
+
+		await deals.update(deal.id, {
+			leadSource: "Website",
+			projectType: "Type B",
+			addressLine1: "2 Main Street",
+			addressLine2: "Unit 3",
+			city: "Dallas",
+			state: "TX",
+			postalCode: "75201",
+		});
+
+		const detail = await deals.byId(deal.id);
+		expect(detail).toMatchObject({
+			stage: "DEMO_BOOKED",
+			company: { id: companyId },
+			leadSource: "Website",
+			projectType: "Type B",
+			addressLine1: "2 Main Street",
+			addressLine2: "Unit 3",
+			city: "Dallas",
+			state: "TX",
+			postalCode: "75201",
+		});
+
+		const list = await deals.list({
+			q: "",
+			page: 1,
+			pageSize: 100,
+			sort: "createdAt",
+			dir: "desc",
+			status: "all",
+			owner: [],
+			stage: [],
+			closing: [],
+			fields: {},
+			archived: false,
+		});
+		expect(list.rows.find((row) => row.id === deal.id)).toMatchObject({
+			leadSource: "Website",
+			projectType: "Type B",
+			addressLine1: "2 Main Street",
+			addressLine2: "Unit 3",
+			city: "Dallas",
+			state: "TX",
+			postalCode: "75201",
+		});
+
+		await deals.purge(deal.id);
+	});
+
+	it("stores a document and its line items on a deal", async () => {
+		const document = await db.document.create({
+			data: {
+				dealId,
+				type: "ESTIMATE",
+				number: `DRAFT-${suffix}`,
+				status: "DRAFT",
+				recipientSnapshot: { name: "Recipient" },
+				contractorSnapshot: { name: "Company" },
+				projectSnapshot: { name: "Deal" },
+				subtotal: "100.00",
+				tax: "8.25",
+				total: "108.25",
+				lineItems: {
+					create: {
+						description: "Line item",
+						quantity: "1.00",
+						unitPrice: "100.00",
+						total: "100.00",
+						position: 0,
+					},
+				},
+			},
+			select: {
+				id: true,
+				currency: true,
+				issuedAt: true,
+				lineItems: { select: { description: true } },
+			},
+		});
+
+		expect(document.issuedAt).toBeNull();
+		expect(document.currency).toBe("USD");
+		expect(document.lineItems[0]?.description).toBe("Line item");
+
+		await db.document.delete({ where: { id: document.id } });
+	});
+
 	it("offers the people at the deal's company and nobody else", async () => {
 		const options = await deals.contactOptions(dealId);
 		const ids = options.map((option) => option.id);

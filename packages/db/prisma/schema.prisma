@@ -834,6 +834,9 @@ model AgentRun {
   initiatedById String?
   initiatedBy   User?   @relation("AgentRunInitiator", fields: [initiatedById], references: [id], onDelete: SetNull)
 
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
   triggerType    AgentTriggerType
   status         AgentRunStatus   @default(QUEUED)
   principalId    String?
@@ -870,6 +873,7 @@ model AgentRun {
   @@index([versionId, createdAt])
   @@index([status, createdAt])
   @@index([triggerId, createdAt])
+  @@index([dealId, createdAt])
   @@map("agentRun")
 }
 
@@ -959,6 +963,7 @@ model AgentAuditEvent {
 model Deal {
   id            String              @id @default(cuid())
   conversations AgentConversation[]
+  agentRuns     AgentRun[]
   name          String
   description   String?
   companyId     String
@@ -979,12 +984,22 @@ model Deal {
   fxRate       Decimal?  @db.Decimal(20, 10)
   fxRateAt     DateTime?
 
+  leadSource   String?
+  projectType  String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+
   lastActivityAt DateTime?
   archivedAt     DateTime?
 
   contacts    DealContact[]
   activities  Activity[]
   fieldValues FieldValue[]
+  artifacts   Artifact[]
+  documents   Document[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -1030,6 +1045,57 @@ model DealContact {
   @@id([dealId, contactId])
   @@index([contactId])
   @@map("dealContact")
+}
+
+model Artifact {
+  id         String   @id @default(cuid())
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type       String
+  fileName   String
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  @@index([dealId, createdAt])
+  @@map("artifact")
+}
+
+model Document {
+  id                 String             @id @default(cuid())
+  dealId             String
+  deal               Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type               String
+  number             String
+  status             String
+  currency           String             @default("USD")
+  issuedAt           DateTime?
+  dueAt              DateTime?
+  recipientSnapshot  Json
+  contractorSnapshot Json
+  projectSnapshot    Json
+  subtotal           Decimal            @db.Decimal(14, 2)
+  tax                Decimal            @db.Decimal(14, 2)
+  total              Decimal            @db.Decimal(14, 2)
+  lineItems          DocumentLineItem[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([dealId, createdAt])
+  @@map("document")
+}
+
+model DocumentLineItem {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal  @db.Decimal(14, 2)
+  unitPrice   Decimal  @db.Decimal(14, 2)
+  total       Decimal  @db.Decimal(14, 2)
+  position    Int
+
+  @@index([documentId, position])
+  @@map("documentLineItem")
 }
 
 enum FieldEntity {
