@@ -20,10 +20,10 @@ export const LIFECYCLE_BY_STAGE = {
 	[DealStage.CONTRACT_SENT]: "inProgress",
 } as const satisfies Partial<Record<DealStage, HomeLifecycle>>;
 
-export const PRIORITY_RANK: Record<HomePriority, number> = {
+export const PRIORITY_RANK = {
 	blocked: 0,
 	customerApproval: 1,
 	financial: 2,
 	schedule: 3,
 	ordinary: 4,
-};
+} as const satisfies Record<HomePriority, number>;
