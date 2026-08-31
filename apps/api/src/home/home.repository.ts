@@ -60,6 +60,7 @@ export class HomeRepository {
 						id: true,
 						createdAt: true,
 						agentId: true,
+						dealId: true,
 						sessionId: true,
 						input: true,
 						agent: { select: { name: true } },
@@ -112,6 +113,7 @@ export class HomeRepository {
 						finishedAt: true,
 						createdAt: true,
 						agentId: true,
+						dealId: true,
 						sessionId: true,
 						input: true,
 						agent: { select: { name: true } },
@@ -247,12 +249,15 @@ export class HomeRepository {
 
 function dealIdForRun(
 	row: {
+		dealId?: string | null;
 		sessionId: string | null;
 		input: unknown;
 		actions?: Array<{ targetType: string | null; targetId: string | null }>;
 	},
 	dealIdBySession: Map<string, string>,
 ): string | null {
+	if (row.dealId) return row.dealId;
+
 	const fromInput = runDealInput.safeParse(row.input);
 	if (fromInput.success && fromInput.data.dealId) return fromInput.data.dealId;
 

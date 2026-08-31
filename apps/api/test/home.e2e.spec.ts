@@ -182,7 +182,7 @@ describe("GET /home", () => {
 				status: "WAITING_FOR_APPROVAL",
 				idempotencyKey: `home-run-${suffix}`,
 				correlationId: `home-run-${suffix}`,
-				input: { dealId },
+				dealId,
 			},
 		});
 
