@@ -123,6 +123,7 @@ The migration reads `oid` from each stored Microsoft ID token.
 The migration stops when a Microsoft row lacks that trusted mapping.
 Repair that row from a verified Entra export before retrying the deployment.
 Do not infer the mapping from email addresses.
+The migration removes account rows whose deleted SSO provider cannot supply an issuer.
 
 ### `migrate deploy` is not proof the schema is right
 

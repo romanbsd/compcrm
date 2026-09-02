@@ -49,6 +49,15 @@ WHERE account."providerId" = provider."providerId"
   AND account."issuer" IS NULL
   AND length(provider."issuer") > 0;
 
+DELETE FROM "account" AS account
+WHERE account."issuer" IS NULL
+  AND account."providerId" NOT IN ('credential', 'google', 'microsoft', 'slack')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM "ssoProvider" AS provider
+      WHERE provider."providerId" = account."providerId"
+  );
+
 DO $$
 BEGIN
     IF EXISTS (
