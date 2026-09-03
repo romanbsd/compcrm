@@ -126,7 +126,14 @@ self-hoster's admin cannot redeploy.
 - `organizationProvisioning: { disabled: true }` — `ensureWorkspaceMembership` already
   does the join.
 
-## tRPC is the data surface; REST is auth and health only
+## tRPC is the data surface; REST is auth, health, and Home
+
+`GET /home` is a Nest controller at the API root. It returns one JobSteward
+command snapshot for the signed-in user, assembled from open deals, waiting
+agent runs, and that user's open tasks. It is not a tRPC procedure and it is
+not the dashboard.
+
+---
 
 - **One router per module**, `*.router.ts` (the codegen glob), with
   `@Router({ alias })` and `@UseMiddlewares(AuthMiddleware)`. **No `AuthMiddleware`
