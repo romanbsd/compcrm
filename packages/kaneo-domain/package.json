@@ -1,0 +1,24 @@
+{
+	"name": "@crm/kaneo-domain",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./drizzle": "./src/drizzle.ts"
+	},
+	"scripts": {
+		"check-types": "tsc --noEmit",
+		"lint": "biome check .",
+		"test": "bun test",
+		"generate:prisma": "bun scripts/generate-prisma.ts",
+		"clean": "rm -rf .turbo node_modules"
+	},
+	"devDependencies": {
+		"@crm/typescript-config": "workspace:*",
+		"@paralleldrive/cuid2": "^3.3.0",
+		"@types/node": "^24.10.1",
+		"drizzle-orm": "^0.45.2",
+		"typescript": "5.9.2"
+	}
+}

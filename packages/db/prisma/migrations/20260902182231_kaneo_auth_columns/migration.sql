@@ -1,0 +1,8 @@
+ALTER TABLE "user" ADD COLUMN "locale" TEXT;
+ALTER TABLE "user" ADD COLUMN "role" TEXT;
+ALTER TABLE "user" ADD COLUMN "isAnonymous" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "user" ADD COLUMN "banned" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "user" ADD COLUMN "banReason" TEXT;
+ALTER TABLE "user" ADD COLUMN "banExpires" TIMESTAMP(3);
+ALTER TABLE "session" ADD COLUMN "activeTeamId" TEXT;
+ALTER TABLE "session" ADD COLUMN "impersonatedBy" TEXT;
