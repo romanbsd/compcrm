@@ -18,6 +18,12 @@ model User {
   email         String
   emailVerified Boolean   @default(false)
   image         String?
+  locale        String?
+  role          String?
+  isAnonymous   Boolean   @default(false)
+  banned        Boolean   @default(false)
+  banReason     String?
+  banExpires    DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
@@ -120,6 +126,8 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   activeOrganizationId String?
+  activeTeamId         String?
+  impersonatedBy       String?
 
   @@unique([token])
   @@index([userId])
@@ -1692,4 +1700,525 @@ model Apikey {
   @@index([configId])
   @@index([key])
   @@map("apikey")
+}
+model UserAvatar {
+  id String @id @default(cuid())
+  userId String @map("user_id") @unique(map: "user_avatar_user_id_unique")
+  mimeType String @map("mime_type")
+  size Int
+  data Bytes
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  @@index([userId], map: "user_avatar_userId_idx")
+  @@map("user_avatar")
+}
+
+model Workspace {
+  id String @id @default(cuid())
+  name String
+  slug String @unique
+  logo String?
+  metadata String?
+  description String?
+  createdAt DateTime @map("created_at")
+  workspaceMembers WorkspaceMember[]
+  workspaceBillings WorkspaceBilling[]
+  teams Team[]
+  workspaceInvitations WorkspaceInvitation[]
+  workspaceRoles WorkspaceRole[]
+  projects Project[]
+  billingReminderSents BillingReminderSent[]
+  assets Asset[]
+  labels Label[]
+  userNotificationWorkspaceRules UserNotificationWorkspaceRule[]
+  userNotificationWorkspaceProjects UserNotificationWorkspaceProject[]
+  @@map("workspace")
+}
+
+model WorkspaceMember {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  userId String @map("user_id")
+  role String @default("member")
+  joinedAt DateTime @map("joined_at")
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId], map: "workspace_member_workspaceId_idx")
+  @@index([userId], map: "workspace_member_userId_idx")
+  @@map("workspace_member")
+}
+
+model WorkspaceBilling {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id") @unique(map: "workspace_billing_workspace_id_unique")
+  foundingFree Boolean @map("founding_free") @default(false)
+  trialEndsAt DateTime? @map("trial_ends_at")
+  creemCustomerId String? @map("creem_customer_id")
+  creemSubscriptionId String? @map("creem_subscription_id") @unique
+  creemProductId String? @map("creem_product_id")
+  plan String?
+  billingInterval String? @map("billing_interval")
+  status String?
+  seats Int @default(1)
+  currentPeriodEnd DateTime? @map("current_period_end")
+  canceledAt DateTime? @map("canceled_at")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([workspaceId], map: "workspace_billing_workspaceId_idx")
+  @@map("workspace_billing")
+}
+
+model TrialGrant {
+  emailHash String @map("email_hash") @id
+  trialEndsAt DateTime @map("trial_ends_at")
+  createdAt DateTime @map("created_at") @default(now())
+  @@map("trial_grant")
+}
+
+model BillingEvent {
+  id String @id
+  eventType String @map("event_type")
+  processedAt DateTime @map("processed_at") @default(now())
+  @@map("billing_event")
+}
+
+model Team {
+  id String @id
+  name String
+  workspaceId String @map("workspace_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime? @map("updated_at") @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  teamMembers TeamMember[]
+  @@index([workspaceId], map: "team_workspaceId_idx")
+  @@map("team")
+}
+
+model TeamMember {
+  id String @id
+  teamId String @map("team_id")
+  userId String @map("user_id")
+  createdAt DateTime? @map("created_at")
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  @@index([teamId], map: "teamMember_teamId_idx")
+  @@index([userId], map: "teamMember_userId_idx")
+  @@map("team_member")
+}
+
+model WorkspaceInvitation {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  email String
+  role String?
+  teamId String? @map("team_id")
+  status String @default("pending")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @map("created_at") @default(now())
+  inviterId String @map("inviter_id")
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId], map: "workspace_invitation_workspaceId_idx")
+  @@index([email], map: "workspace_invitation_email_idx")
+  @@index([inviterId], map: "workspace_invitation_inviterId_idx")
+  @@map("workspace_invitation")
+}
+
+model WorkspaceRole {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  role String
+  permission String
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([workspaceId], map: "workspace_role_workspaceId_idx")
+  @@index([role], map: "workspace_role_role_idx")
+  @@map("workspace_role")
+}
+
+model Project {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  slug String
+  icon String? @default("Layout")
+  name String
+  description String?
+  createdAt DateTime @map("created_at") @default(now())
+  isPublic Boolean? @map("is_public") @default(false)
+  archivedAt DateTime? @map("archived_at")
+  lastTaskNumber Int @map("last_task_number") @default(0)
+  position Int @default(0)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  projectColumns ProjectColumn[]
+  workflowRules WorkflowRule[]
+  projectTasks ProjectTask[]
+  assets Asset[]
+  userNotificationWorkspaceProjects UserNotificationWorkspaceProject[]
+  githubIntegrations GithubIntegration[]
+  integrations Integration[]
+  @@unique([workspaceId, id], map: "project_workspace_id_id_unique")
+  @@index([workspaceId, position], map: "project_workspaceId_position_idx")
+  @@map("project")
+}
+
+model ProjectColumn {
+  id String @id @default(cuid())
+  projectId String @map("project_id")
+  name String
+  slug String
+  position Int @default(0)
+  icon String?
+  color String?
+  isFinal Boolean @map("is_final") @default(false)
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  workflowRules WorkflowRule[]
+  projectTasks ProjectTask[]
+  @@index([projectId], map: "column_projectId_idx")
+  @@map("column")
+}
+
+model WorkflowRule {
+  id String @id @default(cuid())
+  projectId String @map("project_id")
+  integrationType String @map("integration_type")
+  eventType String @map("event_type")
+  columnId String @map("column_id")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  column ProjectColumn @relation(fields: [columnId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([projectId], map: "workflow_rule_projectId_idx")
+  @@index([columnId], map: "workflow_rule_columnId_idx")
+  @@map("workflow_rule")
+}
+
+model ProjectTask {
+  id String @id @default(cuid())
+  projectId String @map("project_id")
+  position Int? @default(0)
+  number Int? @default(1)
+  userId String? @map("assignee_id")
+  title String
+  description String?
+  status String @default("to-do")
+  columnId String? @map("column_id")
+  priority String @default("low")
+  startDate DateTime? @map("start_date")
+  dueDate DateTime? @map("due_date")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  column ProjectColumn? @relation(fields: [columnId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  taskReminderSents TaskReminderSent[]
+  timeEntries TimeEntry[]
+  taskActivities TaskActivity[]
+  assets Asset[]
+  labels Label[]
+  externalLinks ExternalLink[]
+  taskComments TaskComment[]
+  taskRelations TaskRelation[]
+  taskRelations2 TaskRelation[] @relation("TaskRelationToProjectTask_1")
+  @@unique([projectId, number], map: "task_project_number_unique")
+  @@index([projectId], map: "task_projectId_idx")
+  @@index([dueDate], map: "task_dueDate_idx")
+  @@index([userId], map: "task_assigneeId_idx")
+  @@index([columnId], map: "task_columnId_idx")
+  @@map("task")
+}
+
+model BillingReminderSent {
+  id String @id @default(cuid())
+  userId String @map("user_id")
+  workspaceId String @map("workspace_id")
+  reminderType String @map("reminder_type")
+  trialEndsAt DateTime? @map("trial_ends_at")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@unique([userId, reminderType], map: "billing_reminder_sent_user_type_unique")
+  @@index([workspaceId], map: "billing_reminder_sent_workspaceId_idx")
+  @@index([userId], map: "billing_reminder_sent_userId_idx")
+  @@map("billing_reminder_sent")
+}
+
+model JobLease {
+  name String @id
+  owner String
+  expiresAt DateTime @map("expires_at")
+  @@map("job_lease")
+}
+
+model TaskReminderSent {
+  id String @id @default(cuid())
+  taskId String @map("task_id")
+  reminderType String @map("reminder_type")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  task ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@unique([taskId, reminderType], map: "task_reminder_sent_task_type_unique")
+  @@index([taskId], map: "task_reminder_sent_taskId_idx")
+  @@map("task_reminder_sent")
+}
+
+model TimeEntry {
+  id String @id @default(cuid())
+  taskId String @map("task_id")
+  userId String? @map("user_id")
+  description String?
+  startTime DateTime @map("start_time")
+  endTime DateTime? @map("end_time")
+  duration Int? @default(0)
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  task ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([taskId], map: "time_entry_taskId_idx")
+  @@index([userId], map: "time_entry_userId_idx")
+  @@map("time_entry")
+}
+
+model TaskActivity {
+  id String @id @default(cuid())
+  taskId String @map("task_id")
+  type String
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  userId String? @map("user_id")
+  content String?
+  eventData Json? @map("event_data")
+  externalUserName String? @map("external_user_name")
+  externalUserAvatar String? @map("external_user_avatar")
+  externalSource String? @map("external_source")
+  externalUrl String? @map("external_url")
+  task ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  assets Asset[]
+  @@unique([taskId, externalSource, externalUrl], map: "activity_task_external_source_external_url_unique")
+  @@index([taskId], map: "activity_task_id_idx")
+  @@index([userId], map: "activity_userId_idx")
+  @@map("task_activity")
+}
+
+model Asset {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  projectId String @map("project_id")
+  taskId String? @map("task_id")
+  activityId String? @map("activity_id")
+  objectKey String @map("object_key") @unique
+  filename String
+  mimeType String @map("mime_type")
+  size Int
+  kind String @default("image")
+  surface String @default("description")
+  createdBy String? @map("created_by")
+  createdAt DateTime @map("created_at") @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  task ProjectTask? @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  activity TaskActivity? @relation(fields: [activityId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([workspaceId], map: "asset_workspaceId_idx")
+  @@index([projectId], map: "asset_projectId_idx")
+  @@index([taskId], map: "asset_taskId_idx")
+  @@index([activityId], map: "asset_activityId_idx")
+  @@index([createdBy], map: "asset_createdBy_idx")
+  @@map("asset")
+}
+
+model Label {
+  id String @id @default(cuid())
+  name String
+  color String
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  taskId String? @map("task_id")
+  workspaceId String? @map("workspace_id")
+  task ProjectTask? @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@unique([taskId, name], map: "label_task_name_unique")
+  @@index([taskId], map: "label_task_id_idx")
+  @@index([workspaceId], map: "label_workspace_id_idx")
+  @@map("label")
+}
+
+model Notification {
+  id String @id @default(cuid())
+  userId String @map("user_id")
+  title String?
+  content String?
+  type String @default("info")
+  eventData Json? @map("event_data")
+  isRead Boolean? @map("is_read") @default(false)
+  resourceId String? @map("resource_id")
+  resourceType String? @map("resource_type")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  @@index([userId], map: "notification_userId_idx")
+  @@map("notification")
+}
+
+model UserNotificationPreference {
+  id String @id @default(cuid())
+  userId String @map("user_id") @unique
+  emailEnabled Boolean @map("email_enabled") @default(false)
+  ntfyEnabled Boolean @map("ntfy_enabled") @default(false)
+  ntfyServerUrl String? @map("ntfy_server_url")
+  ntfyTopic String? @map("ntfy_topic")
+  ntfyToken String? @map("ntfy_token")
+  gotifyEnabled Boolean @map("gotify_enabled") @default(false)
+  gotifyServerUrl String? @map("gotify_server_url")
+  gotifyToken String? @map("gotify_token")
+  webhookEnabled Boolean @map("webhook_enabled") @default(false)
+  webhookUrl String? @map("webhook_url")
+  webhookSecret String? @map("webhook_secret")
+  taskAssignmentEnabled Boolean @map("task_assignment_enabled") @default(true)
+  taskCommentEnabled Boolean @map("task_comment_enabled") @default(true)
+  taskStatusChangeEnabled Boolean @map("task_status_change_enabled") @default(true)
+  dueDateReminderEnabled Boolean @map("due_date_reminder_enabled") @default(true)
+  dueDateReminderLeadTimeMinutes Int @map("due_date_reminder_lead_time_minutes") @default(1440)
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  @@map("user_notification_preference")
+}
+
+model UserNotificationWorkspaceRule {
+  id String @id @default(cuid())
+  userId String @map("user_id")
+  workspaceId String @map("workspace_id")
+  isActive Boolean @map("is_active") @default(true)
+  emailEnabled Boolean @map("email_enabled") @default(false)
+  ntfyEnabled Boolean @map("ntfy_enabled") @default(false)
+  gotifyEnabled Boolean @map("gotify_enabled") @default(false)
+  webhookEnabled Boolean @map("webhook_enabled") @default(false)
+  projectMode String @map("project_mode") @default("all")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  userNotificationWorkspaceProjects UserNotificationWorkspaceProject[]
+  @@unique([userId, workspaceId], map: "user_notification_workspace_rule_user_workspace_unique")
+  @@unique([workspaceId, id], map: "user_notification_workspace_rule_workspace_id_id_unique")
+  @@index([userId], map: "user_notification_workspace_rule_userId_idx")
+  @@index([workspaceId], map: "user_notification_workspace_rule_workspaceId_idx")
+  @@map("user_notification_workspace_rule")
+}
+
+model UserNotificationWorkspaceProject {
+  id String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  workspaceRuleId String @map("workspace_rule_id")
+  projectId String @map("project_id")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  userNotificationWorkspaceRule UserNotificationWorkspaceRule @relation(fields: [workspaceId, workspaceRuleId], references: [workspaceId, id], onDelete: Cascade, onUpdate: Cascade)
+  project Project @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade, onUpdate: Cascade)
+  @@unique([workspaceRuleId, projectId], map: "user_notification_workspace_project_rule_project_unique")
+  @@index([workspaceRuleId], map: "user_notification_workspace_project_ruleId_idx")
+  @@index([projectId], map: "user_notification_workspace_project_projectId_idx")
+  @@index([workspaceId, projectId], map: "user_notification_workspace_project_workspaceId_projectId_idx")
+  @@index([workspaceId, workspaceRuleId], map: "unwp_workspaceId_workspaceRuleId_idx")
+  @@map("user_notification_workspace_project")
+}
+
+model GithubIntegration {
+  id String @id @default(cuid())
+  projectId String @map("project_id") @unique
+  repositoryOwner String @map("repository_owner")
+  repositoryName String @map("repository_name")
+  installationId Int? @map("installation_id")
+  isActive Boolean? @map("is_active") @default(true)
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@map("github_integration")
+}
+
+model Integration {
+  id String @id @default(cuid())
+  projectId String @map("project_id")
+  type String
+  config String
+  isActive Boolean? @map("is_active") @default(true)
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  externalLinks ExternalLink[]
+  @@unique([projectId, type], map: "integration_project_type_unique")
+  @@index([projectId], map: "integration_projectId_idx")
+  @@index([type], map: "integration_type_idx")
+  @@map("integration")
+}
+
+model ExternalLink {
+  id String @id @default(cuid())
+  taskId String @map("task_id")
+  integrationId String @map("integration_id")
+  resourceType String @map("resource_type")
+  externalId String @map("external_id")
+  url String
+  title String?
+  metadata String?
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  task ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([taskId], map: "external_link_taskId_idx")
+  @@index([integrationId], map: "external_link_integrationId_idx")
+  @@index([externalId], map: "external_link_externalId_idx")
+  @@index([resourceType], map: "external_link_resourceType_idx")
+  @@map("external_link")
+}
+
+model TaskComment {
+  id String @id @default(cuid())
+  taskId String @map("task_id")
+  userId String? @map("user_id")
+  content String
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  task ProjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([taskId], map: "comment_task_idx")
+  @@index([userId], map: "comment_user_idx")
+  @@map("comment")
+}
+
+model TaskRelation {
+  id String @id @default(cuid())
+  sourceTaskId String @map("source_task_id")
+  targetTaskId String @map("target_task_id")
+  relationType String @map("relation_type")
+  createdAt DateTime @map("created_at") @default(now())
+  sourceTask ProjectTask @relation(fields: [sourceTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  targetTask ProjectTask @relation("TaskRelationToProjectTask_1", fields: [targetTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  @@index([sourceTaskId], map: "task_relation_source_idx")
+  @@index([targetTaskId], map: "task_relation_target_idx")
+  @@map("task_relation")
+}
+
+model DeviceCode {
+  id String @id @default(cuid())
+  deviceCode String @map("device_code")
+  userCode String @map("user_code")
+  userId String? @map("user_id")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  expiresAt DateTime @map("expires_at")
+  status String
+  lastPolledAt DateTime? @map("last_polled_at")
+  pollingInterval Int? @map("polling_interval")
+  clientId String? @map("client_id")
+  scope String?
+  @@index([userId], map: "device_code_user_id_idx")
+  @@map("device_code")
+}
+
+model McpOauthState {
+  id String @id @default(cuid())
+  kind String
+  key String
+  payload Json
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now()) @updatedAt
+  @@index([expiresAt], map: "mcp_oauth_state_expiresAt_idx")
+  @@map("mcp_oauth_state")
 }

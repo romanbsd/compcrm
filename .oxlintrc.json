@@ -17,7 +17,8 @@
 		"packages/agent-xmpp/**",
 		"packages/db/src/generated/**",
 		"packages/ui/src/components/**",
-		"tools/oxlint/anti-slop/**"
+		"tools/oxlint/anti-slop/**",
+		"vendor/**"
 	],
 	"rules": {
 		"anti-slop/no-chained-type-assertions": "error",
@@ -32,6 +33,16 @@
 		"anti-slop/no-widen-then-assert": "error"
 	},
 	"overrides": [
+		{
+			"files": ["packages/kaneo-domain/src/**"],
+			"rules": {
+				"anti-slop/no-chained-type-assertions": "off",
+				"anti-slop/no-runtime-typeof": "off",
+				"anti-slop/no-unknown-parameters": "off",
+				"anti-slop/no-unsafe-dictionary-type": "off",
+				"anti-slop/no-widen-then-assert": "off"
+			}
+		},
 		{
 			"files": [
 				"**/test/**",

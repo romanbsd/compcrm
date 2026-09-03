@@ -107,7 +107,77 @@ export async function ensureWorkspaceMembership(
 			error,
 		);
 		return undefined;
+	} finally {
+		await syncKaneoMembership(userId);
 	}
+}
+
+async function syncKaneoMembership(userId: string): Promise<void> {
+	try {
+		await db.$transaction(async (tx) => {
+			const workspace = await tx.organization.findUnique({
+				where: { id: WORKSPACE_ID },
+				select: { name: true, slug: true, createdAt: true },
+			});
+			if (!workspace) {
+				return;
+			}
+
+			await tx.workspace.upsert({
+				where: { id: WORKSPACE_ID },
+				create: {
+					id: WORKSPACE_ID,
+					name: workspace.name,
+					slug: workspace.slug,
+					createdAt: workspace.createdAt,
+				},
+				update: { name: workspace.name, slug: workspace.slug },
+			});
+
+			const membership = await tx.member.findUnique({
+				where: {
+					organizationId_userId: { organizationId: WORKSPACE_ID, userId },
+				},
+				select: { role: true },
+			});
+			const role = toKaneoRole(toWorkspaceRole(membership?.role ?? "member"));
+
+			const existing = await tx.workspaceMember.findFirst({
+				where: { workspaceId: WORKSPACE_ID, userId },
+				select: { id: true, role: true },
+			});
+			if (existing) {
+				if (existing.role !== role) {
+					await tx.workspaceMember.update({
+						where: { id: existing.id },
+						data: { role },
+					});
+				}
+				return;
+			}
+			await tx.workspaceMember.create({
+				data: {
+					id: crypto.randomUUID(),
+					workspaceId: WORKSPACE_ID,
+					userId,
+					role,
+					joinedAt: new Date(),
+				},
+			});
+		});
+	} catch (error) {
+		console.error(
+			`[auth] could not sync user ${userId} into the kaneo workspace; the next sign-in will retry`,
+			error,
+		);
+	}
+}
+
+function toKaneoRole(role: WorkspaceRole): string {
+	if (role === "owner" || role === "admin") {
+		return "admin";
+	}
+	return "member";
 }
 
 export function toWorkspaceRole(value: string): WorkspaceRole {

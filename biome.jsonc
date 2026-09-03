@@ -18,7 +18,8 @@
 			"!.claude",
 			"!.agents",
 			"!tools/oxlint/anti-slop",
-			"!skills-lock.json"
+			"!skills-lock.json",
+			"!vendor/**"
 		]
 	},
 	"formatter": {
@@ -67,6 +68,14 @@
 		}
 	},
 	"overrides": [
+		{
+			"includes": ["packages/kaneo-domain/src/drizzle.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": { "noExplicitAny": "off" }
+				}
+			}
+		},
 		{
 			"includes": ["apps/app/**"],
 			"linter": {
