@@ -41,6 +41,20 @@ describe("Auth (e2e)", () => {
 		await request(app.getHttpServer()).get("/auth/me").expect(401);
 	});
 
+	it("rejects unauthenticated push-token registration", async () => {
+		await request(app.getHttpServer())
+			.post("/push-tokens")
+			.send({ token: "fcm-test", platform: "ios" })
+			.expect(401);
+	});
+
+	it("rejects unauthenticated push-token deletion", async () => {
+		await request(app.getHttpServer())
+			.delete("/push-tokens")
+			.query({ token: "fcm-test" })
+			.expect(401);
+	});
+
 	it("allows an unauthenticated request to an optional-auth route", async () => {
 		const response = await request(app.getHttpServer())
 			.get("/auth/session")

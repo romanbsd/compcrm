@@ -49,9 +49,24 @@ model User {
   ssoproviders SsoProvider[]
 
   apiKeys Apikey[]
+  pushTokens PushToken[]
 
   @@unique([email])
   @@map("user")
+}
+
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token], map: "push_token_token_unique")
+  @@index([userId], map: "push_token_userId_idx")
+  @@map("push_token")
 }
 
 model SlackMemberMatch {

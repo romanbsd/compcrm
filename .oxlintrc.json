@@ -58,6 +58,7 @@
 				"packages/db/src/fields.ts",
 				"packages/db/src/fields-shape.ts",
 				"apps/api/src/fields/**",
+				"apps/api/src/push-tokens/**",
 				"apps/app/components/crm/inline-field.tsx"
 			],
 			"rules": {
