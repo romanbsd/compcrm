@@ -5,13 +5,20 @@ import { Button } from "@crm/ui/components/button";
 import { Spinner } from "@crm/ui/components/spinner";
 import { useState } from "react";
 import { toast } from "sonner";
+import { oauthSignInOptions } from "@/lib/oauth-query";
 
 export type SsoProvider = {
 	providerId: string;
 	name: string;
 };
 
-export function SsoSignIn({ providers }: { providers: SsoProvider[] }) {
+export function SsoSignIn({
+	providers,
+	oauthQuery,
+}: {
+	providers: SsoProvider[];
+	oauthQuery: string | null;
+}) {
 	const [pending, setPending] = useState<string | null>(null);
 
 	async function handleClick(providerId: string) {
@@ -22,7 +29,7 @@ export function SsoSignIn({ providers }: { providers: SsoProvider[] }) {
 		const { error } = await signIn.sso({
 			providerId,
 			callbackURL: `${origin}/`,
-			errorCallbackURL: `${origin}/sign-in`,
+			...oauthSignInOptions(oauthQuery, origin),
 		});
 
 		if (error) {

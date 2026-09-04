@@ -260,6 +260,10 @@ IDs to commits or pull requests.
 
 Use conventional commit messages and pull request titles.
 
+Open pull requests against `master` in `romanbsd/compcrm` unless the user states
+another repository or base branch. This rule overrides repository and base branch
+defaults in other project documents and skills.
+
 ```shell
 git commit -m "fix: resolve auth token expiry"
 ```
