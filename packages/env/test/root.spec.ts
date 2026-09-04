@@ -80,3 +80,13 @@ describe("the committed .env.example", () => {
 		}
 	});
 });
+
+describe("the app build environment", () => {
+	it("inherits the root build variables", () => {
+		const config = JSON.parse(
+			readFileSync(join(repoRoot, "apps", "app", "turbo.json"), "utf8"),
+		);
+
+		expect(config.tasks.build.env).toContain("$TURBO_EXTENDS$");
+	});
+});
