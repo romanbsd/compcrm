@@ -10,7 +10,7 @@ export function LandingFooter() {
 				<div className="flex w-[280px] max-w-full shrink-0 flex-col gap-[14px]">
 					<Wordmark />
 					<p className="text-[13px]/[21px] text-muted-foreground">
-						The open source agentic CRM.
+						JobSteward is an agentic CRM.
 					</p>
 				</div>
 
@@ -46,6 +46,15 @@ export function LandingFooter() {
 							Comp AI
 						</Link>
 					</p>
+
+					<nav className="flex items-center gap-4 text-[13px]/5 text-muted-foreground">
+						<Link variant="quiet" href="/privacy">
+							Privacy
+						</Link>
+						<Link variant="quiet" href="/terms">
+							Terms
+						</Link>
+					</nav>
 
 					<p className="flex items-center gap-2 text-[13px]/5 text-muted-foreground">
 						<span className="size-1.5 shrink-0 rounded-full bg-ring" />

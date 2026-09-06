@@ -14,6 +14,8 @@ const LANDING_PATH = "/";
 
 const SIGN_IN_PATH = "/sign-in";
 
+const LEGAL_PATHS = ["/privacy", "/terms"];
+
 const UNGATED = ["/grant-access", "/eve", "/oauth"];
 
 const ANONYMOUS = ["/t"];
@@ -24,6 +26,7 @@ export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
 	if (pathname === SIGN_IN_PATH) return NextResponse.next();
+	if (LEGAL_PATHS.includes(pathname)) return NextResponse.next();
 
 	if (isAnonymous(pathname)) return NextResponse.next();
 

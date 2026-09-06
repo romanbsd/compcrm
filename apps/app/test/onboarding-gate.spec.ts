@@ -174,6 +174,20 @@ describe("proxy", () => {
 		expect(redirectedTo(await proxy(request("/sign-in")))).toBeNull();
 	});
 
+	it("keeps the legal pages public for every visitor", async () => {
+		marketing(undefined);
+		stub(async () => {
+			throw new Error("the legal pages must not call the auth gate");
+		});
+
+		for (const path of ["/privacy", "/terms"]) {
+			expect(redirectedTo(await proxy(request(path)))).toBeNull();
+			expect(
+				redirectedTo(await proxy(request(path, [SESSION_COOKIE]))),
+			).toBeNull();
+		}
+	});
+
 	it("never aims a redirect at the sign-in page itself", async () => {
 		marketing(undefined);
 		setup({ onboarded: false, configured: false });
