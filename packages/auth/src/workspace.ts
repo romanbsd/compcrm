@@ -36,6 +36,12 @@ export function primaryWorkspaceDomain(): string | undefined {
 	return allowList().domains[0];
 }
 
+export function googleHostedDomain(): string | undefined {
+	const { domains, addresses } = allowList();
+	if (domains.length !== 1 || addresses.length > 0) return undefined;
+	return domains[0];
+}
+
 export function hasSignInAllowList(): boolean {
 	const { domains, addresses } = allowList();
 	return domains.length > 0 || addresses.length > 0;

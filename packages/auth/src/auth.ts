@@ -27,6 +27,7 @@ import { rememberSlackInstall, replaceSlackConnection } from "./slack-grant";
 import { SLACK_REQUESTED_SCOPES, SLACK_USER_SCOPES } from "./slack-scopes";
 import { queueSlackInventorySync } from "./slack-sync";
 import {
+	googleHostedDomain,
 	hasSignInAllowList,
 	isWorkspaceEmail,
 	primaryWorkspaceDomain,
@@ -48,7 +49,7 @@ if (env.google) {
 		accessType: "offline",
 	};
 
-	const hostedDomain = primaryWorkspaceDomain();
+	const hostedDomain = googleHostedDomain();
 	if (hostedDomain) google.hd = hostedDomain;
 
 	socialProviders.google = google;
