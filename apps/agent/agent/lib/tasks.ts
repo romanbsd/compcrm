@@ -1,9 +1,17 @@
-import { db, type Prisma } from "@crm/db";
+import { Prisma } from "@crm/db";
 import { MAX_ATTEMPTS, RETIRED_OUTCOME } from "@crm/db/agent-tasks";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
+import {
+	forEachTenant,
+	locateTenantRow,
+	organizationIds,
+} from "@crm/db/tenants";
 import { DISPATCH } from "./dispatch-config";
 
 export type LeasedTask = {
 	id: string;
+	organizationId: string;
 	contactId: string | null;
 	companyId: string | null;
 	dealId: string | null;
@@ -18,21 +26,29 @@ export type LeasedTask = {
 
 export type TaskSubject = {
 	id: string;
+	organizationId: string;
 	contactId: string | null;
 	companyId: string | null;
 	dealId: string | null;
 	kind: string;
 };
 
-const LEASE_MS = DISPATCH.task.leaseMs;
+type TaskCandidate = {
+	id: string;
+	organizationId: string;
+	priority: number;
+	dueAt: Date;
+};
 
-export { DIRECT_KINDS, MAX_ATTEMPTS } from "@crm/db/agent-tasks";
+const LEASE_MS = DISPATCH.task.leaseMs;
 
 export async function claimDue(
 	limit: number,
 	kinds: { only: readonly string[] } | { except: readonly string[] },
 	leaseMs = LEASE_MS,
 ): Promise<LeasedTask[]> {
+	if (limit <= 0) return [];
+
 	const now = new Date();
 	const until = new Date(now.getTime() + leaseMs);
 
@@ -40,57 +56,178 @@ export async function claimDue(
 	if ("only" in kinds && list.length === 0) return [];
 
 	const onlyMode = "only" in kinds;
+	const organizations = await organizationIds();
+	const claimed: LeasedTask[] = [];
 
-	const claimed = await db.$queryRaw<LeasedTask[]>`
-		UPDATE "agentTask" AS t
-		SET "leasedUntil" = ${until},
-			"startedAt" = COALESCE(t."startedAt", ${now}),
-			"attempts" = t."attempts" + 1
-		FROM (
-			SELECT t2.id FROM "agentTask" AS t2
-			WHERE t2."finishedAt" IS NULL
-				AND t2."dueAt" <= ${now}
-				AND (t2."leasedUntil" IS NULL OR t2."leasedUntil" < ${now})
-				AND t2."attempts" < ${MAX_ATTEMPTS}
-				AND CASE
-					WHEN ${onlyMode}::boolean THEN t2.kind = ANY(${list}::text[])
-					ELSE t2.kind <> ALL(${list}::text[])
-				END
-			ORDER BY t2."priority" DESC, t2."dueAt" ASC
-			LIMIT ${limit}
-			FOR UPDATE SKIP LOCKED
-		) AS due
-		WHERE t.id = due.id
-		RETURNING t.id, t."contactId", t."companyId", t."dealId", t.kind, t.reason, t.payload,
-			t.budget, t.attempts, t.priority, t."dueAt";
-	`;
+	while (claimed.length < limit) {
+		const remaining = limit - claimed.length;
+		const candidates = await collectTenantRows(
+			organizations,
+			(_organizationId, tx) =>
+				tx.$queryRaw<TaskCandidate[]>(Prisma.sql`
+					SELECT t.id, t."organizationId", t.priority, t."dueAt"
+					FROM "agentTask" AS t
+					WHERE t."finishedAt" IS NULL
+						AND t."dueAt" <= ${now}
+						AND (t."leasedUntil" IS NULL OR t."leasedUntil" < ${now})
+						AND t."attempts" < ${MAX_ATTEMPTS}
+						AND CASE
+							WHEN ${onlyMode}::boolean THEN t.kind = ANY(${list}::text[])
+							ELSE t.kind <> ALL(${list}::text[])
+						END
+					ORDER BY t.priority DESC, t."dueAt" ASC
+					LIMIT ${remaining}
+					FOR UPDATE SKIP LOCKED
+				`),
+		);
+		const selected = candidates.sort(compareTaskPriority).slice(0, remaining);
+		if (selected.length === 0) break;
 
-	return claimed.sort(
-		(a, b) => b.priority - a.priority || a.dueAt.getTime() - b.dueAt.getTime(),
-	);
+		const batch = await claimSelectedTasks(
+			selected,
+			now,
+			until,
+			list,
+			onlyMode,
+		);
+		claimed.push(...batch);
+	}
+
+	return claimed.sort(compareTaskPriority);
 }
 
 export async function retireExhausted(
 	limit: number = DISPATCH.reconcile.retire,
 ): Promise<TaskSubject[]> {
-	const now = new Date();
+	if (limit <= 0) return [];
 
-	return db.$queryRaw<TaskSubject[]>`
-		UPDATE "agentTask" AS t
-		SET "finishedAt" = ${now},
-			"outcome" = ${RETIRED_OUTCOME}
-		WHERE t.id IN (
-			SELECT c.id
-			FROM "agentTask" AS c
-			WHERE c."finishedAt" IS NULL
-				AND c."attempts" >= ${MAX_ATTEMPTS}
-				AND (c."leasedUntil" IS NULL OR c."leasedUntil" < ${now})
-			ORDER BY c."dueAt" ASC
-			LIMIT ${limit}
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING t.id, t."contactId", t."companyId", t."dealId", t.kind;
-	`;
+	const now = new Date();
+	const organizations = await organizationIds();
+	const retired: TaskSubject[] = [];
+
+	while (retired.length < limit) {
+		const remaining = limit - retired.length;
+		const candidates = await collectTenantRows(
+			organizations,
+			(_organizationId, tx) =>
+				tx.$queryRaw<TaskCandidate[]>(Prisma.sql`
+					SELECT t.id, t."organizationId", t.priority, t."dueAt"
+					FROM "agentTask" AS t
+					WHERE t."finishedAt" IS NULL
+						AND t."attempts" >= ${MAX_ATTEMPTS}
+						AND (t."leasedUntil" IS NULL OR t."leasedUntil" < ${now})
+					ORDER BY t."dueAt" ASC
+					LIMIT ${remaining}
+					FOR UPDATE SKIP LOCKED
+				`),
+		);
+		const selected = candidates
+			.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime())
+			.slice(0, remaining);
+		if (selected.length === 0) break;
+
+		const batch = await retireSelectedTasks(selected, now);
+		retired.push(...batch);
+	}
+
+	return retired;
+}
+
+async function collectTenantRows<T>(
+	organizations: readonly string[],
+	query: (organizationId: string, tx: Prisma.TransactionClient) => Promise<T[]>,
+): Promise<T[]> {
+	const rows: T[] = [];
+	await forEachTenant(
+		async (organizationId, tx) => {
+			rows.push(...(await query(organizationId, tx)));
+		},
+		{ concurrency: DISPATCH.task.tenantConcurrency, organizations },
+	);
+	return rows;
+}
+
+async function claimSelectedTasks(
+	selected: readonly TaskCandidate[],
+	now: Date,
+	until: Date,
+	list: readonly string[],
+	onlyMode: boolean,
+): Promise<LeasedTask[]> {
+	return updateSelectedByTenant(selected, (_organizationId, ids, tx) =>
+		tx.$queryRaw<LeasedTask[]>(Prisma.sql`
+			WITH due AS (
+				SELECT t.id
+				FROM "agentTask" AS t
+				WHERE t.id IN (${Prisma.join(ids)})
+					AND t."finishedAt" IS NULL
+					AND t."dueAt" <= ${now}
+					AND (t."leasedUntil" IS NULL OR t."leasedUntil" < ${now})
+					AND t."attempts" < ${MAX_ATTEMPTS}
+					AND CASE
+						WHEN ${onlyMode}::boolean THEN t.kind = ANY(${list}::text[])
+						ELSE t.kind <> ALL(${list}::text[])
+					END
+				FOR UPDATE SKIP LOCKED
+			)
+			UPDATE "agentTask" AS t
+			SET "leasedUntil" = ${until},
+				"startedAt" = COALESCE(t."startedAt", ${now}),
+				"attempts" = t."attempts" + 1
+			FROM due
+			WHERE t.id = due.id
+			RETURNING t.id, t."contactId", t."companyId", t."dealId", t.kind, t.reason, t.payload,
+				t.budget, t.attempts, t.priority, t."dueAt", t."organizationId"
+		`),
+	);
+}
+
+async function retireSelectedTasks(
+	selected: readonly TaskCandidate[],
+	now: Date,
+): Promise<TaskSubject[]> {
+	return updateSelectedByTenant(selected, (_organizationId, ids, tx) =>
+		tx.$queryRaw<TaskSubject[]>(Prisma.sql`
+			WITH exhausted AS (
+				SELECT t.id
+				FROM "agentTask" AS t
+				WHERE t.id IN (${Prisma.join(ids)})
+					AND t."finishedAt" IS NULL
+					AND t."attempts" >= ${MAX_ATTEMPTS}
+					AND (t."leasedUntil" IS NULL OR t."leasedUntil" < ${now})
+				FOR UPDATE SKIP LOCKED
+			)
+			UPDATE "agentTask" AS t
+			SET "finishedAt" = ${now},
+				"outcome" = ${RETIRED_OUTCOME}
+			FROM exhausted
+			WHERE t.id = exhausted.id
+			RETURNING t.id, t."organizationId", t."contactId", t."companyId", t."dealId", t.kind
+		`),
+	);
+}
+
+async function updateSelectedByTenant<T>(
+	selected: readonly TaskCandidate[],
+	update: (
+		organizationId: string,
+		ids: readonly string[],
+		tx: Prisma.TransactionClient,
+	) => Promise<T[]>,
+): Promise<T[]> {
+	const groups = new Map<string, string[]>();
+	for (const task of selected) {
+		const ids = groups.get(task.organizationId) ?? [];
+		ids.push(task.id);
+		groups.set(task.organizationId, ids);
+	}
+	return collectTenantRows([...groups.keys()], (organizationId, tx) =>
+		update(organizationId, groups.get(organizationId) ?? [], tx),
+	);
+}
+
+function compareTaskPriority(a: TaskCandidate, b: TaskCandidate): number {
+	return b.priority - a.priority || a.dueAt.getTime() - b.dueAt.getTime();
 }
 
 export async function completeTask(
@@ -98,7 +235,7 @@ export async function completeTask(
 	outcome: string,
 	sessionId?: string,
 ): Promise<TaskSubject | null> {
-	const { count } = await db.agentTask.updateMany({
+	const { count } = await scopedDb.agentTask.updateMany({
 		where: { id: taskId, finishedAt: null },
 		data: {
 			finishedAt: new Date(),
@@ -109,10 +246,11 @@ export async function completeTask(
 
 	if (count === 0) return null;
 
-	return db.agentTask.findUnique({
+	return await scopedDb.agentTask.findUnique({
 		where: { id: taskId },
 		select: {
 			id: true,
+			organizationId: true,
 			contactId: true,
 			companyId: true,
 			dealId: true,
@@ -122,10 +260,11 @@ export async function completeTask(
 }
 
 export async function taskSubject(taskId: string): Promise<TaskSubject | null> {
-	return db.agentTask.findUnique({
+	return await scopedDb.agentTask.findUnique({
 		where: { id: taskId },
 		select: {
 			id: true,
+			organizationId: true,
 			contactId: true,
 			companyId: true,
 			dealId: true,
@@ -134,17 +273,41 @@ export async function taskSubject(taskId: string): Promise<TaskSubject | null> {
 	});
 }
 
+export function runTaskInTenant<T>(
+	task: { organizationId: string },
+	action: () => T,
+): T {
+	return runInTenant(task.organizationId, action);
+}
+
+export async function withTaskTenant<T>(
+	taskId: string,
+	action: () => Promise<T>,
+): Promise<T | null> {
+	const located = await locateTenantRow(() =>
+		scopedDb.agentTask.findUnique({
+			where: { id: taskId },
+			select: { id: true },
+		}),
+	);
+
+	if (!located) return null;
+
+	return runInTenant(located.organizationId, action);
+}
+
 export async function noteSession(
 	taskId: string,
 	sessionId: string,
 ): Promise<void> {
-	await db.agentTask.updateMany({
+	await scopedDb.agentTask.updateMany({
 		where: { id: taskId, finishedAt: null },
 		data: { sessionId },
 	});
 }
 
 export async function scheduleTask(input: {
+	organizationId: string;
 	contactId?: string | null;
 	companyId?: string | null;
 	dealId?: string | null;
@@ -155,7 +318,7 @@ export async function scheduleTask(input: {
 	priority?: number;
 	budget?: number;
 }): Promise<{ id: string }> {
-	const existing = await db.agentTask.findFirst({
+	const existing = await scopedDb.agentTask.findFirst({
 		where: {
 			kind: input.kind,
 			finishedAt: null,
@@ -167,14 +330,14 @@ export async function scheduleTask(input: {
 	});
 
 	if (existing) {
-		await db.agentTask.update({
+		await scopedDb.agentTask.update({
 			where: { id: existing.id },
 			data: { dueAt: input.dueAt, reason: input.reason },
 		});
 		return existing;
 	}
 
-	return db.agentTask.create({
+	return await scopedDb.agentTask.create({
 		data: {
 			contactId: input.contactId ?? null,
 			companyId: input.companyId ?? null,
@@ -191,7 +354,7 @@ export async function scheduleTask(input: {
 }
 
 export async function lastDecision(contactId: string) {
-	return db.agentTask.findFirst({
+	return await scopedDb.agentTask.findFirst({
 		where: { contactId },
 		orderBy: { createdAt: "desc" },
 		select: {

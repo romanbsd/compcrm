@@ -1,13 +1,13 @@
-import { db } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 
 export async function slackAccessToken(): Promise<string | null> {
-	const account = await db.account.findFirst({
-		where: { providerId: "slack", accessToken: { not: null } },
+	const grant = await scopedDb.slackWorkspaceGrant.findFirst({
+		where: { botToken: { not: null } },
 		orderBy: { updatedAt: "desc" },
-		select: { accessToken: true },
+		select: { botToken: true },
 	});
 
-	return account?.accessToken ?? null;
+	return grant?.botToken ?? null;
 }
 
 export async function slackConnected(): Promise<boolean> {
@@ -15,7 +15,7 @@ export async function slackConnected(): Promise<boolean> {
 }
 
 export async function slackUserToken(): Promise<string | null> {
-	const grant = await db.slackWorkspaceGrant.findFirst({
+	const grant = await scopedDb.slackWorkspaceGrant.findFirst({
 		orderBy: { updatedAt: "desc" },
 		select: { userToken: true },
 	});

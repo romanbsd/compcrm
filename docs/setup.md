@@ -13,6 +13,11 @@ bun run db:migrate && bun run db:seed
 bun run dev                 # app :3000, api :3001, agent :2000
 ```
 
+The container creates the `crm` runtime role on a new volume. This role owns the
+database and does not have `SUPERUSER` or `BYPASSRLS`. Both attributes bypass
+tenant row-level security. A volume created before this role existed needs a
+backup and a clean restore into a new volume before it can run this release.
+
 Prisma from the repo root: `db:generate`, `db:migrate`, `db:push`, `db:reset`,
 `db:seed`, `db:studio`, `db:deploy`.
 
@@ -200,6 +205,9 @@ bun run --filter=agent test    # integration specs need DATABASE_URL + real Post
 `bun run db:test` creates `crm_test` and runs `migrate deploy` on it. The database
 name must end in `_test`; the suite deletes rows it expects to put back, so it
 refuses anything else.
+
+The local `crm` role has `CREATEDB` only so this command can create `crm_test`.
+Production runtime roles do not need that attribute.
 
 **`migrate deploy` only applies migrations that are missing. It never removes a
 table, a column or a constraint the database has and the schema does not.** A

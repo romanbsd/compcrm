@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { ActivityType, db, type Prisma } from "@crm/db";
+import { ActivityType, type Prisma } from "@crm/db";
 import type { AgentActionStatus, AgentTriggerType } from "@crm/db/enums";
 import { lockIdempotencyKey } from "@crm/db/idempotency";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	AGENT_ACTION_TYPES,
 	type AgentManifestResource,
@@ -110,13 +111,15 @@ const RUN_ACTION_FIELDS = {
 } as const;
 
 export async function approvedRunInstructions(runId: string): Promise<string> {
-	const run = await db.agentRun.findUnique({
-		where: { id: runId },
-		select: {
-			status: true,
-			version: { select: { instructions: true } },
-		},
-	});
+	const run = await scopedTransaction((tx) =>
+		tx.agentRun.findUnique({
+			where: { id: runId },
+			select: {
+				status: true,
+				version: { select: { instructions: true } },
+			},
+		}),
+	);
 
 	if (!run) throw new Error("This agent run is unavailable.");
 	if (run.status !== "RUNNING") {
@@ -126,26 +129,31 @@ export async function approvedRunInstructions(runId: string): Promise<string> {
 }
 
 export async function runContext(runId: string) {
-	const run = await db.agentRun.findUnique({
-		where: { id: runId },
-		select: {
-			id: true,
-			status: true,
-			triggerType: true,
-			input: true,
-			agent: { select: { id: true, name: true, description: true } },
-			version: {
-				select: {
-					id: true,
-					number: true,
-					manifest: true,
-					modelId: true,
-					sandboxPolicy: true,
+	const run = await scopedTransaction((tx) =>
+		tx.agentRun.findUnique({
+			where: { id: runId },
+			select: {
+				id: true,
+				organizationId: true,
+				status: true,
+				triggerType: true,
+				input: true,
+				agent: { select: { id: true, name: true, description: true } },
+				version: {
+					select: {
+						id: true,
+						number: true,
+						manifest: true,
+						modelId: true,
+						sandboxPolicy: true,
+					},
+				},
+				trigger: {
+					select: { id: true, name: true, type: true, config: true },
 				},
 			},
-			trigger: { select: { id: true, name: true, type: true, config: true } },
-		},
-	});
+		}),
+	);
 
 	if (!run) throw new Error("This agent run is unavailable.");
 	if (run.status !== "RUNNING") {
@@ -240,17 +248,19 @@ export async function createRunActivity(
 		dueAt?: string | null;
 	},
 ) {
-	const run = await db.agentRun.findUnique({
-		where: { id: runId },
-		select: {
-			id: true,
-			status: true,
-			agentId: true,
-			initiatedById: true,
-			agent: { select: { createdById: true } },
-			version: { select: { manifest: true } },
-		},
-	});
+	const run = await scopedTransaction((tx) =>
+		tx.agentRun.findUnique({
+			where: { id: runId },
+			select: {
+				id: true,
+				status: true,
+				agentId: true,
+				initiatedById: true,
+				agent: { select: { createdById: true } },
+				version: { select: { manifest: true } },
+			},
+		}),
+	);
 	if (!run) throw new Error("This agent run is unavailable.");
 
 	assertActivityAllowed(run.version.manifest, input.type);
@@ -310,7 +320,7 @@ export async function createRunActivity(
 		const activityId = `agent-action-${claim.actionId}`;
 		const now = new Date();
 
-		await db.$transaction(async (tx) => {
+		await scopedTransaction(async (tx) => {
 			const activeRun = await lockAgentRun(tx, runId);
 			if (activeRun.status !== "RUNNING") {
 				throw new Error("This agent run is not active.");
@@ -381,15 +391,17 @@ export async function postRunSlackMessage(
 	input: { text: string },
 	abortSignal?: AbortSignal,
 ) {
-	const run = await db.agentRun.findUnique({
-		where: { id: runId },
-		select: {
-			id: true,
-			status: true,
-			agentId: true,
-			version: { select: { manifest: true } },
-		},
-	});
+	const run = await scopedTransaction((tx) =>
+		tx.agentRun.findUnique({
+			where: { id: runId },
+			select: {
+				id: true,
+				status: true,
+				agentId: true,
+				version: { select: { manifest: true } },
+			},
+		}),
+	);
 	if (!run) throw new Error("This agent run is unavailable.");
 
 	const destination = approvedSlackDestination(run.version.manifest);
@@ -451,14 +463,16 @@ export async function postRunSlackMessage(
 			},
 		);
 		const messageId = `${posted.channel}:${posted.ts}`;
-		const completed = await db.agentAction.updateMany({
-			where: { id: actionId, status: "RUNNING", startedAt: claimedAt },
-			data: {
-				status: "SUCCEEDED",
-				externalId: messageId,
-				completedAt: new Date(),
-			},
-		});
+		const completed = await scopedTransaction((tx) =>
+			tx.agentAction.updateMany({
+				where: { id: actionId, status: "RUNNING", startedAt: claimedAt },
+				data: {
+					status: "SUCCEEDED",
+					externalId: messageId,
+					completedAt: new Date(),
+				},
+			}),
+		);
 		if (completed.count === 0) {
 			await recordDeliveryOutsideClaim(actionId, messageId);
 			throw new Error(
@@ -483,10 +497,12 @@ async function findRunAction(
 	idempotencyKey: string,
 	requestHash: string,
 ): Promise<RunActionRow | null> {
-	const existing = await db.agentAction.findUnique({
-		where: { idempotencyKey },
-		select: RUN_ACTION_FIELDS,
-	});
+	const existing = await scopedTransaction((tx) =>
+		tx.agentAction.findUnique({
+			where: { idempotencyKey },
+			select: RUN_ACTION_FIELDS,
+		}),
+	);
 	if (existing) assertActionRequestMatches(existing.requestHash, requestHash);
 	return existing;
 }
@@ -497,12 +513,12 @@ async function claimRunAction(
 	requestHash: string,
 	data: Omit<
 		Prisma.AgentActionUncheckedCreateInput,
-		"idempotencyKey" | "requestHash"
+		"idempotencyKey" | "organizationId" | "requestHash"
 	>,
 ): Promise<RunActionClaim> {
 	const action =
 		existing ??
-		(await db.$transaction(async (tx) => {
+		(await scopedTransaction(async (tx) => {
 			await lockIdempotencyKey(tx, idempotencyKey);
 			const winner = await tx.agentAction.findUnique({
 				where: { idempotencyKey },
@@ -527,31 +543,37 @@ async function claimRunAction(
 	}
 
 	const claimedAt = new Date();
-	const claimed = await db.agentAction.updateMany({
-		where: {
-			id: action.id,
-			OR: [
-				{ status: { in: ["PLANNED", "FAILED"] } },
-				{
-					status: "RUNNING",
-					startedAt: { lt: new Date(claimedAt.getTime() - ACTION_LEASE_MS) },
-				},
-			],
-		},
-		data: {
-			status: "RUNNING",
-			startedAt: claimedAt,
-			completedAt: null,
-			attemptCount: { increment: 1 },
-			errorCode: null,
-			errorMessage: null,
-		},
-	});
+	const claimed = await scopedTransaction((tx) =>
+		tx.agentAction.updateMany({
+			where: {
+				id: action.id,
+				OR: [
+					{ status: { in: ["PLANNED", "FAILED"] } },
+					{
+						status: "RUNNING",
+						startedAt: {
+							lt: new Date(claimedAt.getTime() - ACTION_LEASE_MS),
+						},
+					},
+				],
+			},
+			data: {
+				status: "RUNNING",
+				startedAt: claimedAt,
+				completedAt: null,
+				attemptCount: { increment: 1 },
+				errorCode: null,
+				errorMessage: null,
+			},
+		}),
+	);
 	if (claimed.count === 0) {
-		const current = await db.agentAction.findUnique({
-			where: { id: action.id },
-			select: { status: true, externalId: true },
-		});
+		const current = await scopedTransaction((tx) =>
+			tx.agentAction.findUnique({
+				where: { id: action.id },
+				select: { status: true, externalId: true },
+			}),
+		);
 		if (current?.status === "SUCCEEDED") {
 			return {
 				claimed: false,
@@ -575,19 +597,21 @@ async function failRunAction(
 	code: string,
 	message: string,
 ): Promise<void> {
-	await db.agentAction.updateMany({
-		where: {
-			id: claim.actionId,
-			status: "RUNNING",
-			startedAt: claim.claimedAt,
-		},
-		data: {
-			status: "FAILED",
-			errorCode: code,
-			errorMessage: message,
-			completedAt: new Date(),
-		},
-	});
+	await scopedTransaction((tx) =>
+		tx.agentAction.updateMany({
+			where: {
+				id: claim.actionId,
+				status: "RUNNING",
+				startedAt: claim.claimedAt,
+			},
+			data: {
+				status: "FAILED",
+				errorCode: code,
+				errorMessage: message,
+				completedAt: new Date(),
+			},
+		}),
+	);
 }
 
 export async function sendSlackMessage(
@@ -641,10 +665,12 @@ export async function sendSlackMessage(
 }
 
 async function assertRunActive(runId: string): Promise<void> {
-	const run = await db.agentRun.findUnique({
-		where: { id: runId },
-		select: { status: true },
-	});
+	const run = await scopedTransaction((tx) =>
+		tx.agentRun.findUnique({
+			where: { id: runId },
+			select: { status: true },
+		}),
+	);
 	if (run?.status !== "RUNNING") {
 		throw new Error("This agent run is not active.");
 	}
@@ -655,7 +681,7 @@ async function holdRunActionClaim(
 	actionId: string,
 	claimedAt: Date,
 ): Promise<void> {
-	await db.$transaction(async (tx) => {
+	await scopedTransaction(async (tx) => {
 		const run = await lockAgentRun(tx, runId);
 		if (run.status !== "RUNNING") {
 			throw new Error("This agent run is not active.");
@@ -675,21 +701,25 @@ async function recordDeliveryOutsideClaim(
 ): Promise<void> {
 	const delivered =
 		"Slack accepted this message before the run stopped, and it cannot be withdrawn.";
-	const current = await db.agentAction.findUnique({
-		where: { id: actionId },
-		select: { status: true, externalId: true, errorMessage: true },
-	});
+	const current = await scopedTransaction((tx) =>
+		tx.agentAction.findUnique({
+			where: { id: actionId },
+			select: { status: true, externalId: true, errorMessage: true },
+		}),
+	);
 	if (!current || current.status === "SUCCEEDED" || current.externalId) return;
 
-	await db.agentAction.updateMany({
-		where: { id: actionId, status: { not: "SUCCEEDED" }, externalId: null },
-		data: {
-			externalId: messageId,
-			errorMessage: current.errorMessage
-				? `${current.errorMessage} ${delivered}`
-				: delivered,
-		},
-	});
+	await scopedTransaction((tx) =>
+		tx.agentAction.updateMany({
+			where: { id: actionId, status: { not: "SUCCEEDED" }, externalId: null },
+			data: {
+				externalId: messageId,
+				errorMessage: current.errorMessage
+					? `${current.errorMessage} ${delivered}`
+					: delivered,
+			},
+		}),
+	);
 }
 
 async function slackApiRequest(
@@ -744,7 +774,7 @@ export async function stageRunResult(
 		noActionNeeded?: { reason: string } | null;
 	},
 ) {
-	return db.$transaction(async (tx) => {
+	return scopedTransaction(async (tx) => {
 		const run = await lockAgentRun(tx, runId);
 		if (run.status !== "RUNNING") {
 			throw new Error(`This agent run already ended with ${run.status}.`);
@@ -785,7 +815,7 @@ export async function finishRun(
 	runId: string,
 	input: { summary: string; result?: RunResult | null },
 ) {
-	return db.$transaction(async (tx) => {
+	return scopedTransaction(async (tx) => {
 		const run = await lockAgentRun(tx, runId);
 		if (run.status === "SUCCEEDED") {
 			return { id: run.id, status: "SUCCEEDED" as const };
@@ -1092,10 +1122,12 @@ export function allowedHistorySources(
 
 async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 	if (kind === "company") {
-		const company = await db.company.findUnique({
-			where: { id },
-			select: { id: true, name: true },
-		});
+		const company = await scopedTransaction((tx) =>
+			tx.company.findUnique({
+				where: { id },
+				select: { id: true, name: true },
+			}),
+		);
 		return company
 			? {
 					label: company.name,
@@ -1106,10 +1138,12 @@ async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 			: null;
 	}
 	if (kind === "contact") {
-		const contact = await db.contact.findUnique({
-			where: { id },
-			select: { id: true, firstName: true, lastName: true, companyId: true },
-		});
+		const contact = await scopedTransaction((tx) =>
+			tx.contact.findUnique({
+				where: { id },
+				select: { id: true, firstName: true, lastName: true, companyId: true },
+			}),
+		);
 		return contact
 			? {
 					label: [contact.firstName, contact.lastName]
@@ -1122,10 +1156,12 @@ async function targetRecord(kind: "company" | "contact" | "deal", id: string) {
 			: null;
 	}
 
-	const deal = await db.deal.findUnique({
-		where: { id },
-		select: { id: true, name: true, companyId: true },
-	});
+	const deal = await scopedTransaction((tx) =>
+		tx.deal.findUnique({
+			where: { id },
+			select: { id: true, name: true, companyId: true },
+		}),
+	);
 	return deal
 		? {
 				label: deal.name,

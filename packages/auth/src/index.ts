@@ -17,6 +17,7 @@ export { ensureOfficialOAuthClient } from "./oauth-client";
 export {
 	isOAuthScope,
 	OAUTH,
+	OAUTH_ORGANIZATION_CLAIM,
 	OAUTH_SCOPES,
 	type OAuthScope,
 	oauthClientFields,
@@ -31,17 +32,17 @@ export {
 	requiredCrmScope,
 } from "./oauth-scope";
 export {
+	activeOrganizationIdOf,
+	activeWorkspaceRoleOf,
 	canChangeRole,
 	canManageConnections,
 	canManageCurrency,
 	canManageTracking,
 	canRenameWorkspace,
-	DEFAULT_WORKSPACE_NAME,
-	ensureWorkspaceMembership,
 	isWorkspaceAdmin,
 	isWorkspaceRole,
+	resolveActiveOrganization,
 	toWorkspaceRole,
-	WORKSPACE_ID,
 	WORKSPACE_ROLES,
 	type WorkspaceRole,
 	workspaceRoleOf,
@@ -89,6 +90,11 @@ export {
 	ssoCallbackURL,
 	ssoProviderName,
 } from "./sso";
+export {
+	resolveSsoRequestOrganizationId,
+	runSsoRequestInTenant,
+	type SsoTenantRequest,
+} from "./sso-tenant-context";
 export {
 	hasSignInAllowList,
 	isWorkspaceEmail,

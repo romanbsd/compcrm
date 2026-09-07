@@ -1,11 +1,15 @@
 import { workspaceDomains } from "@crm/auth/workspace";
 import { type Db, RecordSource } from "@crm/db";
 import { lockIdempotencyKey } from "@crm/db/idempotency";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
 import { CompanyDirectoryService } from "../companies/company-directory.service";
 import { EnrichmentLogService } from "../crm/enrichment-log.service";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 import {
 	dominantDomain,
 	externalParticipants,
@@ -45,6 +49,7 @@ export class MailboxMatchService {
 
 	constructor(
 		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
 		private readonly companies: CompanyDirectoryService,
 		private readonly agent: AgentTriggerService,
 		private readonly log: EnrichmentLogService,
@@ -71,14 +76,14 @@ export class MailboxMatchService {
 	}
 
 	async suppressedDomains(): Promise<Set<string>> {
-		const rows = await this.db.suppressedDomain.findMany({
+		const rows = await this.scoped.suppressedDomain.findMany({
 			select: { domain: true },
 		});
 		return new Set(rows.map((row) => row.domain));
 	}
 
 	async suppressedEmails(): Promise<Set<string>> {
-		const rows = await this.db.suppressedContact.findMany({
+		const rows = await this.scoped.suppressedContact.findMany({
 			select: { email: true },
 		});
 		return new Set(rows.map((row) => row.email.toLowerCase()));
@@ -99,7 +104,7 @@ export class MailboxMatchService {
 			return { companyId: null, contactId: null, external };
 		}
 
-		const contact = await this.db.contact.findFirst({
+		const contact = await this.scoped.contact.findFirst({
 			where: { email: { in: external.map((person) => person.email) } },
 			select: { id: true, companyId: true },
 		});
@@ -120,7 +125,7 @@ export class MailboxMatchService {
 			),
 		];
 
-		const known = await this.db.company.findMany({
+		const known = await this.scoped.company.findMany({
 			where: { domain: { in: domains } },
 			select: { id: true, domain: true },
 		});
@@ -170,7 +175,7 @@ export class MailboxMatchService {
 			return { companyId: null, contactId: null, external };
 		}
 
-		await this.db.company.update({
+		await this.scoped.company.update({
 			where: { id: companyId },
 			data: { source: request.source },
 		});
@@ -216,7 +221,7 @@ export class MailboxMatchService {
 
 		const outcome = await this.agent.withCrmEvents(async (tx, emit) => {
 			await lockIdempotencyKey(tx, `mailbox-contact:${person.email}`);
-			const existing = await tx.contact.findUnique({
+			const existing = await tx.contact.findFirst({
 				where: { email: person.email },
 				select: {
 					id: true,
@@ -281,7 +286,7 @@ export class MailboxMatchService {
 		);
 
 		if (hasRealName && isPlaceholder) {
-			await this.db.contact.update({
+			await this.scoped.contact.update({
 				where: { id: contact.id },
 				data: { firstName, lastName },
 			});

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { collapsing } from "@crm/db/pool";
+import { currentOrganizationId } from "@crm/db/tenant-context";
 import { APP_AUTH } from "../agent/lib/app-auth";
 import { isAutomated } from "../agent/lib/approval";
-import { taskAuth } from "../agent/lib/dispatch";
-import { collapsing } from "../agent/lib/pool";
+import { runDirect, taskAuth } from "../agent/lib/dispatch";
 import type { LeasedTask } from "../agent/lib/tasks";
 
 function deferred() {
@@ -90,6 +91,7 @@ describe("collapsing", () => {
 function task(overrides: Partial<LeasedTask> = {}): LeasedTask {
 	return {
 		id: "task_1",
+		organizationId: "workspace_1",
 		contactId: "contact_1",
 		companyId: null,
 		dealId: null,
@@ -104,6 +106,17 @@ function task(overrides: Partial<LeasedTask> = {}): LeasedTask {
 	};
 }
 
+describe("runDirect", () => {
+	it("runs each task inside its tenant context", async () => {
+		let organizationId: string | undefined;
+		await runDirect(task(), async () => {
+			organizationId = currentOrganizationId();
+		});
+
+		expect(organizationId).toBe("workspace_1");
+	});
+});
+
 describe("taskAuth", () => {
 	it("reads as the app principal, so an unattended turn is not asked to approve itself", () => {
 		const auth = taskAuth(task());
@@ -117,6 +130,7 @@ describe("taskAuth", () => {
 		expect(auth.attributes).toMatchObject({
 			taskKind: "identify",
 			budget: "4",
+			organizationId: "workspace_1",
 			contactId: "contact_1",
 			companyId: "company_1",
 		});

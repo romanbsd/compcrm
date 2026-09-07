@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import type { Db } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
 import {
 	EVENT_RETENTION_DAYS,
 	isSiteId,
@@ -34,18 +34,13 @@ import { AllowAnonymous } from "@thallesp/nestjs-better-auth";
 import type { Response } from "express";
 import { z } from "zod";
 import type { EnvironmentVariables } from "../config/env.validation";
-import { InjectDatabase } from "../database/database.constants";
 import { TrackingConfigService } from "./tracking-config.service";
-import { TrackingCounterService } from "./tracking-counter.service";
 import {
 	type IncomingBatch,
 	TrackingIngestService,
 } from "./tracking-ingest.service";
-import { TrackingRollupService } from "./tracking-rollup.service";
-
-const SWEEP_BATCH = 10_000;
-
-const MAX_SWEEP_PASSES = 50;
+import { TrackingRetentionService } from "./tracking-retention.service";
+import { TrackingSiteLocatorService } from "./tracking-site-locator.service";
 
 const parsedBody = z
 	.union([
@@ -65,6 +60,7 @@ export class TrackingController {
 	private readonly logger = new Logger(TrackingController.name);
 
 	constructor(
+		private readonly locator: TrackingSiteLocatorService,
 		private readonly config: TrackingConfigService,
 		private readonly ingest: TrackingIngestService,
 	) {}
@@ -117,12 +113,16 @@ export class TrackingController {
 		}
 
 		if (!isSiteId(batch?.siteId) || !Array.isArray(batch?.events)) return;
+		const organizationId = await this.locator.resolve(batch.siteId);
+		if (!organizationId) return;
 
 		try {
-			await this.ingest.accept(batch, {
-				origin: origin ?? null,
-				userAgent: userAgent ?? null,
-			});
+			await runInTenant(organizationId, () =>
+				this.ingest.accept(batch, {
+					origin: origin ?? null,
+					userAgent: userAgent ?? null,
+				}),
+			);
 		} catch (error) {
 			this.logger.error(
 				{ message: "Tracking event was not stored" },
@@ -146,9 +146,7 @@ export class TrackingRetentionController {
 	private readonly secret: string | undefined;
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
-		private readonly rollups: TrackingRollupService,
-		private readonly counters: TrackingCounterService,
+		private readonly retention: TrackingRetentionService,
 		config: ConfigService<EnvironmentVariables, true>,
 	) {
 		this.secret = config.get("CRON_SECRET", { infer: true });
@@ -187,10 +185,8 @@ export class TrackingRetentionController {
 			new Date(Date.now() - EVENT_RETENTION_DAYS * 24 * 60 * 60_000),
 		);
 
-		const rolled = await this.rollups.run(before);
-		const { removed, complete } = await this.sweepEvents(before);
-		const visitors = await this.sweepVisitors(before);
-		const counters = await this.counters.sweep();
+		const { rolled, removed, complete, visitors, counters } =
+			await this.retention.run(before);
 
 		if (!complete) {
 			this.logger.warn({
@@ -212,42 +208,6 @@ export class TrackingRetentionController {
 		});
 
 		return { rolled, removed, complete, visitors, counters };
-	}
-
-	private async sweepEvents(
-		before: Date,
-	): Promise<{ removed: number; complete: boolean }> {
-		let removed = 0;
-
-		for (let pass = 0; pass < MAX_SWEEP_PASSES; pass += 1) {
-			const deleted = await this.db.$executeRaw`
-				DELETE FROM "trackedEvent"
-				WHERE "id" IN (
-					SELECT "id" FROM "trackedEvent"
-					WHERE "occurredAt" < ${before}
-					LIMIT ${SWEEP_BATCH}
-				);
-			`;
-
-			removed += deleted;
-			if (deleted < SWEEP_BATCH) return { removed, complete: true };
-		}
-
-		return { removed, complete: false };
-	}
-
-	private async sweepVisitors(before: Date): Promise<number> {
-		const orphaned = await this.db.$executeRaw`
-			DELETE FROM "trackedVisitor"
-			WHERE "contactId" IS NULL
-				AND "lastSeen" < ${before}
-				AND NOT EXISTS (
-					SELECT 1 FROM "trackedEvent"
-					WHERE "trackedEvent"."visitorId" = "trackedVisitor"."id"
-				);
-		`;
-
-		return orphaned;
 	}
 }
 

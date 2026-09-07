@@ -12,7 +12,9 @@ import { TrackingConfigService } from "./tracking-config.service";
 import { TrackingCounterService } from "./tracking-counter.service";
 import { TrackingFilingService } from "./tracking-filing.service";
 import { TrackingIngestService } from "./tracking-ingest.service";
+import { TrackingRetentionService } from "./tracking-retention.service";
 import { TrackingRollupService } from "./tracking-rollup.service";
+import { TrackingSiteLocatorService } from "./tracking-site-locator.service";
 
 @Module({
 	imports: [TrpcModule, AgentModule, CompaniesModule],
@@ -22,7 +24,9 @@ import { TrackingRollupService } from "./tracking-rollup.service";
 		TrackingCounterService,
 		TrackingFilingService,
 		TrackingIngestService,
+		TrackingRetentionService,
 		TrackingRollupService,
+		TrackingSiteLocatorService,
 		TrackingService,
 		TrackingRouter,
 	],

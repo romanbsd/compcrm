@@ -5,8 +5,12 @@ import {
 	COMPANY_IMAGE_FIELDS,
 	type CompanyImageField,
 } from "@crm/db/images";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 
 const MAX_PER_SWEEP = 25;
 
@@ -31,7 +35,10 @@ export type ImageMirrorResult = {
 export class ImageMirrorService {
 	private readonly logger = new Logger(ImageMirrorService.name);
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(
+		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
+	) {}
 
 	async sweep(): Promise<ImageMirrorResult> {
 		if (!blobEnabled()) return { scanned: 0, copied: 0 };
@@ -58,7 +65,7 @@ export class ImageMirrorService {
 	}
 
 	private async sweepCompanies(): Promise<ImageMirrorResult> {
-		const rows = await this.db.company.findMany({
+		const rows = await this.scoped.company.findMany({
 			where: {
 				OR: COMPANY_IMAGE_FIELDS.map(externalCompanyImage),
 			},
@@ -91,7 +98,7 @@ export class ImageMirrorService {
 
 			if (Object.keys(data).length === 0) continue;
 
-			await this.db.company.updateMany({
+			await this.scoped.company.updateMany({
 				where: { id: row.id, ...unchanged(row) },
 				data,
 			});
@@ -101,7 +108,7 @@ export class ImageMirrorService {
 	}
 
 	private async sweepContacts(): Promise<ImageMirrorResult> {
-		const rows = await this.db.contact.findMany({
+		const rows = await this.scoped.contact.findMany({
 			where: EXTERNAL_CONTACT_IMAGE,
 			orderBy: { createdAt: "asc" },
 			take: MAX_PER_SWEEP,
@@ -116,7 +123,7 @@ export class ImageMirrorService {
 			const stored = await mirror(row.imageUrl, `contacts/${row.id}`);
 			if (!stored || stored === row.imageUrl) continue;
 
-			const { count } = await this.db.contact.updateMany({
+			const { count } = await this.scoped.contact.updateMany({
 				where: { id: row.id, imageUrl: row.imageUrl },
 				data: { imageUrl: stored },
 			});

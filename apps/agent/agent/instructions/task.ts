@@ -3,7 +3,11 @@ import { z } from "zod";
 import { focusOn, setBudget } from "../lib/focus";
 import { sessionPreamble } from "../lib/preamble";
 import { RESEARCH_INSTRUCTIONS } from "../lib/research-instructions";
-import { attribute, purposeOf } from "../lib/session-purpose";
+import {
+	attribute,
+	purposeOf,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 
 const attributeText = z.string().trim().min(1).nullable().catch(null);
 
@@ -36,19 +40,21 @@ export default defineDynamic({
 
 			const fieldKeys = attributeText.parse(attributes.fieldKeys);
 
-			const { markdown, focus } = await sessionPreamble(
-				{
-					contactId: attributeText.parse(attributes.contactId),
-					companyId: attributeText.parse(attributes.companyId),
-					dealId: attributeText.parse(attributes.dealId),
-				},
-				{
-					dispatched: Boolean(kind),
-					kind,
-					reason: attributeText.parse(attributes.reason),
-					budget,
-					fieldKeys: fieldKeys ? fieldKeys.split(",") : null,
-				},
+			const { markdown, focus } = await runInSessionTenant(ctx, () =>
+				sessionPreamble(
+					{
+						contactId: attributeText.parse(attributes.contactId),
+						companyId: attributeText.parse(attributes.companyId),
+						dealId: attributeText.parse(attributes.dealId),
+					},
+					{
+						dispatched: Boolean(kind),
+						kind,
+						reason: attributeText.parse(attributes.reason),
+						budget,
+						fieldKeys: fieldKeys ? fieldKeys.split(",") : null,
+					},
+				),
 			);
 
 			focusOn({ ...focus, sessionId: ctx.session.id, taskKind: kind });

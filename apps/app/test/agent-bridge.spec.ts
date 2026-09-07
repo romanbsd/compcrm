@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { verifyJwtHmac } from "eve/channels/auth";
 
 const SECRET = "test-secret-at-least-long-enough-to-be-a-secret";
+const ORGANIZATION_ID = "org_123";
 
 const CONFIG = {
 	algorithm: "HS256",
@@ -25,22 +26,25 @@ const rep = {
 
 describe("mintBridgeToken", () => {
 	it("mints a token eve accepts", async () => {
-		const token = await mintBridgeToken(rep);
+		const token = await mintBridgeToken(rep, ORGANIZATION_ID);
 		const result = await verifyJwtHmac(token, CONFIG);
 
 		expect(result.ok).toBe(true);
 	});
 
 	it("names the rep, so the agent knows a person is driving", async () => {
-		const token = await mintBridgeToken(rep);
+		const token = await mintBridgeToken(rep, ORGANIZATION_ID);
 		const result = await verifyJwtHmac(token, CONFIG);
 
 		expect(result.ok && result.sessionAuth.subject).toBe(rep.id);
 		expect(result.ok && result.sessionAuth.attributes?.email).toBe(rep.email);
+		expect(result.ok && result.sessionAuth.attributes?.organizationId).toBe(
+			ORGANIZATION_ID,
+		);
 	});
 
 	it("is rejected by a different secret", async () => {
-		const token = await mintBridgeToken(rep);
+		const token = await mintBridgeToken(rep, ORGANIZATION_ID);
 		const result = await verifyJwtHmac(token, {
 			...CONFIG,
 			secret: "a-different-secret-entirely",
@@ -50,7 +54,7 @@ describe("mintBridgeToken", () => {
 	});
 
 	it("is rejected by an agent expecting another audience", async () => {
-		const token = await mintBridgeToken(rep);
+		const token = await mintBridgeToken(rep, ORGANIZATION_ID);
 		const result = await verifyJwtHmac(token, {
 			...CONFIG,
 			audiences: ["someone-elses-agent"],
@@ -60,7 +64,7 @@ describe("mintBridgeToken", () => {
 	});
 
 	it("expires, so a token left in a tab stops working", async () => {
-		const token = await mintBridgeToken(rep);
+		const token = await mintBridgeToken(rep, ORGANIZATION_ID);
 		const [, payload] = token.split(".");
 		const claims = JSON.parse(
 			Buffer.from(payload as string, "base64url").toString(),
@@ -75,7 +79,7 @@ describe("mintBridgeToken", () => {
 		const secret = process.env.AGENT_BRIDGE_SECRET;
 		process.env.AGENT_BRIDGE_SECRET = "";
 
-		expect(mintBridgeToken(rep)).rejects.toThrow();
+		expect(mintBridgeToken(rep, ORGANIZATION_ID)).rejects.toThrow();
 
 		process.env.AGENT_BRIDGE_SECRET = secret;
 	});

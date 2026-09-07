@@ -29,10 +29,10 @@ import {
 import { DISPATCH } from "../lib/dispatch-config";
 import { settle } from "../lib/enrichment";
 import { finishRun, runResultOf } from "../lib/run-runtime";
-import { attribute } from "../lib/session-purpose";
+import { attribute, requireOrganizationId } from "../lib/session-purpose";
 import { createSlackChannel } from "../lib/slack-membership";
 import { reconcileStaleTasks } from "../lib/stale-tasks";
-import { completeTask, taskSubject } from "../lib/tasks";
+import { completeTask, taskSubject, withTaskTenant } from "../lib/tasks";
 
 const TASK_MARKER = "task:";
 const STALE_QUEUE_MS = DISPATCH.sweep.staleQueueMs;
@@ -93,11 +93,14 @@ export async function closeTask(
 	const taskId = taskFromToken(token);
 	if (!taskId) return false;
 
-	const subject =
-		(await completeTask(taskId, outcome)) ?? (await taskSubject(taskId));
-	if (subject) await settle(subject, status);
-
-	return true;
+	return (
+		(await withTaskTenant(taskId, async () => {
+			const subject =
+				(await completeTask(taskId, outcome)) ?? (await taskSubject(taskId));
+			if (subject) await settle(subject, status);
+			return true;
+		})) ?? false
+	);
 }
 
 export default defineChannel({
@@ -210,6 +213,7 @@ export default defineChannel({
 			}
 
 			const outcome = await createSlackChannel(
+				parsed.data.organizationId,
 				parsed.data.channelName,
 				parsed.data.isPrivate,
 			);
@@ -244,6 +248,7 @@ export default defineChannel({
 			await persistBuilderInputRequest(
 				data,
 				channel.continuationToken,
+				requireOrganizationId(ctx),
 				attribute(ctx, "conversationId"),
 			);
 		},
@@ -284,8 +289,10 @@ export default defineChannel({
 				eveTurnFailure.parse(data).message ?? "The agent turn failed.";
 
 			if (taskId) {
-				const subject = await taskSubject(taskId);
-				if (subject) await settle(subject, EnrichmentStatus.FAILED, reason);
+				await withTaskTenant(taskId, async () => {
+					const subject = await taskSubject(taskId);
+					if (subject) await settle(subject, EnrichmentStatus.FAILED, reason);
+				});
 				return;
 			}
 

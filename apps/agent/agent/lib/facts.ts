@@ -1,4 +1,5 @@
-import { db, FactBand, FactStatus, type Prisma } from "@crm/db";
+import { FactBand, FactStatus, type Prisma } from "@crm/db";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import { type Evidence, scoreEvidence } from "./evidence";
 import { currentFocus } from "./focus";
 import { isDerivedName, splitName } from "./names";
@@ -88,99 +89,101 @@ export async function recordFact(
 		};
 	}
 
-	const contact = await db.contact.findUnique({
-		where: { id: contactId },
-		select: {
-			id: true,
-			email: true,
-			firstName: true,
-			lastName: true,
-			title: true,
-			seniority: true,
-			function: true,
-			linkedinUrl: true,
-			twitterUrl: true,
-			githubUrl: true,
-		},
-	});
+	return scopedTransaction(async (tx) => {
+		const contact = await tx.contact.findUnique({
+			where: { id: contactId },
+			select: {
+				id: true,
+				email: true,
+				firstName: true,
+				lastName: true,
+				title: true,
+				seniority: true,
+				function: true,
+				linkedinUrl: true,
+				twitterUrl: true,
+				githubUrl: true,
+			},
+		});
 
-	if (!contact) {
-		return {
-			...base,
-			stored: false,
-			applied: false,
-			reason: "No such contact.",
-		};
-	}
+		if (!contact) {
+			return {
+				...base,
+				stored: false,
+				applied: false,
+				reason: "No such contact.",
+			};
+		}
 
-	const existing = await db.contactFact.findMany({
-		where: { contactId, field },
-		select: { id: true, value: true, status: true },
-	});
+		const existing = await tx.contactFact.findMany({
+			where: { contactId, field },
+			select: { id: true, value: true, status: true },
+		});
 
-	if (
-		existing.some(
-			(fact) =>
-				fact.status === FactStatus.DISMISSED && sameValue(fact.value, trimmed),
-		)
-	) {
-		return {
-			...base,
-			stored: false,
-			applied: false,
-			reason:
-				"A person has already dismissed this exact value. Do not offer it again.",
-		};
-	}
+		if (
+			existing.some(
+				(fact) =>
+					fact.status === FactStatus.DISMISSED &&
+					sameValue(fact.value, trimmed),
+			)
+		) {
+			return {
+				...base,
+				stored: false,
+				applied: false,
+				reason:
+					"A person has already dismissed this exact value. Do not offer it again.",
+			};
+		}
 
-	const currentApplied = existing.find(
-		(fact) => fact.status === FactStatus.APPLIED,
-	);
+		const currentApplied = existing.find(
+			(fact) => fact.status === FactStatus.APPLIED,
+		);
 
-	if (currentApplied && sameValue(currentApplied.value, trimmed)) {
-		return {
-			...base,
-			stored: false,
-			applied: false,
-			reason: "Already on the record, from this same source. Nothing changed.",
-		};
-	}
+		if (currentApplied && sameValue(currentApplied.value, trimmed)) {
+			return {
+				...base,
+				stored: false,
+				applied: false,
+				reason:
+					"Already on the record, from this same source. Nothing changed.",
+			};
+		}
 
-	const column = FIELDS[field].column;
-	const hasAgentFact = Boolean(currentApplied);
+		const column = FIELDS[field].column;
+		const hasAgentFact = Boolean(currentApplied);
 
-	if (humanOwns({ field, column, contact, hasAgentFact })) {
-		return {
-			...base,
-			stored: false,
-			applied: false,
-			reason: `A person already filled in ${field}. That outranks anything found on the web.`,
-		};
-	}
+		if (humanOwns({ field, column, contact, hasAgentFact })) {
+			return {
+				...base,
+				stored: false,
+				applied: false,
+				reason: `A person already filled in ${field}. That outranks anything found on the web.`,
+			};
+		}
 
-	const applies =
-		scored.band === FactBand.VERIFIED ||
-		fillsBlank({ field, contact, hasAgentFact });
+		const applies =
+			scored.band === FactBand.VERIFIED ||
+			fillsBlank({ field, contact, hasAgentFact });
 
-	if (
-		!applies &&
-		existing.some(
-			(fact) =>
-				fact.status === FactStatus.PROPOSED && sameValue(fact.value, trimmed),
-		)
-	) {
-		return {
-			...base,
-			stored: false,
-			applied: false,
-			reason:
-				"This exact value is already in front of a rep, waiting on them. Offering it twice only makes them read it twice.",
-		};
-	}
+		if (
+			!applies &&
+			existing.some(
+				(fact) =>
+					fact.status === FactStatus.PROPOSED && sameValue(fact.value, trimmed),
+			)
+		) {
+			return {
+				...base,
+				stored: false,
+				applied: false,
+				reason:
+					"This exact value is already in front of a rep, waiting on them. Offering it twice only makes them read it twice.",
+			};
+		}
 
-	const sessionId = currentFocus().sessionId;
+		const sessionId = currentFocus().sessionId;
 
-	await db.$transaction(async (tx) => {
 		if (applies) {
 			await tx.contactFact.updateMany({
 				where: {
@@ -207,60 +210,61 @@ export async function recordFact(
 			},
 		});
 
-		if (!applies) return;
-
-		if (column) {
-			await tx.contact.update({
-				where: { id: contactId },
-				data: { [column]: trimmed },
-			});
-		}
-
-		if (field === "name") {
-			const split = splitName(trimmed);
-			if (split) {
+		if (applies) {
+			if (column) {
 				await tx.contact.update({
 					where: { id: contactId },
-					data: { firstName: split.firstName, lastName: split.lastName },
+					data: { [column]: trimmed },
 				});
 			}
-		}
-	});
 
-	return {
-		...base,
-		stored: true,
-		applied: applies,
-		reason: applies
-			? undefined
-			: "The record already carries a value here, and only VERIFIED evidence may replace one, so this is kept as a proposal for a rep to accept or dismiss. This is a normal outcome, not a failure — do not try to raise the score.",
-	};
+			if (field === "name") {
+				const split = splitName(trimmed);
+				if (split) {
+					await tx.contact.update({
+						where: { id: contactId },
+						data: { firstName: split.firstName, lastName: split.lastName },
+					});
+				}
+			}
+		}
+		return {
+			...base,
+			stored: true,
+			applied: applies,
+			reason: applies
+				? undefined
+				: "The record already carries a value here, and only VERIFIED evidence may replace one, so this is kept as a proposal for a rep to accept or dismiss. This is a normal outcome, not a failure — do not try to raise the score.",
+		};
+	});
 }
 
 export async function lastEmployerChange(contactId: string) {
-	const [previous, current] = await Promise.all([
-		db.contactFact.findFirst({
-			where: { contactId, field: "employer", status: FactStatus.SUPERSEDED },
-			orderBy: { supersededAt: "desc" },
-			select: { value: true, supersededAt: true },
-		}),
-		db.contactFact.findFirst({
-			where: { contactId, field: "employer", status: FactStatus.APPLIED },
-			orderBy: { observedAt: "desc" },
-			select: { value: true, observedAt: true, sourceUrl: true },
-		}),
-	]);
+	return scopedTransaction(async (tx) => {
+		const [previous, current] = await Promise.all([
+			tx.contactFact.findFirst({
+				where: { contactId, field: "employer", status: FactStatus.SUPERSEDED },
+				orderBy: { supersededAt: "desc" },
+				select: { value: true, supersededAt: true },
+			}),
+			tx.contactFact.findFirst({
+				where: { contactId, field: "employer", status: FactStatus.APPLIED },
+				orderBy: { observedAt: "desc" },
+				select: { value: true, observedAt: true, sourceUrl: true },
+			}),
+		]);
 
-	if (!previous || !current || sameValue(previous.value, current.value)) {
-		return null;
-	}
+		if (!previous || !current || sameValue(previous.value, current.value)) {
+			return null;
+		}
 
-	return {
-		from: previous.value,
-		to: current.value,
-		observedAt: current.observedAt,
-		sourceUrl: current.sourceUrl,
-	};
+		return {
+			from: previous.value,
+			to: current.value,
+			observedAt: current.observedAt,
+			sourceUrl: current.sourceUrl,
+		};
+	});
 }
 
 export type BriefSections = {
@@ -281,30 +285,43 @@ export async function writeBrief(input: {
 }): Promise<{ written: boolean; score: number; reason?: string }> {
 	const scored = scoreEvidence(input.evidence);
 
-	if (scored.band === null) {
-		return {
-			written: false,
+	return scopedTransaction(async (tx) => {
+		const contact = await tx.contact.findUnique({
+			where: { id: input.contactId },
+			select: { id: true },
+		});
+		if (!contact) {
+			return { written: false, score: 0, reason: "No such contact." };
+		}
+
+		if (scored.band === null) {
+			return {
+				written: false,
+				score: scored.score,
+				reason: "Nothing here is sourced well enough to put on the record.",
+			};
+		}
+
+		const data = {
+			narrative: input.narrative.trim(),
+			sections: input.sections as Prisma.InputJsonValue,
 			score: scored.score,
-			reason: "Nothing here is sourced well enough to put on the record.",
+			sourceUrl: input.sourceUrl ?? null,
+			sessionId: currentFocus().sessionId,
+			refreshedAt: new Date(),
 		};
-	}
 
-	const data = {
-		narrative: input.narrative.trim(),
-		sections: input.sections as Prisma.InputJsonValue,
-		score: scored.score,
-		sourceUrl: input.sourceUrl ?? null,
-		sessionId: currentFocus().sessionId,
-		refreshedAt: new Date(),
-	};
+		await tx.contactBrief.upsert({
+			where: { contactId: input.contactId },
+			create: {
+				contactId: input.contactId,
+				...data,
+			},
+			update: data,
+		});
 
-	await db.contactBrief.upsert({
-		where: { contactId: input.contactId },
-		create: { contactId: input.contactId, ...data },
-		update: data,
+		return { written: true, score: scored.score };
 	});
-
-	return { written: true, score: scored.score };
 }
 
 function humanOwns({

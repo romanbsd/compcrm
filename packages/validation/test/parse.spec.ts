@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import * as z from "zod";
 import { InvalidInput, parse, schemas } from "../src/index";
+import { workspaceGate } from "../src/workspace-gate";
 
 const person = z.object({
 	name: z.string().trim().min(1),
@@ -62,5 +63,18 @@ describe("the input request schema", () => {
 			schemas.agents.inputRequest.safeParse({ ...request, prompt: "   " })
 				.success,
 		).toBe(false);
+	});
+});
+
+describe("the workspace gate schema", () => {
+	it("accepts an explicit no-organization result", () => {
+		expect(
+			workspaceGate.safeParse({
+				organizationId: null,
+				slug: null,
+				onboarded: null,
+				canRename: null,
+			}).success,
+		).toBe(true);
 	});
 });

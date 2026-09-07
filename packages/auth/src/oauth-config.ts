@@ -2,10 +2,13 @@ import { DAY_SECONDS } from "./api-keys";
 import { apiUrl, appUrl } from "./env";
 
 const MINUTE_SECONDS = 60;
+const OAUTH_RESOURCE = new URL("/api", apiUrl).toString();
+
+export const OAUTH_ORGANIZATION_CLAIM = `${OAUTH_RESOURCE}/claims/organization_id`;
 
 export const OAUTH = {
 	issuer: new URL("/api/auth", apiUrl).toString(),
-	resource: new URL("/api", apiUrl).toString(),
+	resource: OAUTH_RESOURCE,
 	loginPage: new URL("/sign-in", appUrl).toString(),
 	consentPage: new URL("/oauth/consent", appUrl).toString(),
 	accessTokenTtlSeconds: 10 * MINUTE_SECONDS,

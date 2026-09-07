@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { currentOrganizationId } from "@crm/db/tenant-context";
 import { builderTaskMarkdown } from "../agent/instructions/task";
 import { AGENT_ACTION_EXECUTORS } from "../agent/lib/agent-actions";
 import { recordBuilderDelegation } from "../agent/lib/builder-delegation";
@@ -26,6 +27,7 @@ import {
 	purposeOf,
 	requireBuilderAttribute,
 	requireTeamAgentAttribute,
+	runInSessionTenant,
 } from "../agent/lib/session-purpose";
 import {
 	builderDraftToolInput,
@@ -43,11 +45,12 @@ const context = (purpose?: string, commandType?: string) => ({
 				? {
 						attributes: {
 							purpose,
+							organizationId: "workspace",
 							conversationId: "chat-1",
 							commandType,
 						},
 					}
-				: { attributes: {} },
+				: { attributes: { organizationId: "workspace" } },
 			initiator: { attributes: { userId: "user-1" } },
 		},
 	},
@@ -151,6 +154,12 @@ describe("session purpose boundaries", () => {
 	it("defaults ordinary CRM sessions to research", () => {
 		expect(purposeOf(context())).toBe("research");
 		expect(() => assertResearchPurpose(context())).not.toThrow();
+	});
+
+	it("enters the organization carried by the session", () => {
+		expect(runInSessionTenant(context(), () => currentOrganizationId())).toBe(
+			"workspace",
+		);
 	});
 
 	it("rejects research writes from builder and team-agent sessions", () => {

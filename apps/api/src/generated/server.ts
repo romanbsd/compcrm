@@ -32,6 +32,7 @@ import { slackStatusOutput, slackMatchesOutput, slackChannelsInput, slackChannel
 import { ssoSignInOptionsOutput, ssoSettingsOutput, ssoProviderListInput, ssoProviderListOutput, registerSsoProviderInput, ssoProviderOutput, deleteSsoProviderInput, deleteSsoProviderOutput } from "../sso/sso.contracts";
 import { trackingSettingsOutput, trackingFlagInput, cookieLifetimeInput, addDomainInput, trackedDomainOutput, removeDomainInput, rotateSiteIdOutput, verifyInput, verifyOutput, sourcesOutput, companyActivityInput, websiteActivityOutput, contactActivityInput } from "../tracking/tracking.contracts";
 import { workspaceOutput, memberListInput, memberListOutput, updateWorkspaceInput, setMemberRoleInput, workspaceMemberOutput } from "../workspace/workspace.contracts";
+import { workspaceGate } from "@crm/validation/workspace-gate";
 import type { UsersRouter } from "../users/users.router";
 
 const appRouter = t.router({
@@ -737,6 +738,9 @@ const appRouter = t.router({
   workspace: t.router({
     get: publicProcedure
       .output(workspaceOutput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    gate: publicProcedure
+      .output(workspaceGate)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
     members: publicProcedure
       .input(memberListInput)

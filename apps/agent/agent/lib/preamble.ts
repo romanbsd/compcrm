@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { websiteUrl } from "@crm/db/workspace";
 import { capabilitiesMarkdown } from "./capabilities";
 import { identity, usMarkdown, type WorkspaceIdentity } from "./workspace";

@@ -1,6 +1,5 @@
-import { db } from "@crm/db";
 import { queueSlackInventorySync } from "@crm/db/slack-inventory";
-import { WORKSPACE_ID } from "@crm/db/workspace";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import { parse, schemas } from "@crm/validation";
 import { z } from "zod";
 import { SLACK } from "./slack-config";
@@ -48,16 +47,22 @@ const RECONNECT_ERRORS = ["invalid_auth", "account_inactive", "token_revoked"];
 const INVENTORY_REASON =
 	"Read Slack people and channels again: the cached inventory is stale";
 
-export async function requestSlackInventorySync(): Promise<void> {
-	await queueSlackInventorySync(INVENTORY_REASON);
+export async function requestSlackInventorySync(
+	organizationId: string,
+): Promise<void> {
+	await queueSlackInventorySync(INVENTORY_REASON, organizationId);
 }
 
-export async function requestStaleSlackInventorySync(): Promise<void> {
+export async function requestStaleSlackInventorySync(
+	organizationId: string,
+): Promise<void> {
 	try {
-		const newest = await db.slackChannel.findFirst({
-			orderBy: { updatedAt: "desc" },
-			select: { updatedAt: true },
-		});
+		const newest = await scopedTransaction((tx) =>
+			tx.slackChannel.findFirst({
+				orderBy: { updatedAt: "desc" },
+				select: { updatedAt: true },
+			}),
+		);
 		const fresh =
 			newest !== null &&
 			Date.now() - newest.updatedAt.getTime() < SLACK.inventory.staleMs;
@@ -66,10 +71,12 @@ export async function requestStaleSlackInventorySync(): Promise<void> {
 		return;
 	}
 
-	await requestSlackInventorySync();
+	await requestSlackInventorySync(organizationId);
 }
 
-export async function runSlackPeopleMatch(): Promise<string> {
+export async function runSlackPeopleMatch(
+	organizationId: string,
+): Promise<string> {
 	const accessToken = await slackAccessToken();
 	if (!accessToken) return "Slack is not connected.";
 
@@ -87,47 +94,53 @@ export async function runSlackPeopleMatch(): Promise<string> {
 			return email ? [[email, member] as const] : [];
 		}),
 	);
-	const crmMembers = await db.member.findMany({
-		where: { organizationId: WORKSPACE_ID },
-		select: {
-			user: {
-				select: {
-					id: true,
-					email: true,
+	const matched = await scopedTransaction(async (tx) => {
+		const crmMembers = await tx.member.findMany({
+			where: { organizationId },
+			select: {
+				user: {
+					select: {
+						id: true,
+						email: true,
+					},
 				},
 			},
-		},
-	});
-
-	let matched = 0;
-	for (const { user } of crmMembers) {
-		const slack = byEmail.get(user.email.trim().toLowerCase());
-		const slackHandle = slack ? `@${slack.name ?? slack.id}` : null;
-		await db.slackMemberMatch.upsert({
-			where: { crmUserId: user.id },
-			create: {
-				crmUserId: user.id,
-				slackUserId: slack?.id,
-				slackHandle,
-				slackEmail: slack?.profile?.email,
-			},
-			update: {
-				slackUserId: slack?.id ?? null,
-				slackHandle,
-				slackEmail: slack?.profile?.email ?? null,
-			},
 		});
-		if (slack) matched += 1;
-	}
+
+		let count = 0;
+		for (const { user } of crmMembers) {
+			const slack = byEmail.get(user.email.trim().toLowerCase());
+			const slackHandle = slack ? `@${slack.name ?? slack.id}` : null;
+			await tx.slackMemberMatch.upsert({
+				where: { crmUserId: user.id },
+				create: {
+					crmUserId: user.id,
+					slackUserId: slack?.id,
+					slackHandle,
+					slackEmail: slack?.profile?.email,
+				},
+				update: {
+					slackUserId: slack?.id ?? null,
+					slackHandle,
+					slackEmail: slack?.profile?.email ?? null,
+				},
+			});
+			if (slack) count += 1;
+		}
+		return count;
+	});
 
 	const availableChannels = await persistSlackChannels(
 		slackChannels,
 		Boolean(userToken),
+		organizationId,
 	);
 	return `Matched ${matched} workspace ${matched === 1 ? "member" : "members"} by email and found ${availableChannels} available ${availableChannels === 1 ? "channel" : "channels"}.`;
 }
 
-export async function refreshSlackChannels(): Promise<number> {
+export async function refreshSlackChannels(
+	organizationId: string,
+): Promise<number> {
 	const accessToken = await slackAccessToken();
 	if (!accessToken) return 0;
 
@@ -135,6 +148,7 @@ export async function refreshSlackChannels(): Promise<number> {
 	return persistSlackChannels(
 		await visibleChannels(accessToken, userToken),
 		Boolean(userToken),
+		organizationId,
 	);
 }
 
@@ -160,6 +174,7 @@ async function visibleChannels(
 export async function persistSlackChannels(
 	channels: SlackChannel[],
 	canInviteItself: boolean,
+	_organizationId: string,
 ): Promise<number> {
 	const available = [
 		...new Map(
@@ -173,16 +188,16 @@ export async function persistSlackChannels(
 		).values(),
 	];
 
-	return db.$transaction(async (tx) => {
-		const [account] = await tx.$queryRaw<Array<{ id: string }>>`
+	return scopedTransaction(async (tx) => {
+		const [grant] = await tx.$queryRaw<Array<{ id: string }>>`
 			SELECT id
-			FROM "account"
-			WHERE "providerId" = 'slack' AND "accessToken" IS NOT NULL
+			FROM "slackWorkspaceGrant"
+			WHERE "botToken" IS NOT NULL
 			ORDER BY "updatedAt" DESC
 			LIMIT 1
 			FOR UPDATE
 		`;
-		if (!account) return 0;
+		if (!grant) return 0;
 
 		const ids = available.map((channel) => channel.id);
 		await tx.slackChannel.updateMany({

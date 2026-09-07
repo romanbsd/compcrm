@@ -1,7 +1,11 @@
 import { PRIORITY } from "@crm/db/agent-tasks";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { assertResearchPurpose } from "../lib/session-purpose";
+import {
+	assertResearchPurpose,
+	requireOrganizationId,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 import { scheduleTask } from "../lib/tasks";
 
 const MIN_DAYS = 1;
@@ -36,16 +40,20 @@ export default defineTool({
 	}),
 	async execute({ contactId, days, reason, budget }, ctx) {
 		assertResearchPurpose(ctx);
+		const organizationId = requireOrganizationId(ctx);
 		const dueAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
-		await scheduleTask({
-			contactId,
-			kind: "recheck",
-			reason,
-			dueAt,
-			budget,
-			priority: PRIORITY.recheck,
-		});
+		await runInSessionTenant(ctx, () =>
+			scheduleTask({
+				organizationId,
+				contactId,
+				kind: "recheck",
+				reason,
+				dueAt,
+				budget,
+				priority: PRIORITY.recheck,
+			}),
+		);
 
 		return { scheduled: true as const, dueAt: dueAt.toISOString(), reason };
 	},

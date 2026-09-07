@@ -1,5 +1,4 @@
 import {
-	type Db,
 	type EnrichmentStatus,
 	type Prisma,
 	Prisma as PrismaNamespace,
@@ -7,6 +6,7 @@ import {
 } from "@crm/db";
 import { OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
 import type { FieldDefinitionWithOptions } from "@crm/db/fields";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	BadRequestException,
 	ConflictException,
@@ -24,7 +24,7 @@ import {
 import { type BulkResult, requireOwner, runBulk } from "../crm/bulk";
 import { blankToNull, toCents } from "../crm/values";
 import { ConversionService } from "../currency/conversion.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { FieldsService } from "../fields/fields.service";
 import {
 	activityFacetCounts,
@@ -72,7 +72,7 @@ export class CompaniesService {
 	private readonly logger = new Logger(CompaniesService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly agent: AgentTriggerService,
 		private readonly queue: AgentQueueService,
 		private readonly favicon: FaviconService,
@@ -367,7 +367,7 @@ export class CompaniesService {
 		}
 
 		try {
-			const updated = await this.db.$transaction(async (tx) => {
+			const updated = await scopedTransaction(this.db, async (tx) => {
 				if (input.fields) {
 					await this.fields.applyValues(tx, "COMPANY", id, input.fields);
 				}
@@ -437,7 +437,7 @@ export class CompaniesService {
 		let deleted: { targets: StampTargets; name: string } | null;
 
 		try {
-			deleted = await this.db.$transaction(async (tx) => {
+			deleted = await scopedTransaction(this.db, async (tx) => {
 				const [row] = await tx.$queryRaw<Array<{ archivedAt: Date | null }>>`
 					SELECT "archivedAt" FROM company WHERE id = ${id} FOR UPDATE
 				`;

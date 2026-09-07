@@ -1,15 +1,15 @@
 import {
 	ActivityType,
-	type Db,
 	EmailDirection,
 	type MailboxSyncModel as MailboxSync,
 	type Prisma,
 	Prisma as PrismaNamespace,
 	RecordSource,
 } from "@crm/db";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
 import { ActivityStampService } from "../crm/activity-stamp.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type { SyncSource } from "./mailbox.constants";
 import {
 	MailboxMatchService,
@@ -36,7 +36,7 @@ export class ThreadWriterService {
 	private readonly logger = new Logger(ThreadWriterService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly match: MailboxMatchService,
 		private readonly stamp: ActivityStampService,
 	) {}
@@ -121,7 +121,7 @@ export class ThreadWriterService {
 		let occurredAt: Date;
 
 		try {
-			occurredAt = await this.db.$transaction(async (tx) => {
+			occurredAt = await scopedTransaction(this.db, async (tx) => {
 				const record = existing
 					? { id: existing.threadId }
 					: await tx.emailThread.upsert({

@@ -1,4 +1,5 @@
-import { db, FactStatus } from "@crm/db";
+import { FactStatus, type Prisma } from "@crm/db";
+import { forEachTenant } from "@crm/db/tenants";
 import {
 	canonicalValue,
 	type FactField,
@@ -46,9 +47,30 @@ export type BlankFactSweep = {
 export async function sweepBlankFacts(
 	options: { dry?: boolean } = {},
 ): Promise<BlankFactSweep> {
+	const combined = emptySweep();
+
+	await forEachTenant(async (_organizationId, tx) => {
+		const sweep = await sweepTenantBlankFacts(tx, options);
+		combined.scanned += sweep.scanned;
+		combined.filled += sweep.filled;
+		combined.settled += sweep.settled;
+		combined.waiting += sweep.waiting;
+		combined.unscanned += sweep.unscanned;
+		combined.fills.push(...sweep.fills);
+	});
+
+	return combined;
+}
+
+async function sweepTenantBlankFacts(
+	tx: Prisma.TransactionClient,
+	options: { dry?: boolean },
+): Promise<BlankFactSweep> {
 	const [pending, proposals] = await Promise.all([
-		db.contactFact.count({ where: { status: FactStatus.PROPOSED } }),
-		db.contactFact.findMany({
+		tx.contactFact.count({
+			where: { status: FactStatus.PROPOSED },
+		}),
+		tx.contactFact.findMany({
 			where: { status: FactStatus.PROPOSED },
 			select: {
 				id: true,
@@ -63,18 +85,13 @@ export async function sweepBlankFacts(
 		}),
 	]);
 
-	const sweep: BlankFactSweep = {
-		scanned: proposals.length,
-		filled: 0,
-		settled: 0,
-		waiting: 0,
-		unscanned: Math.max(0, pending - proposals.length),
-		fills: [],
-	};
+	const sweep = emptySweep();
+	sweep.scanned = proposals.length;
+	sweep.unscanned = Math.max(0, pending - proposals.length);
 
 	if (proposals.length === 0) return sweep;
 
-	const applied = await appliedValues([
+	const applied = await appliedValues(tx, [
 		...new Set(proposals.map((row) => row.contactId)),
 	]);
 
@@ -93,7 +110,7 @@ export async function sweepBlankFacts(
 			if (stale.length === 0) continue;
 
 			if (!options.dry) {
-				await db.contactFact.updateMany({
+				await tx.contactFact.updateMany({
 					where: { id: { in: stale.map((row) => row.id) } },
 					data: { status: FactStatus.SUPERSEDED, supersededAt: new Date() },
 				});
@@ -109,7 +126,7 @@ export async function sweepBlankFacts(
 		}
 
 		if (!options.dry) {
-			await fill(best.id, best.contactId, field, best.value, column);
+			await fill(tx, best.id, best.contactId, field, best.value, column);
 		}
 
 		sweep.filled += 1;
@@ -125,6 +142,17 @@ export async function sweepBlankFacts(
 	}
 
 	return sweep;
+}
+
+function emptySweep(): BlankFactSweep {
+	return {
+		scanned: 0,
+		filled: 0,
+		settled: 0,
+		waiting: 0,
+		unscanned: 0,
+		fills: [],
+	};
 }
 
 type Proposal = {
@@ -148,12 +176,13 @@ type Proposal = {
 };
 
 async function appliedValues(
+	tx: Prisma.TransactionClient,
 	contactIds: string[],
 ): Promise<Map<string, string>> {
 	const values = new Map<string, string>();
 
 	for (let start = 0; start < contactIds.length; start += 1000) {
-		const rows = await db.contactFact.findMany({
+		const rows = await tx.contactFact.findMany({
 			where: {
 				status: FactStatus.APPLIED,
 				contactId: { in: contactIds.slice(start, start + 1000) },
@@ -196,45 +225,44 @@ function redundant(group: Proposal[], value: string | null): Proposal[] {
 }
 
 async function fill(
+	tx: Prisma.TransactionClient,
 	factId: string,
 	contactId: string,
 	field: FactField,
 	value: string,
 	column: string | null,
 ): Promise<void> {
-	await db.$transaction(async (tx) => {
-		await tx.contactFact.updateMany({
-			where: {
-				contactId,
-				field,
-				id: { not: factId },
-				status: { in: [FactStatus.APPLIED, FactStatus.PROPOSED] },
-			},
-			data: { status: FactStatus.SUPERSEDED, supersededAt: new Date() },
-		});
+	await tx.contactFact.updateMany({
+		where: {
+			contactId,
+			field,
+			id: { not: factId },
+			status: { in: [FactStatus.APPLIED, FactStatus.PROPOSED] },
+		},
+		data: { status: FactStatus.SUPERSEDED, supersededAt: new Date() },
+	});
 
-		await tx.contactFact.update({
-			where: { id: factId },
-			data: { status: FactStatus.APPLIED },
-		});
+	await tx.contactFact.update({
+		where: { id: factId },
+		data: { status: FactStatus.APPLIED },
+	});
 
-		if (column) {
+	if (column) {
+		await tx.contact.update({
+			where: { id: contactId },
+			data: { [column]: value },
+		});
+	}
+
+	if (field === "name") {
+		const split = splitName(value);
+		if (split) {
 			await tx.contact.update({
 				where: { id: contactId },
-				data: { [column]: value },
+				data: { firstName: split.firstName, lastName: split.lastName },
 			});
 		}
-
-		if (field === "name") {
-			const split = splitName(value);
-			if (split) {
-				await tx.contact.update({
-					where: { id: contactId },
-					data: { firstName: split.firstName, lastName: split.lastName },
-				});
-			}
-		}
-	});
+	}
 }
 
 function key(contactId: string, field: string): string {

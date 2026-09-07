@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import {
 	type AgentManifest,
 	InvalidAgentManifest,

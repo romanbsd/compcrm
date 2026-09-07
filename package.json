@@ -19,6 +19,7 @@
 		"db:generate": "turbo run db:generate",
 		"db:migrate": "turbo run db:migrate",
 		"db:push": "turbo run db:push",
+		"db:rehearse": "bun run --filter=@crm/db db:rehearse",
 		"db:reset": "turbo run db:reset",
 		"db:seed": "turbo run db:seed",
 		"db:studio": "turbo run db:studio",

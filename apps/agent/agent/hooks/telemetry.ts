@@ -1,8 +1,9 @@
-import { db } from "@crm/db";
 import { readAgentModel } from "@crm/db/settings";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import { agentError, modelError } from "@crm/telemetry";
 import { defineHook } from "eve/hooks";
 import { z } from "zod";
+import { runInSessionTenant } from "../lib/session-purpose";
 
 type SessionPrincipal = {
 	readonly attributes?: Readonly<Record<string, string | readonly string[]>>;
@@ -10,18 +11,16 @@ type SessionPrincipal = {
 
 const attributeText = z.string().trim().min(1).nullable().catch(null);
 
-let modelId: string | null = null;
-
-async function configuredModel(): Promise<string | null> {
-	if (modelId) return modelId;
-
+async function configuredModel(
+	ctx: Parameters<typeof runInSessionTenant>[0],
+): Promise<string | null> {
 	try {
-		modelId = (await readAgentModel(db)).id;
+		return await runInSessionTenant(ctx, () =>
+			scopedTransaction(async (tx) => (await readAgentModel(tx)).id),
+		);
 	} catch {
-		modelId = null;
+		return null;
 	}
-
-	return modelId;
 }
 
 const MODEL_CODES = [
@@ -73,12 +72,12 @@ export default defineHook({
 			});
 		},
 
-		async "step.failed"(event) {
+		async "step.failed"(event, ctx) {
 			if (!looksLikeModel(event.data.code)) return;
 
 			modelError({
 				error: event.data.code,
-				modelId: await configuredModel(),
+				modelId: await configuredModel(ctx),
 			});
 		},
 	},

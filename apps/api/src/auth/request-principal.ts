@@ -8,6 +8,7 @@ export type RequestPrincipal = {
 	clientId: string | null;
 	scopes: ReadonlySet<string>;
 	session: Session | null;
+	organizationId: string | null;
 	expiresAt: Date | null;
 };
 

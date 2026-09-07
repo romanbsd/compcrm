@@ -1,18 +1,19 @@
 import { randomBytes } from "node:crypto";
-import { WORKSPACE_ID } from "@crm/auth";
-import type { Db, Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	ForbiddenException,
 	Injectable,
 	NotFoundException,
 } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { builderMessageWithAttachments } from "./conversation-attachments";
 import { conversationShareTokenHash } from "./conversation-share-token";
 
 @Injectable()
 export class ConversationSharingService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async status(conversationId: string, userId: string) {
 		await this.ownedBuilder(conversationId, userId);
@@ -37,7 +38,7 @@ export class ConversationSharingService {
 		const token = randomBytes(32).toString("base64url");
 		const tokenHash = conversationShareTokenHash(token);
 
-		const created = await this.db.$transaction(async (tx) => {
+		const created = await scopedTransaction(this.db, async (tx) => {
 			if (!(await this.lockOwnedBuilder(tx, conversationId, userId))) {
 				return false;
 			}
@@ -59,7 +60,7 @@ export class ConversationSharingService {
 	}
 
 	async revoke(conversationId: string, userId: string) {
-		const revoked = await this.db.$transaction(async (tx) => {
+		const revoked = await scopedTransaction(this.db, async (tx) => {
 			if (!(await this.lockOwnedBuilder(tx, conversationId, userId))) {
 				return false;
 			}
@@ -225,7 +226,10 @@ export class ConversationSharingService {
 	private async assertWorkspaceMember(userId: string): Promise<void> {
 		const member = await this.db.member.findUnique({
 			where: {
-				organizationId_userId: { organizationId: WORKSPACE_ID, userId },
+				organizationId_userId: {
+					organizationId: currentOrganizationId(),
+					userId,
+				},
 			},
 			select: { id: true },
 		});

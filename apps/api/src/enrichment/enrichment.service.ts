@@ -1,7 +1,8 @@
-import type { Db, Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { ENRICHMENT_PAGE, pageSize } from "@crm/validation/enrichment-queue";
 import { Injectable } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import {
 	type EnrichmentQueueState,
 	enrichmentDueLabel,
@@ -71,7 +72,7 @@ type QueuedTask = {
 
 @Injectable()
 export class EnrichmentService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async queue(limit: number = ENRICHMENT_PAGE): Promise<EnrichmentQueue> {
 		const take = pageSize(limit);

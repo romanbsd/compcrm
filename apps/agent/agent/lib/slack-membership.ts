@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { schemas } from "@crm/validation";
 import { z } from "zod";
 import { SLACK } from "./slack-config";
@@ -103,6 +103,7 @@ async function classifyChannel(
 	channelId: string,
 	cached: ChannelState,
 	token: string,
+	organizationId: string,
 ): Promise<ChannelState> {
 	const live = await liveChannelState(token, channelId);
 	if (!live) return cached;
@@ -113,21 +114,22 @@ async function classifyChannel(
 		return live;
 	}
 
-	await db.slackChannel
+	await scopedDb.slackChannel
 		.update({
 			where: { id: channelId },
 			data: { ...live, classifiedAt: new Date() },
 		})
 		.catch(() => null);
-	await requestSlackInventorySync();
+	await requestSlackInventorySync(organizationId);
 
 	return live;
 }
 
 export async function joinSlackChannel(
+	organizationId: string,
 	channelId: string,
 ): Promise<JoinOutcome> {
-	const channel = await db.slackChannel.findUnique({
+	const channel = await scopedDb.slackChannel.findUnique({
 		where: { id: channelId },
 		select: { id: true, isPrivate: true, isMember: true },
 	});
@@ -149,6 +151,7 @@ export async function joinSlackChannel(
 		channelId,
 		{ isPrivate: channel.isPrivate, isMember: channel.isMember },
 		bot,
+		organizationId,
 	);
 	if (state.isMember) return { joined: true, already: true };
 
@@ -164,7 +167,7 @@ export async function joinSlackChannel(
 		};
 	}
 
-	await db.slackChannel.update({
+	await scopedDb.slackChannel.update({
 		where: { id: channelId },
 		data: {
 			isMember: true,
@@ -223,6 +226,7 @@ function explain(error: string): string {
 }
 
 export async function createSlackChannel(
+	organizationId: string,
 	name: string,
 	isPrivate: boolean,
 ): Promise<{ id: string; name: string } | { error: string }> {
@@ -258,10 +262,11 @@ export async function createSlackChannel(
 
 	const channel = parsed.data.channel;
 
-	await db.slackChannel.upsert({
+	await scopedDb.slackChannel.upsert({
 		where: { id: channel.id },
 		create: {
 			id: channel.id,
+			organizationId,
 			name: channel.name,
 			isPrivate,
 			isMember: !isPrivate && token === bot,
@@ -276,7 +281,7 @@ export async function createSlackChannel(
 		},
 	});
 
-	if (token === user) await joinSlackChannel(channel.id);
+	if (token === user) await joinSlackChannel(organizationId, channel.id);
 
 	return channel;
 }

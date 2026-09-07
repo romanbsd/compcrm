@@ -2,6 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { personForVerification, stampSocialsChecked } from "../lib/crm";
 import { focusOn, spend } from "../lib/focus";
+import { runInSessionTenant } from "../lib/session-purpose";
 import { findSocialCandidates } from "../lib/socials";
 
 export default defineTool({
@@ -10,33 +11,36 @@ export default defineTool({
 	inputSchema: z.object({
 		contactId: z.string(),
 	}),
-	async execute({ contactId }) {
-		focusOn({ contactId });
+	async execute({ contactId }, ctx) {
+		return runInSessionTenant(ctx, async () => {
+			focusOn({ contactId });
 
-		const person = await personForVerification(contactId);
-		if (!person) {
-			return { searched: false as const, reason: "No such contact." };
-		}
+			const person = await personForVerification(contactId);
+			if (!person) {
+				return { searched: false as const, reason: "No such contact." };
+			}
 
-		const charge = spend(2);
-		if (!charge.ok) return { searched: false as const, reason: charge.reason };
+			const charge = spend(2);
+			if (!charge.ok)
+				return { searched: false as const, reason: charge.reason };
 
-		const [x, github] = await Promise.all([
-			findSocialCandidates(person, "x"),
-			findSocialCandidates(person, "github"),
-		]);
+			const [x, github] = await Promise.all([
+				findSocialCandidates(person, "x"),
+				findSocialCandidates(person, "github"),
+			]);
 
-		await stampSocialsChecked(contactId);
+			await stampSocialsChecked(contactId);
 
-		return {
-			searched: true as const,
-			searchedFor: person.fullName,
-			candidates: {
-				x: x.candidates.map((c) => c.url),
-				github: github.candidates.map((c) => c.url),
-			},
-			citations: [...x.citations, ...github.citations],
-			note: "Unverified. set_contact_socials will reject any of these it cannot corroborate, and that is a normal outcome.",
-		};
+			return {
+				searched: true as const,
+				searchedFor: person.fullName,
+				candidates: {
+					x: x.candidates.map((c) => c.url),
+					github: github.candidates.map((c) => c.url),
+				},
+				citations: [...x.citations, ...github.citations],
+				note: "Unverified. set_contact_socials will reject any of these it cannot corroborate, and that is a normal outcome.",
+			};
+		});
 	},
 });

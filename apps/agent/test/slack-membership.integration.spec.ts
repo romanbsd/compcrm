@@ -1,12 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { joinSlackChannel } from "../agent/lib/slack-membership";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const USER_ID = "slack-join-spec-user";
 const ACCOUNT_ID = "slack-join-spec-account";
 const CHANNEL_ID = "CJOINSPEC1";
 const GRANT_ID = "slack-join-spec-grant";
 const INVENTORY_KIND = "slack-people-match";
+const ORGANIZATION_ID = "workspace";
+const it = tenantTest(ORGANIZATION_ID);
+const beforeEach = tenantBeforeEach(ORGANIZATION_ID);
+const afterEach = tenantAfterEach(ORGANIZATION_ID);
 
 const realFetch = globalThis.fetch;
 
@@ -32,6 +38,30 @@ async function connect() {
 		},
 		update: { accessToken: "xoxb-join-spec" },
 	});
+	await db.slackWorkspaceGrant.upsert({
+		where: {
+			organizationId_teamId: {
+				organizationId: ORGANIZATION_ID,
+				teamId: "T-JOIN-SPEC",
+			},
+		},
+		create: {
+			id: GRANT_ID,
+			organizationId: ORGANIZATION_ID,
+			teamId: "T-JOIN-SPEC",
+			botToken: "xoxb-join-spec",
+			botScopes: "channels:read",
+			userToken: "xoxp-join-spec",
+			userScopes: "groups:write",
+		},
+		update: {
+			organizationId: ORGANIZATION_ID,
+			botToken: "xoxb-join-spec",
+			botScopes: "channels:read",
+			userToken: "xoxp-join-spec",
+			userScopes: "groups:write",
+		},
+	});
 }
 
 function answers(error: string) {
@@ -56,6 +86,16 @@ function replies(reply: (url: string) => object) {
 let inventoryTaskIds: string[] = [];
 
 beforeEach(async () => {
+	await db.organization.upsert({
+		where: { id: ORGANIZATION_ID },
+		create: {
+			id: ORGANIZATION_ID,
+			name: "Workspace",
+			slug: "workspace",
+			createdAt: new Date(),
+		},
+		update: {},
+	});
 	requested.length = 0;
 	inventoryTaskIds = (
 		await db.agentTask.findMany({
@@ -68,6 +108,7 @@ beforeEach(async () => {
 	await db.slackChannel.create({
 		data: {
 			id: CHANNEL_ID,
+			organizationId: ORGANIZATION_ID,
 			name: "join-spec",
 			isPrivate: false,
 			isMember: false,
@@ -91,7 +132,9 @@ describe("joining a Slack channel", () => {
 	it("does not claim membership of an archived channel", async () => {
 		answers("is_archived");
 
-		const outcome = await joinSlackChannel(CHANNEL_ID);
+		const outcome = await runInTenant(ORGANIZATION_ID, () =>
+			joinSlackChannel(ORGANIZATION_ID, CHANNEL_ID),
+		);
 
 		expect(outcome.joined).toBe(false);
 		expect(outcome).toMatchObject({ needsHuman: true });
@@ -110,7 +153,9 @@ describe("joining a Slack channel", () => {
 				: { ok: false, error: "method_not_supported_for_channel_type" },
 		);
 
-		const outcome = await joinSlackChannel(CHANNEL_ID);
+		const outcome = await runInTenant(ORGANIZATION_ID, () =>
+			joinSlackChannel(ORGANIZATION_ID, CHANNEL_ID),
+		);
 
 		expect(outcome).toEqual({ joined: true, already: true });
 		expect(requested.some((url) => url.includes("conversations.join"))).toBe(
@@ -130,14 +175,6 @@ describe("joining a Slack channel", () => {
 	});
 
 	it("invites itself to a private channel a stale row calls public", async () => {
-		await db.slackWorkspaceGrant.create({
-			data: {
-				id: GRANT_ID,
-				teamId: "T-JOIN-SPEC",
-				userToken: "xoxp-join-spec",
-				userScopes: "groups:write",
-			},
-		});
 		replies((url) => {
 			if (url.includes("conversations.info")) {
 				return { ok: false, error: "channel_not_found" };
@@ -146,7 +183,9 @@ describe("joining a Slack channel", () => {
 			return { ok: true };
 		});
 
-		const outcome = await joinSlackChannel(CHANNEL_ID);
+		const outcome = await runInTenant(ORGANIZATION_ID, () =>
+			joinSlackChannel(ORGANIZATION_ID, CHANNEL_ID),
+		);
 
 		expect(outcome).toEqual({ joined: true, already: false });
 		expect(requested.some((url) => url.includes("conversations.invite"))).toBe(
@@ -166,7 +205,9 @@ describe("joining a Slack channel", () => {
 	it("accepts a channel Slack says it is already in", async () => {
 		answers("already_in_channel");
 
-		const outcome = await joinSlackChannel(CHANNEL_ID);
+		const outcome = await runInTenant(ORGANIZATION_ID, () =>
+			joinSlackChannel(ORGANIZATION_ID, CHANNEL_ID),
+		);
 
 		expect(outcome).toEqual({ joined: true, already: true });
 

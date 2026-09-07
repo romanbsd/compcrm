@@ -42,11 +42,28 @@ function answerWith(body: GateResponse, status = 200) {
 	stub(async () => json(body, status));
 }
 
-const workspace = (data: {
+function workspace({
+	onboarded,
+	canRename,
+	slug = SLUG,
+	hasOrganization = true,
+}: {
 	onboarded: boolean;
 	canRename: boolean;
-	slug?: string;
-}) => ({ result: { data: { slug: SLUG, ...data } } });
+	slug?: string | null;
+	hasOrganization?: boolean;
+}) {
+	return {
+		result: {
+			data: {
+				organizationId: hasOrganization ? "org-1" : null,
+				slug: hasOrganization ? slug : null,
+				onboarded: hasOrganization ? onboarded : null,
+				canRename: hasOrganization ? canRename : null,
+			},
+		},
+	};
+}
 
 const researchKey = (configured: boolean) => ({
 	result: { data: { configured, hint: configured ? "••••9876" : null } },
@@ -58,18 +75,20 @@ function setup({
 	canRename = true,
 	configured = true,
 	slug = SLUG,
+	hasOrganization = true,
 }: {
 	onboarded?: boolean;
 	canRename?: boolean;
 	configured?: boolean;
-	slug?: string;
+	slug?: string | null;
+	hasOrganization?: boolean;
 } = {}) {
 	const calls = { workspace: 0, research: 0 };
 
 	stub(async (url) => {
-		if (url.includes("workspace.get")) {
+		if (url.includes("workspace.gate")) {
 			calls.workspace += 1;
-			return json(workspace({ onboarded, canRename, slug }));
+			return json(workspace({ onboarded, canRename, slug, hasOrganization }));
 		}
 
 		calls.research += 1;
@@ -114,6 +133,23 @@ describe("readWorkspaceGate", () => {
 		expect(await readWorkspaceGate(request("/", [SESSION_COOKIE]))).toEqual({
 			gate: "settled",
 			slug: SLUG,
+			hasOrganization: true,
+		});
+	});
+
+	it("marks a signed-in user with no organization", async () => {
+		answerWith(
+			workspace({
+				onboarded: false,
+				canRename: false,
+				hasOrganization: false,
+			}),
+		);
+
+		expect(await readWorkspaceGate(request("/", [SESSION_COOKIE]))).toEqual({
+			gate: "unknown",
+			slug: null,
+			hasOrganization: false,
 		});
 	});
 
@@ -244,6 +280,14 @@ describe("proxy", () => {
 		expect(calls).toEqual({ workspace: 2, research: 2 });
 	});
 
+	it("sends a user with no organization to the no-organization page", async () => {
+		setup({ hasOrganization: false });
+
+		expect(
+			redirectedTo(await proxy(request("/companies", [SESSION_COOKIE]))),
+		).toBe("/no-organization");
+	});
+
 	it("notices when the answer changes underneath it", async () => {
 		setup();
 		expect(
@@ -326,7 +370,7 @@ describe("the slug the app is served under", () => {
 		);
 	});
 
-	it("moves a stale slug onto the current one, keeping the rest", async () => {
+	it("drops the stale first segment of a path from another organization", async () => {
 		setup();
 
 		expect(

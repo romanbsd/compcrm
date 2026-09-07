@@ -4,7 +4,11 @@ import {
 	BUILDER_CONVERSATION_TITLE_MAX_LENGTH,
 	setBuilderConversationTitle,
 } from "../lib/conversation-title";
-import { purposeOf, requireAttribute } from "../lib/session-purpose";
+import {
+	purposeOf,
+	requireAttribute,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -17,10 +21,12 @@ export default defineTool({
 			throw new Error("Chat titles can only be set in builder conversations.");
 		}
 
-		return setBuilderConversationTitle(
-			requireAttribute(ctx, "conversationId"),
-			requireAttribute(ctx, "userId"),
-			title,
+		return runInSessionTenant(ctx, () =>
+			setBuilderConversationTitle(
+				requireAttribute(ctx, "conversationId"),
+				requireAttribute(ctx, "userId"),
+				title,
+			),
 		);
 	},
 });

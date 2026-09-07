@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { runSsoRequestInTenant } from "@crm/auth";
 import { Injectable, Logger, type NestMiddleware } from "@nestjs/common";
 import type { NextFunction, Request, Response } from "express";
 import { type RequestContext, runInRequestContext } from "./request-context";
@@ -93,8 +94,15 @@ export function logAuthRoute(
 	request: Request,
 	response: Response,
 	next: NextFunction,
-): void {
-	sharedInstance.use(request, response, next);
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		sharedInstance.use(request, response, () => {
+			Promise.resolve(runSsoRequestInTenant(request, () => next())).then(
+				() => resolve(),
+				reject,
+			);
+		});
+	});
 }
 
 function sessionUserId(request: Request): string | undefined {

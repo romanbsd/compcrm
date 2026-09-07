@@ -1,4 +1,5 @@
 import { type Db, db } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import {
 	Global,
 	Logger,
@@ -6,12 +7,19 @@ import {
 	type OnApplicationShutdown,
 	type OnModuleInit,
 } from "@nestjs/common";
-import { DATABASE, InjectDatabase } from "./database.constants";
+import {
+	DATABASE,
+	InjectDatabase,
+	SCOPED_DATABASE,
+} from "./database.constants";
 
 @Global()
 @Module({
-	providers: [{ provide: DATABASE, useValue: db }],
-	exports: [DATABASE],
+	providers: [
+		{ provide: DATABASE, useValue: db },
+		{ provide: SCOPED_DATABASE, useValue: scopedDb },
+	],
+	exports: [DATABASE, SCOPED_DATABASE],
 })
 export class DatabaseModule implements OnModuleInit, OnApplicationShutdown {
 	private readonly logger = new Logger(DatabaseModule.name);

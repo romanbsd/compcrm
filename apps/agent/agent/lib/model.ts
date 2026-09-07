@@ -1,5 +1,5 @@
-import { db } from "@crm/db";
 import { readAgentModel } from "@crm/db/settings";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 
 export interface ModelSelection {
 	model: string;
@@ -8,7 +8,7 @@ export interface ModelSelection {
 
 export async function selectedModel(): Promise<ModelSelection | null> {
 	try {
-		const setting = await readAgentModel(db);
+		const setting = await scopedTransaction((tx) => readAgentModel(tx));
 
 		if (setting.isDefault) return null;
 

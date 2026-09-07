@@ -2,6 +2,7 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { readCrmHistory } from "../lib/crm";
 import { focusOn } from "../lib/focus";
+import { runInSessionTenant } from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -16,25 +17,28 @@ export default defineTool({
 			.default(5)
 			.describe("How many recent threads to read."),
 	}),
-	async execute({ contactId, threads }) {
-		focusOn({ contactId });
+	async execute({ contactId, threads }, ctx) {
+		return runInSessionTenant(ctx, async () => {
+			focusOn({ contactId });
 
-		const history = await readCrmHistory(contactId, { threads });
-		if (!history) return { found: false as const, reason: "No such contact." };
+			const history = await readCrmHistory(contactId, { threads });
+			if (!history)
+				return { found: false as const, reason: "No such contact." };
 
-		const evidence =
-			history.stats.emails === 0 && history.stats.meetings === 0
-				? "We have never actually spoken to this person. Nothing here is evidence of anything."
-				: "A signature block or a reply from their own address is primary evidence — record it as `crm.signature-block` or `crm.thread-reply`.";
+			const evidence =
+				history.stats.emails === 0 && history.stats.meetings === 0
+					? "We have never actually spoken to this person. Nothing here is evidence of anything."
+					: "A signature block or a reply from their own address is primary evidence — record it as `crm.signature-block` or `crm.thread-reply`.";
 
-		const reach = history.contact.company
-			? ` Their company is \`${history.contact.company.id}\` — read_company_history or enrich_company take that id directly.`
-			: " They are not attached to a company; search_crm will find one by name or domain if the question needs it.";
+			const reach = history.contact.company
+				? ` Their company is \`${history.contact.company.id}\` — read_company_history or enrich_company take that id directly.`
+				: " They are not attached to a company; search_crm will find one by name or domain if the question needs it.";
 
-		return {
-			found: true as const,
-			...history,
-			note: evidence + reach,
-		};
+			return {
+				found: true as const,
+				...history,
+				note: evidence + reach,
+			};
+		});
 	},
 });

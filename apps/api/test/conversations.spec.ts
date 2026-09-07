@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { DEFAULT_WORKSPACE_NAME, WORKSPACE_ID } from "@crm/auth";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { db } from "@crm/db";
-import { workspaceSlug } from "@crm/db/workspace";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { z } from "zod";
 import {
 	builderConversationCreateInput,
@@ -9,6 +9,8 @@ import {
 	conversationSaveInput,
 } from "../src/conversations/conversations.contracts";
 import { ConversationsService } from "../src/conversations/conversations.service";
+import { tenantBound, tenantTest } from "@crm/db/test-support";
+import { createTestMembers, ensureTestWorkspace } from "./workspace.fixture";
 
 const record = z.record(z.string(), z.unknown()).catch({});
 
@@ -20,69 +22,65 @@ const suffix = process.env.TEST_RUN_ID ?? "conversations-spec";
 const email = `conversation.subject.${suffix}@example.test`;
 const userId = `user-${suffix}`;
 const memberId = `conversation-member-${suffix}`;
+const WORKSPACE_ID = "conversations-spec-workspace";
+const it = tenantTest(WORKSPACE_ID);
+const DEFAULT_WORKSPACE_NAME = "Conversations Spec Workspace";
 
 let contactId: string;
 let service: ConversationsService;
 
-beforeAll(async () => {
-	await db.agentEvent.deleteMany({
-		where: {
-			OR: [
-				{ sessionId: { startsWith: `builder-question-${suffix}` } },
-				{ sessionId: { startsWith: `ses_${suffix}` } },
-			],
-		},
-	});
-	await db.agentConversation.deleteMany({ where: { userId } });
-	await db.member.deleteMany({ where: { id: memberId } });
-	await db.user.deleteMany({ where: { id: userId } });
-	await db.contact.deleteMany({ where: { email } });
-	await db.organization.upsert({
-		where: { id: WORKSPACE_ID },
-		update: {},
-		create: {
-			id: WORKSPACE_ID,
-			name: DEFAULT_WORKSPACE_NAME,
-			slug: workspaceSlug(DEFAULT_WORKSPACE_NAME),
-			createdAt: new Date(),
-		},
-	});
+beforeAll(() =>
+	runInTenant(WORKSPACE_ID, async () => {
+		await scopedDb.agentEvent.deleteMany({
+			where: {
+				OR: [
+					{ sessionId: { startsWith: `builder-question-${suffix}` } },
+					{ sessionId: { startsWith: `ses_${suffix}` } },
+				],
+			},
+		});
+		await scopedDb.agentConversation.deleteMany({ where: { userId } });
+		await db.member.deleteMany({ where: { id: memberId } });
+		await db.user.deleteMany({ where: { id: userId } });
+		await scopedDb.contact.deleteMany({ where: { email } });
+		await ensureTestWorkspace(WORKSPACE_ID, DEFAULT_WORKSPACE_NAME);
 
-	await db.user.create({
-		data: { id: userId, name: "Test Rep", email: `${userId}@example.test` },
-	});
-	await db.member.create({
-		data: {
-			id: memberId,
-			organizationId: WORKSPACE_ID,
-			userId,
-			role: "member",
-			createdAt: new Date(),
-		},
-	});
-	const contact = await db.contact.create({
-		data: { firstName: "Conversation", lastName: "Subject", email },
-		select: { id: true },
-	});
-	contactId = contact.id;
+		await db.user.create({
+			data: { id: userId, name: "Test Rep", email: `${userId}@example.test` },
+		});
+		await createTestMembers(WORKSPACE_ID, [{ id: memberId, userId }]);
+		const contact = await scopedDb.contact.create({
+			data: {
+				organizationId: WORKSPACE_ID,
+				firstName: "Conversation",
+				lastName: "Subject",
+				email,
+			},
+			select: { id: true },
+		});
+		contactId = contact.id;
 
-	service = new ConversationsService(db);
-});
+		const rawService = new ConversationsService(scopedDb as never);
+		service = tenantBound(WORKSPACE_ID, rawService);
+	}),
+);
 
-afterAll(async () => {
-	await db.agentEvent.deleteMany({
-		where: {
-			OR: [
-				{ sessionId: { startsWith: `builder-question-${suffix}` } },
-				{ sessionId: { startsWith: `ses_${suffix}` } },
-			],
-		},
-	});
-	await db.contact.deleteMany({ where: { email } });
-	await db.agentConversation.deleteMany({ where: { userId } });
-	await db.member.deleteMany({ where: { id: memberId } });
-	await db.user.deleteMany({ where: { id: userId } });
-});
+afterAll(() =>
+	runInTenant(WORKSPACE_ID, async () => {
+		await scopedDb.agentEvent.deleteMany({
+			where: {
+				OR: [
+					{ sessionId: { startsWith: `builder-question-${suffix}` } },
+					{ sessionId: { startsWith: `ses_${suffix}` } },
+				],
+			},
+		});
+		await scopedDb.contact.deleteMany({ where: { email } });
+		await scopedDb.agentConversation.deleteMany({ where: { userId } });
+		await db.member.deleteMany({ where: { id: memberId } });
+		await db.user.deleteMany({ where: { id: userId } });
+	}),
+);
 
 describe("ConversationsService", () => {
 	it("starts a record with no history", async () => {
@@ -205,7 +203,7 @@ describe("ConversationsService", () => {
 		expect(ownershipError).toBeDefined();
 
 		expect(
-			await db.agentConversation.findUnique({
+			await scopedDb.agentConversation.findUnique({
 				where: { sessionId },
 				select: { continuationToken: true, streamIndex: true },
 			}),
@@ -235,7 +233,9 @@ describe("ConversationsService", () => {
 		);
 
 		expect(new Set(results.map((result) => result.id)).size).toBe(1);
-		expect(await db.agentConversation.count({ where: { sessionId } })).toBe(1);
+		expect(
+			await scopedDb.agentConversation.count({ where: { sessionId } }),
+		).toBe(1);
 	});
 
 	it("does not treat a builder session as a record conversation", async () => {
@@ -250,7 +250,7 @@ describe("ConversationsService", () => {
 			userId,
 		);
 		const sessionId = `ses_${suffix}_builder`;
-		await db.agentConversation.update({
+		await scopedDb.agentConversation.update({
 			where: { id: builder.id },
 			data: { sessionId },
 		});
@@ -263,7 +263,7 @@ describe("ConversationsService", () => {
 		}
 		expect(saveError).toBeDefined();
 		expect(
-			await db.agentConversation.findUnique({
+			await scopedDb.agentConversation.findUnique({
 				where: { id: builder.id },
 				select: { kind: true, contactId: true },
 			}),
@@ -274,8 +274,9 @@ describe("ConversationsService", () => {
 		const sessionId = `ses_${suffix}_events`;
 		const saved = await service.save({ contactId, sessionId }, userId);
 		const emittedAt = new Date("2026-08-05T12:00:00.000Z");
-		await db.agentEvent.createMany({
+		await scopedDb.agentEvent.createMany({
 			data: [0, 1, 2, 3].map((position) => ({
+				organizationId: WORKSPACE_ID,
 				id: `evt_${suffix}_window_${position}`,
 				sessionId,
 				contactId,
@@ -304,14 +305,15 @@ describe("ConversationsService", () => {
 			userId,
 		);
 		const rootSessionId = `builder-question-${suffix}-root`;
-		await db.agentConversation.update({
+		await scopedDb.agentConversation.update({
 			where: { id: builder.id },
 			data: { sessionId: rootSessionId },
 		});
 		const emittedAt = new Date("2026-08-05T13:00:00.000Z");
-		await db.agentEvent.createMany({
+		await scopedDb.agentEvent.createMany({
 			data: [
 				{
+					organizationId: WORKSPACE_ID,
 					id: `evt_${suffix}_builder_root`,
 					sessionId: rootSessionId,
 					conversationId: builder.id,
@@ -320,6 +322,7 @@ describe("ConversationsService", () => {
 					emittedAt,
 				},
 				{
+					organizationId: WORKSPACE_ID,
 					id: `evt_${suffix}_builder_child`,
 					sessionId: `builder-question-${suffix}-child`,
 					conversationId: builder.id,
@@ -341,8 +344,9 @@ describe("ConversationsService", () => {
 		const sessionId = `ses_${suffix}_delete`;
 		const conversation = await service.save({ contactId, sessionId }, userId);
 
-		await db.agentEvent.create({
+		await scopedDb.agentEvent.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				id: `evt_${suffix}`,
 				sessionId,
 				contactId,
@@ -351,8 +355,9 @@ describe("ConversationsService", () => {
 				emittedAt: new Date(),
 			},
 		});
-		await db.agentBuilderArtifact.create({
+		await scopedDb.agentBuilderArtifact.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				conversationId: conversation.id,
 				path: "agent/instructions.md",
 				language: "markdown",
@@ -364,15 +369,17 @@ describe("ConversationsService", () => {
 		await service.remove(conversation.id, userId);
 
 		expect(
-			await db.agentConversation.findUnique({ where: { id: conversation.id } }),
+			await scopedDb.agentConversation.findUnique({
+				where: { id: conversation.id },
+			}),
 		).toBeNull();
 		expect(
-			await db.agentEvent.count({
+			await scopedDb.agentEvent.count({
 				where: { sessionId },
 			}),
 		).toBe(0);
 		expect(
-			await db.agentBuilderArtifact.count({
+			await scopedDb.agentBuilderArtifact.count({
 				where: { conversationId: conversation.id },
 			}),
 		).toBe(0);
@@ -392,7 +399,9 @@ describe("ConversationsService", () => {
 		}
 		expect(removeError).toBeDefined();
 		expect(
-			await db.agentConversation.findUnique({ where: { id: conversation.id } }),
+			await scopedDb.agentConversation.findUnique({
+				where: { id: conversation.id },
+			}),
 		).not.toBeNull();
 	});
 
@@ -639,7 +648,7 @@ describe("ConversationsService", () => {
 
 		expect(new Set(results.map((result) => result.id)).size).toBe(1);
 		expect(
-			await db.agentConversationSubmission.count({
+			await scopedDb.agentConversationSubmission.count({
 				where: { clientRequestId },
 			}),
 		).toBe(1);
@@ -675,7 +684,7 @@ describe("ConversationsService", () => {
 
 		expect(new Set(results.map((result) => result.id)).size).toBe(1);
 		expect(
-			await db.agentConversationSubmission.count({
+			await scopedDb.agentConversationSubmission.count({
 				where: { clientRequestId },
 			}),
 		).toBe(1);
@@ -693,7 +702,7 @@ describe("ConversationsService", () => {
 			userId,
 		);
 		const sessionId = `builder-question-${suffix}-1`;
-		await db.agentConversation.update({
+		await scopedDb.agentConversation.update({
 			where: { id: conversation.id },
 			data: {
 				sessionId,
@@ -724,7 +733,7 @@ describe("ConversationsService", () => {
 			},
 			userId,
 		);
-		const submission = await db.agentConversationSubmission.findUnique({
+		const submission = await scopedDb.agentConversationSubmission.findUnique({
 			where: { id: response.id },
 			select: {
 				commandType: true,
@@ -759,7 +768,7 @@ describe("ConversationsService", () => {
 			},
 			userId,
 		);
-		await db.agentConversation.update({
+		await scopedDb.agentConversation.update({
 			where: { id: conversation.id },
 			data: {
 				sessionId: `builder-question-${suffix}-recovery`,
@@ -798,7 +807,7 @@ describe("ConversationsService", () => {
 			userId,
 		);
 		const sessionId = `builder-question-${suffix}-2`;
-		await db.agentConversation.update({
+		await scopedDb.agentConversation.update({
 			where: { id: conversation.id },
 			data: {
 				sessionId,
@@ -844,7 +853,7 @@ describe("ConversationsService", () => {
 			results.filter((result) => result.status === "rejected"),
 		).toHaveLength(1);
 		expect(
-			await db.agentConversationSubmission.count({
+			await scopedDb.agentConversationSubmission.count({
 				where: {
 					conversationId: conversation.id,
 					inputRequestId: "question-concurrent",

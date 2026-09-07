@@ -1,5 +1,5 @@
-import { db } from "@crm/db";
 import { blobEnabled, isMirrored, mirror } from "@crm/db/blob";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { CONTEXT_DEV_PEOPLE, enabled } from "./capabilities";
 import { findPortrait, type PortraitSource } from "./portrait-sources";
 
@@ -48,7 +48,7 @@ export async function storePortrait({
 		};
 	}
 
-	const contact = await db.contact.findUnique({
+	const contact = await scopedDb.contact.findUnique({
 		where: { id: contactId },
 		select: { imageUrl: true },
 	});
@@ -79,7 +79,7 @@ export async function storePortrait({
 		return { stored: false, imageUrl: stored, reason: "Unchanged." };
 	}
 
-	await db.contact.update({
+	await scopedDb.contact.update({
 		where: { id: contactId },
 		data: { imageUrl: stored },
 	});
@@ -105,7 +105,7 @@ export async function runPortrait({
 		};
 	}
 
-	const contact = await db.contact.findUnique({
+	const contact = await scopedDb.contact.findUnique({
 		where: { id: contactId },
 		select: {
 			id: true,

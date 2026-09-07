@@ -1,10 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { DealStage, db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { DealStage } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { listDeals, searchCrm } from "../agent/lib/lookup";
+import { tenantAfterAll, tenantBeforeAll, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "lookup-spec";
 const domain = `northwind-${suffix}.test`;
 const otherDomain = `brightwater-${suffix}.test`;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const afterAll = tenantAfterAll(organizationId);
 
 let northwindId: string;
 let brightwaterId: string;
@@ -30,6 +36,7 @@ beforeAll(async () => {
 
 	const northwind = await db.company.create({
 		data: {
+			organizationId,
 			name: `Northwind ${suffix}`,
 			domain,
 			iconUrl: "https://cdn.example.test/northwind-icon.png",
@@ -42,13 +49,18 @@ beforeAll(async () => {
 	northwindId = northwind.id;
 
 	const brightwater = await db.company.create({
-		data: { name: `Brightwater ${suffix}`, domain: otherDomain },
+		data: {
+			organizationId,
+			name: `Brightwater ${suffix}`,
+			domain: otherDomain,
+		},
 		select: { id: true },
 	});
 	brightwaterId = brightwater.id;
 
 	const paula = await db.contact.create({
 		data: {
+			organizationId,
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -62,6 +74,7 @@ beforeAll(async () => {
 
 	const peter = await db.contact.create({
 		data: {
+			organizationId,
 			firstName: "Peter",
 			lastName: "Marchetti",
 			title: "Controller",
@@ -74,6 +87,7 @@ beforeAll(async () => {
 
 	const deal = await db.deal.create({
 		data: {
+			organizationId,
 			name: `Northwind renewal ${suffix}`,
 			companyId: northwindId,
 			ownerId: user.id,
@@ -87,6 +101,7 @@ beforeAll(async () => {
 
 	const freshDeal = await db.deal.create({
 		data: {
+			organizationId,
 			name: `Fresh expansion ${suffix}`,
 			companyId: northwindId,
 			ownerId: user.id,
@@ -99,6 +114,7 @@ beforeAll(async () => {
 
 	const closedDeal = await db.deal.create({
 		data: {
+			organizationId,
 			name: `Closed renewal ${suffix}`,
 			companyId: brightwaterId,
 			ownerId: user.id,

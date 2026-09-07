@@ -5,8 +5,10 @@ import type { AgentAccessService } from "../src/agent/agent-access.service";
 import type { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import type { SlackChannelsService } from "../src/slack/slack-channels.service";
 import { SlackConnectionService } from "../src/slack/slack-connection.service";
+import { tenantBound } from "@crm/db/test-support";
 
 const userId = "crm-1";
+const organizationId = "workspace";
 
 function serviceFor(input: {
 	accountUpdatedAt?: Date;
@@ -37,12 +39,7 @@ function serviceFor(input: {
 		[];
 	const deleted: string[] = [];
 	const tx = {
-		account: {
-			deleteMany: async () => {
-				deleted.push("account");
-				return { count: input.accountUpdatedAt ? 1 : 0 };
-			},
-		},
+		$queryRaw: async () => [{ set_config: organizationId }],
 		slackChannel: {
 			deleteMany: async () => {
 				deleted.push("slackChannel");
@@ -50,28 +47,28 @@ function serviceFor(input: {
 			},
 		},
 		slackWorkspaceGrant: {
-			deleteMany: async () => {
+			delete: async () => {
 				deleted.push("slackWorkspaceGrant");
-				return { count: 0 };
+				return { id: "grant-1" };
 			},
 		},
 	};
 	const db = {
 		$transaction: async <T>(run: (client: typeof tx) => Promise<T>) => run(tx),
-		account: {
-			findFirst: async () =>
-				input.accountUpdatedAt
-					? {
-							id: "account-1",
-							accountId: "slack-user",
-							updatedAt: input.accountUpdatedAt,
-						}
-					: null,
-		},
 		agentDefinition: { findMany: async () => input.agents ?? [] },
 		slackMemberMatch: { findMany: async () => input.matches ?? [] },
 		slackWorkspaceGrant: {
-			findFirst: async () => (input.grant ? { id: "grant-1" } : null),
+			findFirst: async () => {
+				if (!input.accountUpdatedAt && !input.grant) return null;
+				return {
+					id: "grant-1",
+					teamName: "Test Team",
+					botToken: input.accountUpdatedAt ? "xoxb-test" : null,
+					botScopes: "chat:write",
+					userToken: input.grant ? "xoxp-test" : null,
+					updatedAt: input.accountUpdatedAt ?? new Date(),
+				};
+			},
 		},
 		member: {
 			count: async () => input.memberCount ?? 0,
@@ -91,8 +88,16 @@ function serviceFor(input: {
 		assertMember: async () => input.role ?? "member",
 	} as unknown as AgentAccessService;
 
+	const rawService = new SlackConnectionService(
+		db,
+		db as never,
+		agent,
+		channels,
+		access,
+	);
+
 	return {
-		service: new SlackConnectionService(db, agent, channels, access),
+		service: tenantBound(organizationId, rawService),
 		requested,
 		deleted,
 	};
@@ -240,6 +245,6 @@ describe("Slack connection", () => {
 		});
 
 		expect(await service.disconnect(userId)).toEqual({ disconnected: true });
-		expect(deleted).toEqual(["account", "slackChannel", "slackWorkspaceGrant"]);
+		expect(deleted).toEqual(["slackChannel", "slackWorkspaceGrant"]);
 	});
 });

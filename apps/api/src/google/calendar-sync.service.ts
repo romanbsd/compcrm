@@ -1,14 +1,14 @@
 import {
 	ActivityType,
-	type Db,
 	GoogleSyncStatus,
 	type MailboxSyncModel as MailboxSync,
 	RecordSource,
 } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
 import { ActivityStampService } from "../crm/activity-stamp.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import {
 	MailboxMatchService,
 	type MatchContext,
@@ -41,7 +41,7 @@ export class CalendarSyncService {
 	private readonly logger = new Logger(CalendarSyncService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly calendar: CalendarClient,
 		private readonly tokens: MailboxTokenService,
 		private readonly match: MailboxMatchService,

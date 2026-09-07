@@ -1,4 +1,5 @@
-import { ActivityType, db, EmailDirection } from "@crm/db";
+import { ActivityType, EmailDirection } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { z } from "zod";
 import { isDerivedName } from "./names";
 

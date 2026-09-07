@@ -1,20 +1,34 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
+import { db as globalDb } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { ConversionService } from "../src/currency/conversion.service";
 import { DealsService } from "../src/deals/deals.service";
 import { FieldsService } from "../src/fields/fields.service";
+import { tenantBound, tenantContext, tenantTest } from "@crm/db/test-support";
+import { ensureTestWorkspace } from "./workspace.fixture";
 
 const suffix = crypto.randomUUID();
 const dealId = `event-deal-${suffix}`;
 const contactId = `event-contact-${suffix}`;
 const companyId = `event-company-${suffix}`;
-const service = new AgentTriggerService(db);
-const stamp = new ActivityStampService(db);
-const conversion = new ConversionService(db);
-const fields = new FieldsService(db, service);
-const deals = new DealsService(db, service, stamp, conversion, fields);
+const organizationId = `event-organization-${suffix}`;
+const it = tenantTest(organizationId);
+const db = scopedDb;
+const rawService = new AgentTriggerService(db as never);
+const service = tenantBound(organizationId, rawService);
+const stamp = new ActivityStampService(db as never);
+const conversion = new ConversionService(db as never);
+const fields = new FieldsService(db as never, service);
+const rawDeals = new DealsService(
+	db as never,
+	service,
+	stamp,
+	conversion,
+	fields,
+);
+const deals = tenantBound(organizationId, rawDeals);
 const channelId = `event-channel-${suffix}`;
 const ownerId = `event-owner-${suffix}`;
 const domain = `event-${suffix}.example.test`;
@@ -22,55 +36,63 @@ let persistedCompanyId = "";
 let persistedDealId = "";
 let previousBridgeSecret: string | undefined;
 
-beforeAll(async () => {
-	previousBridgeSecret = process.env.AGENT_BRIDGE_SECRET;
-	delete process.env.AGENT_BRIDGE_SECRET;
-	await db.agentTask.deleteMany({
-		where: { OR: [{ dealId }, { contactId }] },
-	});
-	await db.user.create({
-		data: {
-			id: ownerId,
-			name: "Event Test Owner",
-			email: `${ownerId}@example.test`,
-		},
-	});
-	const company = await db.company.create({
-		data: { name: "Event Test Company", domain },
-		select: { id: true },
-	});
-	persistedCompanyId = company.id;
-});
+const inTenant = tenantContext(organizationId);
 
-afterAll(async () => {
-	await db.agentTask.deleteMany({
-		where: {
-			OR: [
-				{ dealId: { in: [dealId, persistedDealId].filter(Boolean) } },
-				{ contactId },
-			],
-		},
-	});
-	await db.agentTask.deleteMany({
-		where: {
-			kind: "slack-channel-join",
-			payload: { path: ["channelId"], equals: channelId },
-		},
-	});
-	if (persistedDealId) {
-		await db.activity.deleteMany({ where: { dealId: persistedDealId } });
-		await db.deal.deleteMany({ where: { id: persistedDealId } });
-	}
-	if (persistedCompanyId) {
-		await db.company.deleteMany({ where: { id: persistedCompanyId } });
-	}
-	await db.user.deleteMany({ where: { id: ownerId } });
-	if (previousBridgeSecret === undefined) {
+beforeAll(() =>
+	inTenant(async () => {
+		previousBridgeSecret = process.env.AGENT_BRIDGE_SECRET;
 		delete process.env.AGENT_BRIDGE_SECRET;
-	} else {
-		process.env.AGENT_BRIDGE_SECRET = previousBridgeSecret;
-	}
-});
+		await db.agentTask.deleteMany({
+			where: { OR: [{ dealId }, { contactId }] },
+		});
+		await globalDb.user.create({
+			data: {
+				id: ownerId,
+				name: "Event Test Owner",
+				email: `${ownerId}@example.test`,
+			},
+		});
+		await ensureTestWorkspace(organizationId, organizationId);
+		const company = await db.company.create({
+			data: { organizationId, name: "Event Test Company", domain },
+			select: { id: true },
+		});
+		persistedCompanyId = company.id;
+	}),
+);
+
+afterAll(() =>
+	inTenant(async () => {
+		await db.agentTask.deleteMany({
+			where: {
+				OR: [
+					{ dealId: { in: [dealId, persistedDealId].filter(Boolean) } },
+					{ contactId },
+				],
+			},
+		});
+		await db.agentTask.deleteMany({
+			where: {
+				kind: "slack-channel-join",
+				payload: { path: ["channelId"], equals: channelId },
+			},
+		});
+		if (persistedDealId) {
+			await db.activity.deleteMany({ where: { dealId: persistedDealId } });
+			await db.deal.deleteMany({ where: { id: persistedDealId } });
+		}
+		if (persistedCompanyId) {
+			await db.company.deleteMany({ where: { id: persistedCompanyId } });
+		}
+		await globalDb.user.deleteMany({ where: { id: ownerId } });
+		await globalDb.organization.deleteMany({ where: { id: organizationId } });
+		if (previousBridgeSecret === undefined) {
+			delete process.env.AGENT_BRIDGE_SECRET;
+		} else {
+			process.env.AGENT_BRIDGE_SECRET = previousBridgeSecret;
+		}
+	}),
+);
 
 describe("CRM agent events", () => {
 	it("routes every event to its catalog record kind", async () => {
@@ -122,7 +144,11 @@ describe("CRM agent events", () => {
 				type: "deal.closed",
 				record: { kind: "deal", id: dealId },
 				occurredAt: closedAt,
-				data: { companyId, from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
+				data: {
+					companyId,
+					from: "DECISION_MAKER_BOUGHT_IN",
+					to: "CLOSED_WON",
+				},
 			});
 		});
 
@@ -155,7 +181,11 @@ describe("CRM agent events", () => {
 				type: "deal.closed",
 				record: { kind: "deal", id: dealId },
 				occurredAt: closedAt.toISOString(),
-				data: { companyId, from: "DECISION_MAKER_BOUGHT_IN", to: "CLOSED_WON" },
+				data: {
+					companyId,
+					from: "DECISION_MAKER_BOUGHT_IN",
+					to: "CLOSED_WON",
+				},
 			},
 			finishedAt: null,
 		});
@@ -184,6 +214,7 @@ describe("CRM agent events", () => {
 			await service.withCrmEvents(async (tx, emit) => {
 				const company = await tx.company.create({
 					data: {
+						organizationId,
 						id: rollbackCompanyId,
 						name: "Rollback Event Company",
 					},

@@ -1,7 +1,7 @@
 import "@crm/env/load";
 
-import { db } from "@crm/db";
 import { readContextDevKey } from "@crm/db/settings";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 
 export const CONTEXT_DEV = "CONTEXT_DEV";
 
@@ -19,7 +19,7 @@ export type Capability = {
 
 export async function contextDevKey(): Promise<string | null> {
 	try {
-		return await readContextDevKey(db);
+		return await scopedTransaction((tx) => readContextDevKey(tx));
 	} catch (error) {
 		console.error(
 			`[agent] could not read the Context.dev key from the database: ${

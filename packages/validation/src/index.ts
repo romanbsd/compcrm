@@ -7,6 +7,7 @@ import * as builderQuestion from "./builder-question";
 import * as eveStream from "./eve-stream";
 import * as eveTool from "./eve-tool";
 import * as slack from "./slack";
+import * as workspaceGate from "./workspace-gate";
 
 export const schemas = {
 	activityMeta,
@@ -17,6 +18,7 @@ export const schemas = {
 	eveStream,
 	eveTool,
 	slack,
+	workspaceGate,
 } as const;
 
 export type { ActivityMeta, ActivityMetaFields } from "./activity-meta";
@@ -57,6 +59,7 @@ export type {
 	EveToolOutput,
 } from "./eve-tool";
 export type { AuthTest, JoinPayload, OauthAccess, Reply } from "./slack";
+export type { WorkspaceGate } from "./workspace-gate";
 
 export class InvalidInput extends Error {
 	override readonly name = "InvalidInput";

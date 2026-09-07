@@ -1,6 +1,6 @@
-import type { Db } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 
 export type SearchHit = {
 	kind: "company" | "contact" | "deal";
@@ -17,7 +17,7 @@ const PER_KIND = 5;
 
 @Injectable()
 export class SearchService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async quick(q: string): Promise<{ hits: SearchHit[] }> {
 		const term = q.trim();

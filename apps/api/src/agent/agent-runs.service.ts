@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { type Db, Prisma } from "@crm/db";
+import { Prisma } from "@crm/db";
 import type { AgentRunStatus } from "@crm/db/enums";
 import { lockIdempotencyKey } from "@crm/db/idempotency";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	BadRequestException,
 	ConflictException,
@@ -9,7 +10,7 @@ import {
 	Injectable,
 	NotFoundException,
 } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { AgentAccessService } from "./agent-access.service";
 import { AGENT_DISPATCH } from "./agent-dispatch.config";
 import { AgentTriggerService } from "./agent-trigger.service";
@@ -27,10 +28,31 @@ const CANCELLABLE_STATUSES: readonly AgentRunStatus[] = [
 
 const RUN_EVENT_LIMIT = 200;
 
+type QueuedRunFields = Pick<
+	Prisma.AgentRunUncheckedCreateInput,
+	"agentId" | "versionId" | "initiatedById" | "triggerType" | "idempotencyKey"
+> &
+	Partial<
+		Pick<Prisma.AgentRunUncheckedCreateInput, "triggerId" | "dealId" | "input">
+	>;
+
+type RunnableAgentTransaction = {
+	$queryRaw<T>(
+		query: TemplateStringsArray | Prisma.Sql,
+		...values: unknown[]
+	): Promise<T>;
+	agentRun: {
+		findFirst(args: {
+			where: { agentId: string; status: { in: AgentRunStatus[] } };
+			select: { id: true };
+		}): Promise<{ id: string } | null>;
+	};
+};
+
 @Injectable()
 export class AgentRunsService {
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly access: AgentAccessService,
 		private readonly trigger: AgentTriggerService,
 	) {}
@@ -158,7 +180,7 @@ export class AgentRunsService {
 			return { id: existing.id };
 		}
 
-		const run = await this.db.$transaction(async (tx) => {
+		const run = await scopedTransaction(this.db, async (tx) => {
 			await lockIdempotencyKey(tx, input.clientRequestId);
 			const replay = await tx.agentRun.findUnique({
 				where: { idempotencyKey: input.clientRequestId },
@@ -169,66 +191,27 @@ export class AgentRunsService {
 				return { id: replay.id };
 			}
 
-			const [agent] = await tx.$queryRaw<
-				Array<{
-					id: string;
-					status: string;
-					currentVersionId: string | null;
-				}>
-			>`
-					SELECT id, status, "currentVersionId"
-					FROM "agentDefinition"
-					WHERE id = ${input.id}
-					FOR UPDATE
-				`;
-
-			if (!agent || agent.status === "DELETED") {
-				throw new NotFoundException(`No agent with id ${input.id}.`);
-			}
-
-			if (agent.status !== "LIVE" || !agent.currentVersionId) {
-				throw new BadRequestException("This agent is not live yet.");
-			}
-
-			const active = await tx.agentRun.findFirst({
-				where: {
-					agentId: input.id,
-					status: { in: [...CANCELLABLE_STATUSES] },
-				},
-				select: { id: true },
-			});
-			if (active) {
-				throw new ConflictException(
-					"This agent already has an active run. Stop it or wait for it to finish.",
-				);
-			}
+			const agent = await this.lockRunnableAgent(tx, input.id);
 
 			const created = await tx.agentRun.create({
-				data: {
+				data: this.queuedRunData({
 					agentId: input.id,
 					versionId: agent.currentVersionId,
 					initiatedById: userId,
 					triggerType: "MANUAL",
 					idempotencyKey: input.clientRequestId,
-					correlationId: randomUUID(),
-					events: {
-						create: { sequence: 0, type: "run.queued", data: {} },
-					},
-				},
+				}),
 				select: { id: true },
 			});
 
 			await tx.agentAuditEvent.create({
-				data: {
+				data: this.requestedRunAuditData({
 					agentId: input.id,
 					versionId: agent.currentVersionId,
-					actorUserId: userId,
-					actorType: "USER",
-					actorId: userId,
-					type: "run.requested",
-					summary: "Requested a manual run",
+					userId,
 					requestId: input.clientRequestId,
-				},
+					summary: "Requested a manual run",
+				}),
 			});
 
 			return created;
@@ -241,7 +224,7 @@ export class AgentRunsService {
 	async retryRun(input: AgentRetryRunInput, userId: string) {
 		await this.access.assertMember(userId);
 
-		const run = await this.db.$transaction(async (tx) => {
+		const run = await scopedTransaction(this.db, async (tx) => {
 			await lockIdempotencyKey(tx, input.clientRequestId);
 			const replay = await tx.agentRun.findUnique({
 				where: { idempotencyKey: input.clientRequestId },
@@ -271,33 +254,10 @@ export class AgentRunsService {
 				throw new ConflictException("This run has not finished yet.");
 			}
 
-			const [agent] = await tx.$queryRaw<
-				Array<{ id: string; status: string; currentVersionId: string | null }>
-			>`
-					SELECT id, status, "currentVersionId"
-					FROM "agentDefinition"
-					WHERE id = ${input.id}
-					FOR UPDATE
-				`;
-			if (!agent || agent.status === "DELETED") {
-				throw new NotFoundException(`No agent with id ${input.id}.`);
-			}
-			if (agent.status !== "LIVE" || !agent.currentVersionId) {
-				throw new BadRequestException("This agent is not live yet.");
-			}
-
-			const active = await tx.agentRun.findFirst({
-				where: { agentId: input.id, status: { in: [...CANCELLABLE_STATUSES] } },
-				select: { id: true },
-			});
-			if (active) {
-				throw new ConflictException(
-					"This agent already has an active run. Stop it or wait for it to finish.",
-				);
-			}
+			await this.lockRunnableAgent(tx, input.id);
 
 			const created = await tx.agentRun.create({
-				data: {
+				data: this.queuedRunData({
 					agentId: input.id,
 					versionId: previous.versionId,
 					initiatedById: userId,
@@ -306,23 +266,18 @@ export class AgentRunsService {
 					dealId: previous.dealId,
 					input: previous.input ?? Prisma.DbNull,
 					idempotencyKey: input.clientRequestId,
-					correlationId: randomUUID(),
-					events: { create: { sequence: 0, type: "run.queued", data: {} } },
-				},
+				}),
 				select: { id: true },
 			});
 
 			await tx.agentAuditEvent.create({
-				data: {
+				data: this.requestedRunAuditData({
 					agentId: input.id,
 					versionId: previous.versionId,
-					actorUserId: userId,
-					actorType: "USER",
-					actorId: userId,
-					type: "run.requested",
-					summary: `Retried run ${input.runId}`,
+					userId,
 					requestId: input.clientRequestId,
-				},
+					summary: `Retried run ${input.runId}`,
+				}),
 			});
 
 			return created;
@@ -335,7 +290,7 @@ export class AgentRunsService {
 	async cancelRun(input: AgentCancelRunInput, userId: string) {
 		const agent = await this.readableAgent(input.id, userId);
 
-		const outcome = await this.db.$transaction(async (tx) => {
+		const outcome = await scopedTransaction(this.db, async (tx) => {
 			const [run] = await tx.$queryRaw<
 				Array<{
 					id: string;
@@ -434,6 +389,76 @@ export class AgentRunsService {
 
 	private async readableAgent(agentId: string, userId: string) {
 		return this.access.assertCanRead(agentId, userId);
+	}
+
+	private async lockRunnableAgent(
+		tx: RunnableAgentTransaction,
+		agentId: string,
+	): Promise<{ id: string; status: string; currentVersionId: string }> {
+		const [agent] = await tx.$queryRaw<
+			Array<{ id: string; status: string; currentVersionId: string | null }>
+		>`
+			SELECT id, status, "currentVersionId"
+			FROM "agentDefinition"
+			WHERE id = ${agentId}
+			FOR UPDATE
+		`;
+
+		if (!agent || agent.status === "DELETED") {
+			throw new NotFoundException(`No agent with id ${agentId}.`);
+		}
+
+		if (agent.status !== "LIVE" || !agent.currentVersionId) {
+			throw new BadRequestException("This agent is not live yet.");
+		}
+
+		const active = await tx.agentRun.findFirst({
+			where: {
+				agentId,
+				status: { in: [...CANCELLABLE_STATUSES] },
+			},
+			select: { id: true },
+		});
+		if (active) {
+			throw new ConflictException(
+				"This agent already has an active run. Stop it or wait for it to finish.",
+			);
+		}
+
+		return { ...agent, currentVersionId: agent.currentVersionId };
+	}
+
+	private queuedRunData(fields: QueuedRunFields) {
+		return {
+			...fields,
+			correlationId: randomUUID(),
+			events: {
+				create: {
+					sequence: 0,
+					type: "run.queued",
+					data: {},
+				},
+			},
+		};
+	}
+
+	private requestedRunAuditData(input: {
+		agentId: string;
+		versionId: string;
+		userId: string;
+		requestId: string;
+		summary: string;
+	}) {
+		return {
+			agentId: input.agentId,
+			versionId: input.versionId,
+			actorUserId: input.userId,
+			actorType: "USER" as const,
+			actorId: input.userId,
+			type: "run.requested",
+			summary: input.summary,
+			requestId: input.requestId,
+		};
 	}
 
 	private assertReplayMatches(

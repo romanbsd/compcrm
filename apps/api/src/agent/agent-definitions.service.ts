@@ -1,5 +1,6 @@
-import type { Db, Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
 import type { AgentDefinitionStatus } from "@crm/db/enums";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { schemas } from "@crm/validation";
 import { readAgentManifestSummary } from "@crm/validation/agent-manifest";
 import {
@@ -8,7 +9,7 @@ import {
 	NotFoundException,
 } from "@nestjs/common";
 import { z } from "zod";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { AgentAccessService } from "./agent-access.service";
 import { AgentTriggerService } from "./agent-trigger.service";
 import { TEAM_AGENT_STATUSES } from "./agent-visibility";
@@ -37,7 +38,7 @@ const versionValidation = z
 @Injectable()
 export class AgentDefinitionsService {
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly access: AgentAccessService,
 		private readonly trigger: AgentTriggerService,
 	) {}
@@ -178,7 +179,7 @@ export class AgentDefinitionsService {
 	async update(input: AgentUpdateInput, userId: string) {
 		const description = input.description?.trim() || null;
 
-		const updated = await this.db.$transaction(async (tx) => {
+		const updated = await scopedTransaction(this.db, async (tx) => {
 			await this.access.assertCanManageInTransaction(tx, input.id, userId);
 			const agent = await this.lockAgent(tx, input.id);
 			const row = await tx.agentDefinition.update({
@@ -238,7 +239,7 @@ export class AgentDefinitionsService {
 	}
 
 	async saveFile(input: AgentSaveFileInput, userId: string) {
-		return this.db.$transaction(async (tx) => {
+		return scopedTransaction(this.db, async (tx) => {
 			await this.access.assertCanManageInTransaction(tx, input.id, userId);
 			const agent = await this.lockAgent(tx, input.id);
 
@@ -505,7 +506,7 @@ export class AgentDefinitionsService {
 	}
 
 	async deploy(input: AgentDeployInput, userId: string) {
-		return this.db.$transaction(async (tx) => {
+		return scopedTransaction(this.db, async (tx) => {
 			await this.access.assertCanManageInTransaction(tx, input.id, userId);
 			const agent = await this.lockAgent(tx, input.id);
 			const existing = await tx.agentAuditEvent.findFirst({
@@ -654,7 +655,7 @@ export class AgentDefinitionsService {
 	async remove(id: string, userId: string) {
 		const now = new Date();
 
-		return this.db.$transaction(async (tx) => {
+		return scopedTransaction(this.db, async (tx) => {
 			await this.access.assertCanManageInTransaction(tx, id, userId);
 			const [current] = await tx.$queryRaw<
 				Array<{ id: string; status: string }>
@@ -752,7 +753,7 @@ export class AgentDefinitionsService {
 		invalidStatusMessage: string,
 		extra: Prisma.AgentDefinitionUpdateInput = {},
 	) {
-		return this.db.$transaction(async (tx) => {
+		return scopedTransaction(this.db, async (tx) => {
 			await this.access.assertCanManageInTransaction(tx, id, userId);
 			const before = await this.lockAgent(tx, id);
 			if (!allowedFrom.includes(before.status)) {

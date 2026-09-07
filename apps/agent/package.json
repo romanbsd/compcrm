@@ -13,7 +13,7 @@
 		"build": "eve build",
 		"start": "bun scripts/start.ts",
 		"check-types": "tsc --noEmit",
-		"test": "CRM_TELEMETRY_DISABLED=1 bun test",
+		"test": "CRM_TELEMETRY_DISABLED=1 bun test --max-concurrency=1",
 		"eval": "CRM_TELEMETRY_DISABLED=1 eve eval",
 		"e2e:xmpp": "bun test/e2e/xmpp-export.e2e.ts",
 		"lint": "biome check .",

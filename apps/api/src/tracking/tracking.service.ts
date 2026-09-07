@@ -2,13 +2,13 @@ import {
 	appUrl,
 	canManageTracking,
 	isWorkspaceRole,
-	WORKSPACE_ID,
 	type WorkspaceRole,
 } from "@crm/auth";
-import { type Db, DomainScope, Prisma } from "@crm/db";
+import { DomainScope, Prisma } from "@crm/db";
 import { describeTouch } from "@crm/db/attribution";
 import { safeFetch } from "@crm/db/safe-fetch";
-import { SETTINGS_ID } from "@crm/db/settings";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	COOKIE_LIFETIMES,
 	gtmContainers,
@@ -29,7 +29,7 @@ import {
 	Injectable,
 	NotFoundException,
 } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type {
 	FoundInContainer,
 	SourceRow,
@@ -37,7 +37,6 @@ import type {
 	TrackedDomainRow,
 	TrackingSettings,
 	VerifyResult,
-	VisitedPage,
 	WebsiteActivity,
 } from "./tracking.contracts";
 import { TrackingConfigService } from "./tracking-config.service";
@@ -45,14 +44,14 @@ import { TrackingConfigService } from "./tracking-config.service";
 @Injectable()
 export class TrackingService {
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly config: TrackingConfigService,
 	) {}
 
 	async settings(userId: string): Promise<TrackingSettings> {
 		const [row, domains, latest, pageViews, submissions] = await Promise.all([
 			this.db.appSetting.findUnique({
-				where: { id: SETTINGS_ID },
+				where: { organizationId: currentOrganizationId() },
 				select: {
 					trackingSiteId: true,
 					trackingCrossDomain: true,
@@ -133,8 +132,8 @@ export class TrackingService {
 		}[flag];
 
 		await this.db.appSetting.upsert({
-			where: { id: SETTINGS_ID },
-			create: { id: SETTINGS_ID, [column]: enabled },
+			where: { organizationId: currentOrganizationId() },
+			create: { [column]: enabled },
 			update: { [column]: enabled },
 		});
 
@@ -149,8 +148,8 @@ export class TrackingService {
 		}
 
 		await this.db.appSetting.upsert({
-			where: { id: SETTINGS_ID },
-			create: { id: SETTINGS_ID, trackingCookieDays: days },
+			where: { organizationId: currentOrganizationId() },
+			create: { trackingCookieDays: days },
 			update: { trackingCookieDays: days },
 		});
 
@@ -172,7 +171,10 @@ export class TrackingService {
 
 		try {
 			const domain = await this.db.trackedDomain.create({
-				data: { host, scope: input.scope },
+				data: {
+					host,
+					scope: input.scope,
+				},
 			});
 
 			await this.config.invalidate();
@@ -226,7 +228,7 @@ export class TrackingService {
 
 		const domains = await this.db.trackedDomain.count();
 		const row = await this.db.appSetting.findUnique({
-			where: { id: SETTINGS_ID },
+			where: { organizationId: currentOrganizationId() },
 			select: { trackingLimitToDomains: true },
 		});
 
@@ -418,59 +420,67 @@ export class TrackingService {
 	}
 
 	async sources(userId: string): Promise<SourceRow[]> {
-		await this.assertCanManage(userId);
+		return scopedTransaction(async (tx) => {
+			await this.assertCanManage(userId);
+			const [views, contacts] = await Promise.all([
+				tx.trackedEvent.groupBy({
+					by: ["source", "medium"],
+					where: {
+						type: "page_view",
+						source: { not: null },
+					},
+					_count: { _all: true },
+				}),
+				tx.$queryRaw<
+					{
+						firstSource: string;
+						firstMedium: string | null;
+						contacts: bigint;
+					}[]
+				>`
+					SELECT "firstSource", "firstMedium", count(DISTINCT "contactId") AS contacts
+					FROM "trackedVisitor"
+					WHERE "contactId" IS NOT NULL AND "firstSource" IS NOT NULL
+					GROUP BY 1, 2;
+				`,
+			]);
 
-		const [views, contacts] = await Promise.all([
-			this.db.trackedEvent.groupBy({
-				by: ["source", "medium"],
-				where: { type: "page_view", source: { not: null } },
-				_count: { _all: true },
-			}),
-			this.db.$queryRaw<
-				{ firstSource: string; firstMedium: string | null; contacts: bigint }[]
-			>`
-				SELECT "firstSource", "firstMedium", count(DISTINCT "contactId") AS contacts
-				FROM "trackedVisitor"
-				WHERE "contactId" IS NOT NULL AND "firstSource" IS NOT NULL
-				GROUP BY 1, 2;
-			`,
-		]);
+			const rows = new Map<string, SourceRow>();
 
-		const rows = new Map<string, SourceRow>();
-
-		for (const row of views) {
-			if (!row.source) continue;
-			const key = `${row.source}|${row.medium ?? ""}`;
-			rows.set(key, {
-				source: row.source,
-				medium: row.medium,
-				views: row._count._all,
-				contacts: 0,
-			});
-		}
-
-		for (const row of contacts) {
-			if (!row.firstSource) continue;
-			const key = `${row.firstSource}|${row.firstMedium ?? ""}`;
-			const existing = rows.get(key);
-			const count = Number(row.contacts);
-
-			if (existing) {
-				existing.contacts = count;
-				continue;
+			for (const row of views) {
+				if (!row.source) continue;
+				const key = `${row.source}|${row.medium ?? ""}`;
+				rows.set(key, {
+					source: row.source,
+					medium: row.medium,
+					views: row._count._all,
+					contacts: 0,
+				});
 			}
 
-			rows.set(key, {
-				source: row.firstSource,
-				medium: row.firstMedium,
-				views: 0,
-				contacts: count,
-			});
-		}
+			for (const row of contacts) {
+				if (!row.firstSource) continue;
+				const key = `${row.firstSource}|${row.firstMedium ?? ""}`;
+				const existing = rows.get(key);
+				const count = Number(row.contacts);
 
-		return [...rows.values()]
-			.sort((a, b) => b.contacts - a.contacts || b.views - a.views)
-			.slice(0, 20);
+				if (existing) {
+					existing.contacts = count;
+					continue;
+				}
+
+				rows.set(key, {
+					source: row.firstSource,
+					medium: row.firstMedium,
+					views: 0,
+					contacts: count,
+				});
+			}
+
+			return [...rows.values()]
+				.sort((a, b) => b.contacts - a.contacts || b.views - a.views)
+				.slice(0, 20);
+		});
 	}
 
 	private async assertCanManage(userId: string): Promise<void> {
@@ -483,7 +493,7 @@ export class TrackingService {
 
 	private async roleOf(userId: string): Promise<WorkspaceRole | null> {
 		const member = await this.db.member.findFirst({
-			where: { organizationId: WORKSPACE_ID, userId },
+			where: { organizationId: currentOrganizationId(), userId },
 			select: { role: true },
 		});
 

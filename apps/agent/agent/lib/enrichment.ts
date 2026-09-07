@@ -1,5 +1,6 @@
-import { db, EnrichmentStatus, type Prisma } from "@crm/db";
+import { EnrichmentStatus, type Prisma } from "@crm/db";
 import { ownsCompanyStatus, ownsContactStatus } from "@crm/db/agent-tasks";
+import { scopedDb } from "@crm/db/tenant-scope";
 import type { TaskSubject } from "./tasks";
 
 type StatusGuard =
@@ -69,14 +70,14 @@ async function write(
 	};
 
 	if (owned.contactId) {
-		await db.contact.updateMany({
+		await scopedDb.contact.updateMany({
 			where: { id: owned.contactId, ...guard },
 			data,
 		});
 	}
 
 	if (owned.companyId) {
-		await db.company.updateMany({
+		await scopedDb.company.updateMany({
 			where: { id: owned.companyId, ...guard },
 			data,
 		});
@@ -130,7 +131,7 @@ async function settleable(
 }
 
 async function taskEndedAt(taskId: string): Promise<Date | null> {
-	const task = await db.agentTask.findUnique({
+	const task = await scopedDb.agentTask.findUnique({
 		where: { id: taskId },
 		select: { finishedAt: true },
 	});
@@ -144,7 +145,7 @@ async function hasOpenRequest(subject: TaskSubject): Promise<boolean> {
 	if (subject.companyId) owners.push({ companyId: subject.companyId });
 	if (owners.length === 0) return false;
 
-	const open = await db.agentTask.findFirst({
+	const open = await scopedDb.agentTask.findFirst({
 		where: { id: { not: subject.id }, finishedAt: null, OR: owners },
 		select: { id: true },
 	});

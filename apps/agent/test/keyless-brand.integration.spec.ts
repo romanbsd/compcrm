@@ -1,8 +1,16 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
-import { db, EnrichmentStatus } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { EnrichmentStatus, db as rawDb } from "@crm/db";
 import { readContextDevKey, writeContextDevKey } from "@crm/db/settings";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { runBrand } from "../agent/lib/brand";
-import { settle } from "../agent/lib/enrichment";
+import { settle as settleWithoutTenant } from "../agent/lib/enrichment";
+import {
+	tenantAfterAll,
+	tenantAfterEach,
+	tenantBeforeAll,
+	tenantTest,
+} from "@crm/db/test-support";
 
 /**
  * An install with no Context key still creates companies, and a `brand` task
@@ -19,6 +27,30 @@ import { settle } from "../agent/lib/enrichment";
  */
 const created: string[] = [];
 const tasks: string[] = [];
+const organizationId = `keyless-brand-${crypto.randomUUID()}`;
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const afterEach = tenantAfterEach(organizationId);
+const afterAll = tenantAfterAll(organizationId);
+const settle: typeof settleWithoutTenant = (subject, status, error) =>
+	runInTenant(organizationId, () =>
+		settleWithoutTenant(subject, status, error),
+	);
+
+beforeAll(async () => {
+	await rawDb.organization.create({
+		data: {
+			id: organizationId,
+			name: "Keyless brand tests",
+			slug: organizationId,
+			createdAt: new Date(),
+		},
+	});
+});
+
+afterAll(async () => {
+	await rawDb.organization.deleteMany({ where: { id: organizationId } });
+});
 
 afterEach(async () => {
 	if (tasks.length > 0) {
@@ -31,6 +63,7 @@ afterEach(async () => {
 async function company(status: EnrichmentStatus) {
 	const row = await db.company.create({
 		data: {
+			organizationId,
 			name: "Keyless Probe",
 			domain: `keyless-${created.length}-${status}.test`.toLowerCase(),
 			enrichmentStatus: status,
@@ -59,6 +92,7 @@ async function retiredSubjectOf(companyId: string) {
 
 	const row = await db.agentTask.create({
 		data: {
+			organizationId,
 			companyId,
 			kind: "brand",
 			reason: "keyless",
@@ -138,6 +172,7 @@ describe("a brand task with no key", () => {
 async function domainlessCompany(status: EnrichmentStatus) {
 	const row = await db.company.create({
 		data: {
+			organizationId,
 			name: `Keyless Probe ${created.length}`,
 			enrichmentStatus: status,
 		},
@@ -152,28 +187,34 @@ describe("a brand task on a company with no domain", () => {
 	let key: string | null;
 
 	beforeAll(async () => {
-		key = await readContextDevKey(db);
+		key = await runInTenant(organizationId, () => readContextDevKey(db));
 	});
 
 	afterAll(async () => {
-		await writeContextDevKey(db, key ?? "");
+		await runInTenant(organizationId, () => writeContextDevKey(db, key ?? ""));
 	});
 
 	it("marks the company skipped, because no sweep will find it again", async () => {
-		await writeContextDevKey(db, "ctx-test-key");
+		await runInTenant(organizationId, () =>
+			writeContextDevKey(db, "ctx-test-key"),
+		);
 		const id = await domainlessCompany(EnrichmentStatus.PENDING);
 
-		const result = await runBrand({ companyId: id });
+		const result = await runInTenant(organizationId, () =>
+			runBrand({ companyId: id }),
+		);
 
 		expect(result.enriched).toBe(false);
 		expect(await statusOf(id)).toBe(EnrichmentStatus.SKIPPED);
 	});
 
 	it("still leaves a keyless install's company pending for the sweep", async () => {
-		await writeContextDevKey(db, "");
+		await runInTenant(organizationId, () => writeContextDevKey(db, ""));
 		const id = await domainlessCompany(EnrichmentStatus.PENDING);
 
-		const result = await runBrand({ companyId: id });
+		const result = await runInTenant(organizationId, () =>
+			runBrand({ companyId: id }),
+		);
 
 		expect(result.enriched).toBe(false);
 		expect(await statusOf(id)).toBe(EnrichmentStatus.PENDING);

@@ -1,5 +1,6 @@
-import { db, type Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
 import { lockIdempotencyKey } from "@crm/db/idempotency";
+import { tenantTransaction } from "@crm/db/tenant-scope";
 import { type InputRequested, parse, schemas } from "@crm/validation";
 import type { ChannelEvents } from "eve/channels";
 import {
@@ -20,6 +21,7 @@ type InputRequestedEvent = Parameters<
 export async function persistBuilderInputRequest(
 	data: InputRequestedEvent,
 	continuationToken: string | undefined,
+	organizationId: string,
 	authenticatedConversationId?: string | null,
 ): Promise<boolean> {
 	const conversationId =
@@ -39,7 +41,7 @@ export async function persistBuilderInputRequest(
 
 	const eventId = `${eventPrefix(conversationId)}${question.requestId}`;
 
-	return db.$transaction(async (tx) => {
+	return tenantTransaction(organizationId, async (tx) => {
 		await lockIdempotencyKey(tx, eventId);
 
 		const replay = await tx.agentEvent.findUnique({
@@ -49,7 +51,11 @@ export async function persistBuilderInputRequest(
 		if (replay) return false;
 
 		const conversation = await lockBuilderConversation(tx, conversationId);
-		if (conversation?.kind !== "BUILDER" || !conversation.sessionId) {
+		if (
+			conversation?.organizationId !== organizationId ||
+			conversation.kind !== "BUILDER" ||
+			!conversation.sessionId
+		) {
 			return false;
 		}
 

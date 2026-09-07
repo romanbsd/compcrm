@@ -19,6 +19,10 @@ const allowedDevOrigins = (process.env.APP_URL ?? "")
 	});
 
 const nextConfig: NextConfig = {
+	experimental: {
+		authInterrupts: true,
+	},
+
 	allowedDevOrigins,
 
 	env: {

@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	readWorkspaceIdentity,
 	type WorkspaceIdentity,
@@ -8,7 +8,7 @@ export type { WorkspaceIdentity };
 
 export async function identity(): Promise<WorkspaceIdentity | null> {
 	try {
-		return await readWorkspaceIdentity(db);
+		return await scopedTransaction((tx) => readWorkspaceIdentity(tx));
 	} catch (error) {
 		console.error("[agent] could not read who we are", error);
 		return null;

@@ -42,11 +42,10 @@ undo it.
 
 ## Connecting Slack is refused at the OAuth endpoints, not in the UI
 
-Connecting is the same decision as disconnecting, because `replaceSlackConnection`
-deletes every other Slack account row: a second person connecting *replaces* the
-workspace's Slack, and every deployed agent then reads from and posts to whichever
-Slack they installed. Hiding the button is not enough. `authClient.linkSocial`
-sends one POST.
+Connecting is the same decision as disconnecting. A second person connecting
+replaces the active organization's Slack grant. Other organizations keep their
+own grants. Hiding the button is not enough. `authClient.linkSocial` sends one
+POST.
 
 `slackConnectGuard` (`packages/auth/src/slack-connect.ts`) is Better Auth's
 `hooks.before`, and it asks the same `canManageConnections` the API does. It
@@ -100,10 +99,12 @@ uses to act as the person who connected Slack.
 - **Public channel** — the bot self-joins with `conversations.join`. Bot token only.
 - **Private channel** — only a user token can invite the bot. Both tokens.
 
-The bot token lives on `Account`. The user token lives on `SlackWorkspaceGrant`,
-keyed by Slack team id, because the grant belongs to the workspace and not to the
-person who clicked Connect. `packages/auth/src/slack-grant.ts` writes it, and
-`apps/agent/agent/lib/slack-connection.ts` is the only place that reads either.
+The bot and user tokens live on `SlackWorkspaceGrant`, keyed by CRM organization
+and Slack team id. The grant belongs to one CRM organization. Better Auth's
+`Account` remains an OAuth identity record and does not select runtime Slack
+credentials.
+`packages/auth/src/slack-grant.ts` writes the grant.
+`apps/agent/agent/lib/slack-connection.ts` reads both tokens.
 
 A missing user grant is a capability that is off, not an error. The connection
 page names it, and the private-channel row falls back to asking a human.

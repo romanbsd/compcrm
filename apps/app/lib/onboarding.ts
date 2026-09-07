@@ -1,3 +1,4 @@
+import { workspaceGate } from "@crm/validation/workspace-gate";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { API_URL } from "@/lib/env";
@@ -13,14 +14,6 @@ export type Gate = "settled" | "required" | "unknown";
 const procedureResult = z
 	.object({ result: z.object({ data: z.json() }).catch({ data: null }) })
 	.catch({ result: { data: null } });
-
-const workspaceAnswer = z
-	.object({
-		onboarded: z.boolean().nullable().catch(null),
-		canRename: z.boolean().nullable().catch(null),
-		slug: z.string().min(1).nullable().catch(null),
-	})
-	.catch({ onboarded: null, canRename: null, slug: null });
 
 const researchKeyAnswer = z
 	.object({ configured: z.boolean().nullable().catch(null) })
@@ -46,17 +39,28 @@ async function read(request: NextRequest, procedure: string) {
 	}
 }
 
-export type WorkspaceGate = { gate: Gate; slug: string | null };
+export type WorkspaceGate = {
+	gate: Gate;
+	slug: string | null;
+	hasOrganization: boolean | null;
+};
 
 export async function readWorkspaceGate(
 	request: NextRequest,
 ): Promise<WorkspaceGate> {
-	const workspace = workspaceAnswer.parse(await read(request, "workspace.get"));
+	const answer = workspaceGate.safeParse(await read(request, "workspace.gate"));
+
+	if (!answer.success) {
+		return { gate: "unknown", slug: null, hasOrganization: null };
+	}
+
+	const workspace = answer.data;
 
 	const slug = workspace.slug;
+	const hasOrganization = workspace.organizationId !== null;
 
 	if (workspace.onboarded === null) {
-		return { gate: "unknown", slug };
+		return { gate: "unknown", slug, hasOrganization };
 	}
 
 	return {
@@ -65,6 +69,7 @@ export async function readWorkspaceGate(
 				? "settled"
 				: "required",
 		slug,
+		hasOrganization,
 	};
 }
 

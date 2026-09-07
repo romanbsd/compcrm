@@ -6,7 +6,9 @@ import { cache } from "react";
 
 export const getSession = cache(
 	async (): Promise<Session | null> =>
-		auth.api.getSession({ headers: await headers() }),
+		auth.api.getSession({
+			headers: await headers(),
+		}) as Promise<Session | null>,
 );
 
 export async function requireSession(): Promise<Session> {

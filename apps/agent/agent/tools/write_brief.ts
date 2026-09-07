@@ -4,7 +4,10 @@ import type { Evidence, EvidenceKind } from "../lib/evidence";
 import { WEIGHTS } from "../lib/evidence";
 import { writeBrief } from "../lib/facts";
 import { focusOn } from "../lib/focus";
-import { assertResearchPurpose } from "../lib/session-purpose";
+import {
+	assertResearchPurpose,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 
 const MAX_NARRATIVE = 400;
 
@@ -50,28 +53,30 @@ export default defineTool({
 	}),
 	async execute(input, ctx) {
 		assertResearchPurpose(ctx);
-		focusOn({ contactId: input.contactId });
+		return runInSessionTenant(ctx, async () => {
+			focusOn({ contactId: input.contactId });
 
-		const narrative = input.narrative.trim();
+			const narrative = input.narrative.trim();
 
-		if (narrative.length < 40) {
-			return {
-				written: false as const,
-				reason:
-					"Too short to be worth a panel. Say something the record does not already show, or write nothing.",
-			};
-		}
+			if (narrative.length < 40) {
+				return {
+					written: false as const,
+					reason:
+						"Too short to be worth a panel. Say something the record does not already show, or write nothing.",
+				};
+			}
 
-		const result = await writeBrief({
-			contactId: input.contactId,
-			narrative,
-			sections: input.sections,
-			evidence: input.evidence as Evidence[],
-			sourceUrl: input.sourceUrl,
+			const result = await writeBrief({
+				contactId: input.contactId,
+				narrative,
+				sections: input.sections,
+				evidence: input.evidence as Evidence[],
+				sourceUrl: input.sourceUrl,
+			});
+
+			return result.written
+				? { written: true as const, score: Number(result.score.toFixed(2)) }
+				: { written: false as const, reason: result.reason };
 		});
-
-		return result.written
-			? { written: true as const, score: Number(result.score.toFixed(2)) }
-			: { written: false as const, reason: result.reason };
 	},
 });

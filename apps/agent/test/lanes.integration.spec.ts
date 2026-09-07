@@ -1,10 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { describe, expect } from "bun:test";
 import { DIRECT_KINDS, isDirectKind, PRIORITY } from "@crm/db/agent-tasks";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { claimDue } from "../agent/lib/tasks";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const REASON = "lane-test";
 const TEST_PRIORITY_OFFSET = 1_000_000;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeEach = tenantBeforeEach(organizationId);
+const afterEach = tenantAfterEach(organizationId);
 
 const VISIBLE = { only: DIRECT_KINDS } as const;
 const RESEARCH = { except: DIRECT_KINDS } as const;
@@ -19,6 +24,7 @@ afterEach(clear);
 async function queue(kind: string, priority: number) {
 	return db.agentTask.create({
 		data: {
+			organizationId,
 			kind,
 			reason: REASON,
 			dueAt: new Date(Date.now() - 1000),

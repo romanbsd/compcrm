@@ -32,6 +32,25 @@ metadata. The root file's comment has the whole account.
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `ALLOWED_SIGN_IN`. Everything else has a
 localhost default or is genuinely optional.
 
+The `DATABASE_URL` role must not be a superuser and must not have `BYPASSRLS`.
+Those attributes bypass tenant row-level security, including forced policies.
+
+## `AUDIT_DATABASE_URL` is only for migration rehearsal
+
+Row-level security prevents the app role from auditing all organizations.
+`packages/db/scripts/rehearse-migration.ts` therefore needs a separate role.
+Create that role on the same database with `BYPASSRLS` and read-only access.
+
+```sql
+CREATE ROLE crm_audit WITH LOGIN PASSWORD 'replace-this' BYPASSRLS;
+GRANT CONNECT ON DATABASE crm TO crm_audit;
+GRANT USAGE ON SCHEMA public TO crm_audit;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO crm_audit;
+```
+
+Set `AUDIT_DATABASE_URL` to that role's connection string.
+Never use this role in `DATABASE_URL`, tests, seeds, or application processes.
+
 **`GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`** are the sign-in button *and* the
 Gmail/Calendar sync — optional, so an SSO-only install needn't create a Google project,
 but **set together or not at all** (`packages/auth/src/env.ts` throws on one).
@@ -207,6 +226,8 @@ is sent. No client is constructed, so there is no queue waiting to flush later.
 ## Not env vars
 
 - **Cache TTL** — `DEFAULT_TTL_MS` (60s) in `cache.module.ts`; `CACHE_TTL_MS` overrides.
-- **Redis** — optional; without `REDIS_URL` the cache is per-instance in-memory, which
-  is wrong for multi-instance.
+- **Redis** — optional. Tenant-specific cache entries include the organization id.
+  The automatic backfill key stays install-wide because one run sweeps every
+  organization. Without `REDIS_URL`, separate instances do not share invalidations
+  or debounce state. Multi-instance deployments need Redis for cache coherence.
 - **Sign-in method** — Google and Microsoft are in code; an IdP is a row (SSO, in `api.md`).

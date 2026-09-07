@@ -1,6 +1,7 @@
 import { workspaceDomains } from "@crm/auth";
-import { ActivityType, type Db, Prisma, RecordSource } from "@crm/db";
+import { ActivityType, Prisma, RecordSource } from "@crm/db";
 import type { Touch } from "@crm/db/attribution";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import {
 	CONTACT_CAP_REASON,
 	CONTACTS_PER_HOUR,
@@ -12,7 +13,7 @@ import { CompanyDirectoryService } from "../companies/company-directory.service"
 import { isMachineDomain } from "../companies/domain";
 import { ActivityStampService } from "../crm/activity-stamp.service";
 import { normalizeEmail } from "../crm/values";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import {
 	isAutomatedAddress,
 	isMachineAddress,
@@ -49,7 +50,7 @@ export class TrackingFilingService {
 	private readonly logger = new Logger(TrackingFilingService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly counters: TrackingCounterService,
 		private readonly companies: CompanyDirectoryService,
 		private readonly agent: AgentTriggerService,
@@ -210,7 +211,12 @@ export class TrackingFilingService {
 
 		await this.db.trackedVisitor.upsert({
 			where: { id: visitorId },
-			create: { id: visitorId, contactId, ...first, ...last },
+			create: {
+				id: visitorId,
+				contactId,
+				...first,
+				...last,
+			},
 			update: { contactId, ...last },
 		});
 	}
@@ -249,7 +255,7 @@ export class TrackingFilingService {
 				where: { email: { equals: email, mode: "insensitive" } },
 				select: { email: true },
 			}),
-			this.db.suppressedDomain.findUnique({
+			this.db.suppressedDomain.findFirst({
 				where: { domain },
 				select: { domain: true },
 			}),

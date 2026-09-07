@@ -1,12 +1,6 @@
-import {
-	afterAll,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-} from "bun:test";
-import { db, type FieldEntity } from "@crm/db";
+import { afterAll, beforeAll, beforeEach, describe, expect } from "bun:test";
+import { type Db, type FieldEntity, db as globalDb } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { AgentQueueService } from "../src/agent/agent-queue.service";
 import { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { CompaniesService } from "../src/companies/companies.service";
@@ -18,10 +12,14 @@ import { ConversionService } from "../src/currency/conversion.service";
 import { DealsService } from "../src/deals/deals.service";
 import { FieldsService } from "../src/fields/fields.service";
 import { withDiscardedCrmEvents } from "./agent-trigger.stub";
+import { tenantBound, tenantContext, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "fields-spec";
 const domain = `fields-${suffix}.test`;
 const ownerId = `owner-${suffix}`;
+const organizationId = "workspace";
+const db = scopedDb as unknown as Db;
+const it = tenantTest(organizationId);
 
 const queued: {
 	entity: FieldEntity;
@@ -46,32 +44,43 @@ const agent = {
 	},
 } as unknown as AgentTriggerService;
 
-const stamp = new ActivityStampService(db);
-const queue = new AgentQueueService(db);
-const conversion = new ConversionService(db);
+const stamp = tenantBound(organizationId, new ActivityStampService(db));
+const queue = tenantBound(organizationId, new AgentQueueService(db));
+const conversion = tenantBound(organizationId, new ConversionService(db));
 
-const fields = new FieldsService(db, agent);
-const companies = new CompaniesService(
-	db,
-	agent,
-	queue,
-	{ backfill: async () => undefined } as unknown as FaviconService,
-	stamp,
-	conversion,
-	fields,
+const fields = tenantBound(organizationId, new FieldsService(db, agent));
+const companies = tenantBound(
+	organizationId,
+	new CompaniesService(
+		db,
+		agent,
+		queue,
+		{ backfill: async () => undefined } as unknown as FaviconService,
+		stamp,
+		conversion,
+		fields,
+	),
 );
-const contacts = new ContactsService(
-	db,
-	new CompanyDirectoryService(agent),
-	agent,
-	queue,
-	stamp,
-	fields,
+const contacts = tenantBound(
+	organizationId,
+	new ContactsService(
+		db,
+		new CompanyDirectoryService(agent),
+		agent,
+		queue,
+		stamp,
+		fields,
+	),
 );
-const deals = new DealsService(db, agent, stamp, conversion, fields);
+const deals = tenantBound(
+	organizationId,
+	new DealsService(db, agent, stamp, conversion, fields),
+);
 
 let companyId: string;
 let bridgeSecret: string | undefined;
+
+const inTenant = tenantContext(organizationId);
 
 async function clean() {
 	const owned = await db.company.findMany({
@@ -104,40 +113,48 @@ async function clean() {
 		where: { key: { startsWith: "spec_" } },
 	});
 	await db.company.deleteMany({ where: { domain: { endsWith: domain } } });
-	await db.user.deleteMany({ where: { id: ownerId } });
+	await globalDb.user.deleteMany({ where: { id: ownerId } });
 }
 
 async function makeCompany(name: string): Promise<string> {
 	const company = await db.company.create({
-		data: { name: `${name} ${suffix}`, domain: `${name}-${domain}` },
+		data: {
+			organizationId,
+			name: `${name} ${suffix}`,
+			domain: `${name}-${domain}`,
+		},
 		select: { id: true },
 	});
 
 	return company.id;
 }
 
-beforeAll(async () => {
-	bridgeSecret = process.env.AGENT_BRIDGE_SECRET;
-	process.env.AGENT_BRIDGE_SECRET = "";
+beforeAll(() =>
+	inTenant(async () => {
+		bridgeSecret = process.env.AGENT_BRIDGE_SECRET;
+		process.env.AGENT_BRIDGE_SECRET = "";
 
-	await clean();
+		await clean();
 
-	await db.user.create({
-		data: { id: ownerId, name: "Fields Rep", email: `rep@${domain}` },
-	});
+		await globalDb.user.create({
+			data: { id: ownerId, name: "Fields Rep", email: `rep@${domain}` },
+		});
 
-	companyId = await makeCompany("fields-co");
-});
+		companyId = await makeCompany("fields-co");
+	}),
+);
 
-afterAll(async () => {
-	await clean();
+afterAll(() =>
+	inTenant(async () => {
+		await clean();
 
-	if (bridgeSecret === undefined) {
-		delete process.env.AGENT_BRIDGE_SECRET;
-	} else {
-		process.env.AGENT_BRIDGE_SECRET = bridgeSecret;
-	}
-});
+		if (bridgeSecret === undefined) {
+			delete process.env.AGENT_BRIDGE_SECRET;
+		} else {
+			process.env.AGENT_BRIDGE_SECRET = bridgeSecret;
+		}
+	}),
+);
 
 beforeEach(() => {
 	queued.length = 0;
@@ -560,6 +577,7 @@ describe("a record update that fails", () => {
 
 		const contact = await db.contact.create({
 			data: {
+				organizationId,
 				firstName: "Ada",
 				email: `ada@${domain}`,
 				companyId,
@@ -598,7 +616,12 @@ describe("a record update that fails", () => {
 		});
 
 		const deal = await db.deal.create({
-			data: { name: `Spec deal ${suffix}`, companyId, ownerId },
+			data: {
+				organizationId,
+				name: `Spec deal ${suffix}`,
+				companyId,
+				ownerId,
+			},
 			select: { id: true },
 		});
 
@@ -623,7 +646,7 @@ describe("a record update that fails", () => {
 
 describe("queueing a backfill", () => {
 	it("targets the record, and merges a second field into the same pending task", async () => {
-		const trigger = new AgentTriggerService(db);
+		const trigger = tenantBound(organizationId, new AgentTriggerService(db));
 		const otherCompanyId = await makeCompany("fields-co-2");
 
 		const first = await trigger.fieldBackfillRecords(
@@ -659,9 +682,14 @@ describe("queueing a backfill", () => {
 	});
 
 	it("keeps a company's field apart from a contact's field with the same key", async () => {
-		const trigger = new AgentTriggerService(db);
+		const trigger = tenantBound(organizationId, new AgentTriggerService(db));
 		const contact = await db.contact.create({
-			data: { firstName: "Backfill", email: `backfill@${domain}`, companyId },
+			data: {
+				organizationId,
+				firstName: "Backfill",
+				email: `backfill@${domain}`,
+				companyId,
+			},
 			select: { id: true },
 		});
 

@@ -1,3 +1,4 @@
+import { runInTenant } from "@crm/db/tenant-context";
 import { syncError } from "@crm/telemetry";
 import { Injectable, Logger } from "@nestjs/common";
 import { GoogleConnectionService } from "../google/google-connection.service";
@@ -63,7 +64,9 @@ export class MailboxSyncService {
 			summary.attempted += 1;
 
 			try {
-				const outcome = await this.runOne(row.userId, row.source);
+				const outcome = await runInTenant(row.organizationId, () =>
+					this.runOne(row.userId, row.source),
+				);
 
 				if (outcome === null || outcome.status === "skipped") {
 					summary.skipped += 1;

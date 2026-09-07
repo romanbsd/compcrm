@@ -1,11 +1,12 @@
-import { type Db, type FieldEntity, Prisma as PrismaNamespace } from "@crm/db";
+import { type FieldEntity, Prisma as PrismaNamespace } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { parseSavedViewFilters } from "@crm/validation/saved-view";
 import {
 	ConflictException,
 	Injectable,
 	NotFoundException,
 } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type {
 	SavedView,
 	SavedViewCreateInput,
@@ -14,7 +15,7 @@ import type {
 
 @Injectable()
 export class SavedViewsService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async list(entity: FieldEntity, userId: string): Promise<SavedView[]> {
 		const rows = await this.db.savedView.findMany({

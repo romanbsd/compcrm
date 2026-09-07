@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import type { Prisma } from "@crm/db";
 import type { FieldEntity, FieldType } from "@crm/db/enums";
 import {
 	attachValues,
@@ -14,6 +14,7 @@ import {
 	writeValues,
 } from "@crm/db/fields";
 import { lockIdempotencyKey } from "@crm/db/idempotency";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import { currentFocus } from "./focus";
 
 const WITH_OPTIONS = { options: { orderBy: { position: "asc" } } } as const;
@@ -21,9 +22,10 @@ const WITH_OPTIONS = { options: { orderBy: { position: "asc" } } } as const;
 export type { FieldEntity, FieldType, RecordField, SerializedField };
 
 async function definitionsFor(
+	tx: Prisma.TransactionClient,
 	entity: FieldEntity,
 ): Promise<FieldDefinitionWithOptions[]> {
-	return db.fieldDefinition.findMany({
+	return tx.fieldDefinition.findMany({
 		where: { entity, archivedAt: null },
 		include: WITH_OPTIONS,
 		orderBy: { position: "asc" },
@@ -33,22 +35,27 @@ async function definitionsFor(
 export async function listFields(
 	entity: FieldEntity,
 ): Promise<SerializedField[]> {
-	const definitions = await definitionsFor(entity);
-	return definitions.map(serializeField);
+	return scopedTransaction(async (tx) => {
+		const definitions = await definitionsFor(tx, entity);
+		return definitions.map(serializeField);
+	});
 }
 
 export async function readFields(
 	entity: FieldEntity,
 	recordId: string,
 ): Promise<RecordField[]> {
-	const column = recordColumn(entity);
+	return scopedTransaction(async (tx) => {
+		const column = recordColumn(entity);
+		const [definitions, rows] = await Promise.all([
+			definitionsFor(tx, entity),
+			tx.fieldValue.findMany({
+				where: { [column]: recordId },
+			}),
+		]);
 
-	const [definitions, rows] = await Promise.all([
-		definitionsFor(entity),
-		db.fieldValue.findMany({ where: { [column]: recordId } }),
-	]);
-
-	return attachValues(definitions, rows);
+		return attachValues(definitions, rows);
+	});
 }
 
 export type WriteResult =
@@ -61,27 +68,34 @@ export async function writeField(input: {
 	key: string;
 	value: unknown;
 }): Promise<WriteResult> {
-	const definitions = await definitionsFor(input.entity);
-	const definition = definitions.find((entry) => entry.key === input.key);
-
-	if (!definition) {
-		return {
-			written: false,
-			reason: `There is no field called "${input.key}" on ${input.entity.toLowerCase()}s. Call list_fields to see what exists.`,
-		};
-	}
-
-	if (!definition.agentFilled) {
-		return {
-			written: false,
-			reason: `"${input.key}" is marked manual only, so a rep keeps it by hand.`,
-		};
-	}
-
-	const isBackfill = currentFocus().taskKind === "field-backfill";
-
 	try {
-		return await db.$transaction(async (tx) => {
+		return await scopedTransaction(async (tx) => {
+			const definitions = await definitionsFor(tx, input.entity);
+			const definition = definitions.find((entry) => entry.key === input.key);
+
+			if (!definition) {
+				return {
+					written: false,
+					reason: `There is no field called "${input.key}" on ${input.entity.toLowerCase()}s. Call list_fields to see what exists.`,
+				};
+			}
+
+			if (!definition.agentFilled) {
+				return {
+					written: false,
+					reason: `"${input.key}" is marked manual only, so a rep keeps it by hand.`,
+				};
+			}
+
+			if (!(await recordExists(tx, input.entity, input.recordId))) {
+				return {
+					written: false,
+					reason: `There is no ${input.entity.toLowerCase()} with id "${input.recordId}".`,
+				};
+			}
+
+			const isBackfill = currentFocus().taskKind === "field-backfill";
+
 			if (isBackfill) {
 				const column = recordColumn(input.entity);
 				await lockIdempotencyKey(
@@ -129,49 +143,51 @@ export async function createField(input: {
 		return { created: false, reason: "That label does not make a usable key." };
 	}
 
-	const taken = await db.fieldDefinition.findUnique({
-		where: { entity_key: { entity: input.entity, key } },
-		select: { id: true },
-	});
-
-	if (taken) {
-		return {
-			created: false,
-			reason: `There is already a field called "${key}" on ${input.entity.toLowerCase()}s.`,
-		};
-	}
-
 	if (usesOptions(input.type) && (input.options ?? []).length === 0) {
 		return { created: false, reason: "A select needs at least one option." };
 	}
 
-	const last = await db.fieldDefinition.findFirst({
-		where: { entity: input.entity },
-		orderBy: { position: "desc" },
-		select: { position: true },
-	});
+	return scopedTransaction(async (tx) => {
+		const taken = await tx.fieldDefinition.findFirst({
+			where: { entity: input.entity, key },
+			select: { id: true },
+		});
 
-	const definition = await db.fieldDefinition.create({
-		data: {
-			entity: input.entity,
-			key,
-			label: input.label,
-			type: input.type,
-			agentBrief: input.agentBrief ?? null,
-			position: (last?.position ?? -1) + 1,
-			options: usesOptions(input.type)
-				? {
-						create: (input.options ?? []).map((label, index) => ({
-							label,
-							position: index,
-						})),
-					}
-				: undefined,
-		},
-		include: WITH_OPTIONS,
-	});
+		if (taken) {
+			return {
+				created: false,
+				reason: `There is already a field called "${key}" on ${input.entity.toLowerCase()}s.`,
+			};
+		}
 
-	return serializeField(definition);
+		const last = await tx.fieldDefinition.findFirst({
+			where: { entity: input.entity },
+			orderBy: { position: "desc" },
+			select: { position: true },
+		});
+
+		const definition = await tx.fieldDefinition.create({
+			data: {
+				entity: input.entity,
+				key,
+				label: input.label,
+				type: input.type,
+				agentBrief: input.agentBrief ?? null,
+				position: (last?.position ?? -1) + 1,
+				options: usesOptions(input.type)
+					? {
+							create: (input.options ?? []).map((label, index) => ({
+								label,
+								position: index,
+							})),
+						}
+					: undefined,
+			},
+			include: WITH_OPTIONS,
+		});
+
+		return serializeField(definition);
+	});
 }
 
 export async function updateFieldBrief(input: {
@@ -180,47 +196,81 @@ export async function updateFieldBrief(input: {
 	agentBrief: string | null;
 	agentFilled?: boolean;
 }): Promise<SerializedField | { updated: false; reason: string }> {
-	const existing = await db.fieldDefinition.findUnique({
-		where: { entity_key: { entity: input.entity, key: input.key } },
-		select: { id: true },
+	return scopedTransaction(async (tx) => {
+		const existing = await tx.fieldDefinition.findFirst({
+			where: { entity: input.entity, key: input.key },
+			select: { id: true },
+		});
+
+		if (!existing) {
+			return {
+				updated: false,
+				reason: `There is no field called "${input.key}".`,
+			};
+		}
+
+		const definition = await tx.fieldDefinition.update({
+			where: { id: existing.id },
+			data: { agentBrief: input.agentBrief, agentFilled: input.agentFilled },
+			include: WITH_OPTIONS,
+		});
+
+		return serializeField(definition);
 	});
-
-	if (!existing) {
-		return {
-			updated: false,
-			reason: `There is no field called "${input.key}".`,
-		};
-	}
-
-	const definition = await db.fieldDefinition.update({
-		where: { id: existing.id },
-		data: { agentBrief: input.agentBrief, agentFilled: input.agentFilled },
-		include: WITH_OPTIONS,
-	});
-
-	return serializeField(definition);
 }
 
 export async function archiveField(input: {
 	entity: FieldEntity;
 	key: string;
 }): Promise<{ archived: boolean; reason?: string }> {
-	const existing = await db.fieldDefinition.findUnique({
-		where: { entity_key: { entity: input.entity, key: input.key } },
-		select: { id: true },
-	});
+	return scopedTransaction(async (tx) => {
+		const existing = await tx.fieldDefinition.findFirst({
+			where: { entity: input.entity, key: input.key },
+			select: { id: true },
+		});
 
-	if (!existing) {
-		return {
-			archived: false,
-			reason: `There is no field called "${input.key}".`,
-		};
+		if (!existing) {
+			return {
+				archived: false,
+				reason: `There is no field called "${input.key}".`,
+			};
+		}
+
+		await tx.fieldDefinition.update({
+			where: { id: existing.id },
+			data: { archivedAt: new Date() },
+		});
+
+		return { archived: true };
+	});
+}
+
+async function recordExists(
+	tx: Prisma.TransactionClient,
+	entity: FieldEntity,
+	recordId: string,
+): Promise<boolean> {
+	switch (entity) {
+		case "COMPANY":
+			return Boolean(
+				await tx.company.findFirst({
+					where: { id: recordId },
+					select: { id: true },
+				}),
+			);
+		case "CONTACT":
+			return Boolean(
+				await tx.contact.findFirst({
+					where: { id: recordId },
+					select: { id: true },
+				}),
+			);
+		case "DEAL":
+			return Boolean(
+				await tx.deal.findFirst({
+					where: { id: recordId },
+					select: { id: true },
+				}),
+			);
 	}
-
-	await db.fieldDefinition.update({
-		where: { id: existing.id },
-		data: { archivedAt: new Date() },
-	});
-
-	return { archived: true };
 }

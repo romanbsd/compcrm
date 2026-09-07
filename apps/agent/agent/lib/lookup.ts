@@ -1,5 +1,6 @@
-import { DealStage, db } from "@crm/db";
+import { DealStage } from "@crm/db";
 import { LOSING_DEAL_STAGES, OPEN_DEAL_STAGES } from "@crm/db/deal-stage";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { domainOf, normalise } from "./names";
 
 export type RecordKind = "contact" | "company" | "deal";

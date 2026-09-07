@@ -1,39 +1,76 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
-import { DIRECT_KINDS } from "@crm/db/agent-tasks";
+import { describe, expect } from "bun:test";
+import { DIRECT_KINDS, MAX_ATTEMPTS } from "@crm/db/agent-tasks";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import {
 	claimDue,
 	completeTask,
-	MAX_ATTEMPTS,
 	retireExhausted,
 	scheduleTask,
 } from "../agent/lib/tasks";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const kind = "test-lease";
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeEach = tenantBeforeEach(organizationId);
+const afterEach = tenantAfterEach(organizationId);
+const otherOrganizationId = "task-queue-other-workspace";
 
 const RESEARCH = { except: DIRECT_KINDS } as const;
 
 async function clear() {
 	await db.agentTask.deleteMany({ where: { kind } });
 	await db.contact.deleteMany({ where: { email: { startsWith: "lease-" } } });
+	await db.organization.deleteMany({ where: { id: otherOrganizationId } });
+	await db.organization.upsert({
+		where: { id: organizationId },
+		create: {
+			id: organizationId,
+			name: "Workspace",
+			slug: "workspace",
+			createdAt: new Date(),
+		},
+		update: {},
+	});
 }
 
 beforeEach(clear);
 afterEach(clear);
 
 async function queue(
-	overrides: { priority?: number; dueAt?: Date; contactId?: string } = {},
+	overrides: {
+		priority?: number;
+		dueAt?: Date;
+		contactId?: string;
+		organizationId?: string;
+	} = {},
 ) {
-	return db.agentTask.create({
+	const tenant = overrides.organizationId ?? organizationId;
+	return runInTenant(tenant, () =>
+		db.agentTask.create({
+			data: {
+				kind,
+				reason: "test",
+				dueAt: overrides.dueAt ?? new Date(Date.now() - 1000),
+				priority: overrides.priority ?? 0,
+				budget: 4,
+				organizationId: overrides.organizationId ?? organizationId,
+				contactId: overrides.contactId ?? null,
+			},
+			select: { id: true },
+		}),
+	);
+}
+
+async function createOtherOrganization() {
+	await db.organization.create({
 		data: {
-			kind,
-			reason: "test",
-			dueAt: overrides.dueAt ?? new Date(Date.now() - 1000),
-			priority: overrides.priority ?? 0,
-			budget: 4,
-			contactId: overrides.contactId ?? null,
+			id: otherOrganizationId,
+			name: "Other Workspace",
+			slug: otherOrganizationId,
+			createdAt: new Date(),
 		},
-		select: { id: true },
 	});
 }
 
@@ -49,6 +86,7 @@ async function someone() {
 		data: {
 			firstName: "Lease",
 			email: `lease-${crypto.randomUUID()}@example.test`,
+			organizationId,
 		},
 		select: { id: true },
 	});
@@ -64,6 +102,15 @@ describe("claimDue", () => {
 		const row = await db.agentTask.findUnique({ where: { id: task.id } });
 		expect(row?.leasedUntil).not.toBeNull();
 		expect(row?.startedAt).not.toBeNull();
+	});
+
+	it("returns the organizationId on every leased row", async () => {
+		const task = await queue();
+
+		const [claimed] = await claimDue(10, RESEARCH);
+
+		expect(claimed?.id).toBe(task.id);
+		expect(claimed?.organizationId).toBe(organizationId);
 	});
 
 	it("does not hand the same row to two dispatchers", async () => {
@@ -92,6 +139,20 @@ describe("claimDue", () => {
 		const claimed = await claimDue(1, RESEARCH);
 		expect(claimed[0]?.id).toBe(high.id);
 		expect(claimed[0]?.id).not.toBe(low.id);
+	});
+
+	it("takes the most urgent task across workspaces", async () => {
+		await createOtherOrganization();
+		const low = await queue({ priority: 0 });
+		const high = await queue({
+			priority: 100,
+			organizationId: otherOrganizationId,
+		});
+
+		const claimed = await claimDue(1, RESEARCH);
+		expect(claimed[0]?.id).toBe(high.id);
+		expect(claimed[0]?.id).not.toBe(low.id);
+		expect(claimed[0]?.organizationId).toBe(otherOrganizationId);
 	});
 
 	it("does not re-claim a leased row, and does re-claim an expired one", async () => {
@@ -132,7 +193,7 @@ describe("claimDue", () => {
 	it("stops claiming once the work is finished", async () => {
 		const task = await queue();
 		await claimDue(10, RESEARCH);
-		await completeTask(task.id, "ran");
+		await runInTenant(organizationId, () => completeTask(task.id, "ran"));
 
 		await db.agentTask.update({
 			where: { id: task.id },
@@ -182,7 +243,9 @@ describe("retireExhausted", () => {
 
 	it("retires no more rows than the limit allows", async () => {
 		const mine: string[] = [];
-		for (let row = 0; row < 3; row++) mine.push((await queue()).id);
+		for (let row = 0; row < 3; row++) {
+			mine.push((await queue({ dueAt: new Date(0) })).id);
+		}
 
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
 			const claimed = await claimDue(10, RESEARCH);
@@ -198,6 +261,31 @@ describe("retireExhausted", () => {
 		});
 		expect(open).toBe(0);
 	});
+
+	it("retires the oldest exhausted task across workspaces", async () => {
+		await createOtherOrganization();
+		const newer = await queue({ dueAt: new Date(1000) });
+		const older = await queue({
+			dueAt: new Date(0),
+			organizationId: otherOrganizationId,
+		});
+		await Promise.all([
+			db.agentTask.update({
+				where: { id: newer.id },
+				data: { attempts: MAX_ATTEMPTS },
+			}),
+			runInTenant(otherOrganizationId, () =>
+				db.agentTask.update({
+					where: { id: older.id },
+					data: { attempts: MAX_ATTEMPTS },
+				}),
+			),
+		]);
+
+		const retired = await retireExhausted(1);
+		expect(retired.map(({ id }) => id)).toEqual([older.id]);
+		expect(retired[0]?.organizationId).toBe(otherOrganizationId);
+	});
 });
 
 describe("completeTask", () => {
@@ -206,10 +294,16 @@ describe("completeTask", () => {
 		const task = await queue({ contactId: contact.id });
 		await claimDue(10, RESEARCH);
 
-		const subject = await completeTask(task.id, "ran");
+		const subject = await runInTenant(organizationId, () =>
+			completeTask(task.id, "ran"),
+		);
 		expect(subject?.contactId).toBe(contact.id);
 
-		expect(await completeTask(task.id, "ran again")).toBeNull();
+		expect(
+			await runInTenant(organizationId, () =>
+				completeTask(task.id, "ran again"),
+			),
+		).toBeNull();
 		const row = await db.agentTask.findUnique({ where: { id: task.id } });
 		expect(row?.outcome).toBe("ran");
 	});
@@ -218,11 +312,14 @@ describe("completeTask", () => {
 describe("scheduleTask", () => {
 	it("books work with the agent's own reason", async () => {
 		const dueAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-		const { id } = await scheduleTask({
-			kind,
-			reason: "a job change here would move the Acme deal",
-			dueAt,
-		});
+		const { id } = await runInTenant(organizationId, () =>
+			scheduleTask({
+				organizationId,
+				kind,
+				reason: "a job change here would move the Acme deal",
+				dueAt,
+			}),
+		);
 
 		const row = await db.agentTask.findUnique({ where: { id } });
 		expect(row?.reason).toContain("Acme");
@@ -232,8 +329,12 @@ describe("scheduleTask", () => {
 		const soon = new Date(Date.now() + 1000);
 		const later = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
-		const first = await scheduleTask({ kind, reason: "first", dueAt: soon });
-		const second = await scheduleTask({ kind, reason: "second", dueAt: later });
+		const first = await runInTenant(organizationId, () =>
+			scheduleTask({ organizationId, kind, reason: "first", dueAt: soon }),
+		);
+		const second = await runInTenant(organizationId, () =>
+			scheduleTask({ organizationId, kind, reason: "second", dueAt: later }),
+		);
 
 		expect(second.id).toBe(first.id);
 		expect(await db.agentTask.count({ where: { kind } })).toBe(1);

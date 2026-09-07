@@ -1,4 +1,4 @@
-import type { Db, Prisma as PrismaTypes } from "@crm/db";
+import type { Prisma as PrismaTypes } from "@crm/db";
 import { Prisma } from "@crm/db";
 import { minorUnitsOf, normalizeCurrency } from "@crm/db/currency";
 import {
@@ -8,8 +8,9 @@ import {
 	resolveRate,
 } from "@crm/db/fx";
 import { readReportingCurrency } from "@crm/db/settings";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 
 export interface DealFxFields {
 	baseAmount: PrismaTypes.Decimal | null;
@@ -33,7 +34,7 @@ export interface RerateResult {
 export class ConversionService {
 	private readonly logger = new Logger(ConversionService.name);
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async reportingCurrency(): Promise<string> {
 		return readReportingCurrency(this.db);
@@ -182,27 +183,33 @@ export class ConversionService {
 			? Prisma.sql`AND ("baseAmount" IS NULL OR "baseCurrency" IS DISTINCT FROM ${base})`
 			: Prisma.empty;
 
-		return this.db.$executeRaw`
-			UPDATE "deal"
-			SET "baseAmount" = ROUND("amount" * ${value}::numeric, ${places}::int),
-			    "baseCurrency" = ${base},
-			    "fxRate" = ${value}::numeric,
-			    "fxRateAt" = ${rate.asOf}
-			WHERE "amount" IS NOT NULL
-			  AND upper(btrim("currency")) = ${code}
-			  ${filter}
-		`;
+		return scopedTransaction(
+			this.db,
+			(tx) => tx.$executeRaw`
+				UPDATE "deal"
+				SET "baseAmount" = ROUND("amount" * ${value}::numeric, ${places}::int),
+				    "baseCurrency" = ${base},
+				    "fxRate" = ${value}::numeric,
+				    "fxRateAt" = ${rate.asOf}
+				WHERE "amount" IS NOT NULL
+				  AND upper(btrim("currency")) = ${code}
+				  ${filter}
+			`,
+		);
 	}
 
 	private async clear(code: string): Promise<number> {
-		return this.db.$executeRaw`
-			UPDATE "deal"
-			SET "baseAmount" = NULL,
-			    "baseCurrency" = NULL,
-			    "fxRate" = NULL,
-			    "fxRateAt" = NULL
-			WHERE upper(btrim("currency")) = ${code}
-			  AND "baseAmount" IS NOT NULL
-		`;
+		return scopedTransaction(
+			this.db,
+			(tx) => tx.$executeRaw`
+				UPDATE "deal"
+				SET "baseAmount" = NULL,
+				    "baseCurrency" = NULL,
+				    "fxRate" = NULL,
+				    "fxRateAt" = NULL
+				WHERE upper(btrim("currency")) = ${code}
+				  AND "baseAmount" IS NOT NULL
+			`,
+		);
 	}
 }

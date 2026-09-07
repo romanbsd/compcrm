@@ -1,6 +1,7 @@
-import { type Db, type Prisma, Prisma as PrismaNamespace } from "@crm/db";
+import { type Prisma, Prisma as PrismaNamespace } from "@crm/db";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 
 export type ActivityTarget = {
 	companyId?: string | null;
@@ -22,7 +23,7 @@ function present(ids: (string | null)[]): string[] {
 export class ActivityStampService {
 	private readonly logger = new Logger(ActivityStampService.name);
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async touch(target: ActivityTarget, at: Date): Promise<void> {
 		const stale = {
@@ -104,15 +105,23 @@ export class ActivityStampService {
 	}
 
 	async recomputeMany(targets: StampTargets): Promise<void> {
-		const statements = [
-			this.restamp("company", "companyId", targets.companyIds),
-			this.restamp("contact", "contactId", targets.contactIds),
-			this.restamp("deal", "dealId", targets.dealIds),
-		].filter((statement) => statement !== null);
+		if (
+			targets.companyIds.length === 0 &&
+			targets.contactIds.length === 0 &&
+			targets.dealIds.length === 0
+		) {
+			return;
+		}
 
-		if (statements.length === 0) return;
-
-		await this.db.$transaction(statements);
+		await scopedTransaction(this.db, async (tx) => {
+			await Promise.all(
+				[
+					this.restamp(tx, "company", "companyId", targets.companyIds),
+					this.restamp(tx, "contact", "contactId", targets.contactIds),
+					this.restamp(tx, "deal", "dealId", targets.dealIds),
+				].filter((statement) => statement !== null),
+			);
+		});
 	}
 
 	async recomputeAfterDelete(
@@ -133,13 +142,18 @@ export class ActivityStampService {
 		}
 	}
 
-	private restamp(table: string, column: string, ids: string[]) {
+	private restamp(
+		client: Prisma.TransactionClient,
+		table: string,
+		column: string,
+		ids: string[],
+	) {
 		if (ids.length === 0) return null;
 
 		const record = PrismaNamespace.raw(`"${table}"`);
 		const key = PrismaNamespace.raw(`"${column}"`);
 
-		return this.db.$executeRaw`
+		return client.$executeRaw`
 			UPDATE ${record} r
 			SET "lastActivityAt" = (
 				SELECT MAX(a."createdAt") FROM "activity" a WHERE a.${key} = r.id
@@ -148,43 +162,63 @@ export class ActivityStampService {
 	}
 
 	async recomputeAll(): Promise<void> {
-		await this.db.$transaction([
-			this.db.$executeRaw`
+		await scopedTransaction(this.db, async (tx) => {
+			await Promise.all([
+				tx.$executeRaw`
 				UPDATE "company" c
 				SET "lastActivityAt" = a.max
 				FROM (
 					SELECT "companyId" AS id, MAX("createdAt") AS max
-					FROM "activity" WHERE "companyId" IS NOT NULL GROUP BY "companyId"
+					FROM "activity"
+					WHERE "companyId" IS NOT NULL
+					GROUP BY "companyId"
 				) a
-				WHERE c.id = a.id AND c."lastActivityAt" IS DISTINCT FROM a.max`,
-			this.db.$executeRaw`
+				WHERE c.id = a.id
+				AND c."lastActivityAt" IS DISTINCT FROM a.max`,
+				tx.$executeRaw`
 				UPDATE "company" SET "lastActivityAt" = NULL
 				WHERE "lastActivityAt" IS NOT NULL
-				AND id NOT IN (SELECT "companyId" FROM "activity" WHERE "companyId" IS NOT NULL)`,
-			this.db.$executeRaw`
+				AND id NOT IN (
+					SELECT "companyId" FROM "activity"
+					WHERE "companyId" IS NOT NULL
+				)`,
+				tx.$executeRaw`
 				UPDATE "contact" c
 				SET "lastActivityAt" = a.max
 				FROM (
 					SELECT "contactId" AS id, MAX("createdAt") AS max
-					FROM "activity" WHERE "contactId" IS NOT NULL GROUP BY "contactId"
+					FROM "activity"
+					WHERE "contactId" IS NOT NULL
+					GROUP BY "contactId"
 				) a
-				WHERE c.id = a.id AND c."lastActivityAt" IS DISTINCT FROM a.max`,
-			this.db.$executeRaw`
+				WHERE c.id = a.id
+				AND c."lastActivityAt" IS DISTINCT FROM a.max`,
+				tx.$executeRaw`
 				UPDATE "contact" SET "lastActivityAt" = NULL
 				WHERE "lastActivityAt" IS NOT NULL
-				AND id NOT IN (SELECT "contactId" FROM "activity" WHERE "contactId" IS NOT NULL)`,
-			this.db.$executeRaw`
+				AND id NOT IN (
+					SELECT "contactId" FROM "activity"
+					WHERE "contactId" IS NOT NULL
+				)`,
+				tx.$executeRaw`
 				UPDATE "deal" d
 				SET "lastActivityAt" = a.max
 				FROM (
 					SELECT "dealId" AS id, MAX("createdAt") AS max
-					FROM "activity" WHERE "dealId" IS NOT NULL GROUP BY "dealId"
+					FROM "activity"
+					WHERE "dealId" IS NOT NULL
+					GROUP BY "dealId"
 				) a
-				WHERE d.id = a.id AND d."lastActivityAt" IS DISTINCT FROM a.max`,
-			this.db.$executeRaw`
+				WHERE d.id = a.id
+				AND d."lastActivityAt" IS DISTINCT FROM a.max`,
+				tx.$executeRaw`
 				UPDATE "deal" SET "lastActivityAt" = NULL
 				WHERE "lastActivityAt" IS NOT NULL
-				AND id NOT IN (SELECT "dealId" FROM "activity" WHERE "dealId" IS NOT NULL)`,
-		]);
+				AND id NOT IN (
+					SELECT "dealId" FROM "activity"
+					WHERE "dealId" IS NOT NULL
+				)`,
+			]);
+		});
 	}
 }

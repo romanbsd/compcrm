@@ -10,6 +10,7 @@ import { CONTEXT } from "../lib/context-config";
 import { spend } from "../lib/focus";
 import { verdictFor } from "../lib/identity";
 import { personByClues } from "../lib/people";
+import { runInSessionTenant } from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -29,41 +30,46 @@ export default defineTool({
 			.optional()
 			.describe("The last name, if the CRM holds one."),
 	}),
-	async execute({ email, companyName, companyDomain, firstName, lastName }) {
-		if (!(await enabled(CONTEXT_DEV_PEOPLE))) {
-			return { found: false as const, ...unavailable(CONTEXT_DEV_SOURCE) };
-		}
+	async execute(
+		{ email, companyName, companyDomain, firstName, lastName },
+		ctx,
+	) {
+		return runInSessionTenant(ctx, async () => {
+			if (!(await enabled(CONTEXT_DEV_PEOPLE))) {
+				return { found: false as const, ...unavailable(CONTEXT_DEV_SOURCE) };
+			}
 
-		const charge = spend(CONTEXT.people.enrichCost);
-		if (!charge.ok) return { found: false as const, reason: charge.reason };
+			const charge = spend(CONTEXT.people.enrichCost);
+			if (!charge.ok) return { found: false as const, reason: charge.reason };
 
-		const result = await personByClues({
-			email,
-			firstName: firstName ?? null,
-			lastName: lastName ?? null,
-			companyName,
-			companyDomain,
-		});
+			const result = await personByClues({
+				email,
+				firstName: firstName ?? null,
+				lastName: lastName ?? null,
+				companyName,
+				companyDomain,
+			});
 
-		if (result.outcome !== "found") {
-			return { found: false as const, reason: result.reason };
-		}
+			if (result.outcome !== "found") {
+				return { found: false as const, reason: result.reason };
+			}
 
-		const person = result.person;
-		if (!person.profileUrl) {
+			const person = result.person;
+			if (!person.profileUrl) {
+				return {
+					found: false as const,
+					reason:
+						"Somebody matched, but no LinkedIn profile came back with them. There is nothing to cite.",
+				};
+			}
+
 			return {
-				found: false as const,
-				reason:
-					"Somebody matched, but no LinkedIn profile came back with them. There is nothing to cite.",
+				found: true as const,
+				profile: person,
+				sourceUrl: person.profileUrl,
+				verdict: verdictFor(person, { email, companyName, companyDomain }),
+				note: "One candidate, not proof. Read the verdict before you write anything.",
 			};
-		}
-
-		return {
-			found: true as const,
-			profile: person,
-			sourceUrl: person.profileUrl,
-			verdict: verdictFor(person, { email, companyName, companyDomain }),
-			note: "One candidate, not proof. Read the verdict before you write anything.",
-		};
+		});
 	},
 });

@@ -1,6 +1,5 @@
 import {
 	ActivityType,
-	type Db,
 	type DealStage,
 	type Prisma,
 	Prisma as PrismaNamespace,
@@ -13,6 +12,7 @@ import {
 	OPEN_DEAL_STAGES,
 } from "@crm/db/deal-stage";
 import type { FieldDefinitionWithOptions } from "@crm/db/fields";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	BadRequestException,
 	Injectable,
@@ -33,7 +33,7 @@ import {
 	toCents,
 } from "../crm/values";
 import { ConversionService } from "../currency/conversion.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { FieldsService } from "../fields/fields.service";
 import {
 	archivedFilter,
@@ -115,7 +115,7 @@ export class DealsService {
 	private readonly logger = new Logger(DealsService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly agent: AgentTriggerService,
 		private readonly stamp: ActivityStampService,
 		private readonly conversion: ConversionService,
@@ -384,7 +384,7 @@ export class DealsService {
 		}
 
 		try {
-			return await this.db.$transaction(async (tx) => {
+			return await scopedTransaction(this.db, async (tx) => {
 				if (input.fields) {
 					await this.fields.applyValues(tx, "DEAL", id, input.fields);
 				}
@@ -444,7 +444,7 @@ export class DealsService {
 		let deleted: { targets: StampTargets; name: string } | null;
 
 		try {
-			deleted = await this.db.$transaction(async (tx) => {
+			deleted = await scopedTransaction(this.db, async (tx) => {
 				const [row] = await tx.$queryRaw<Array<{ archivedAt: Date | null }>>`
 					SELECT "archivedAt" FROM deal WHERE id = ${id} FOR UPDATE
 				`;
@@ -616,7 +616,7 @@ export class DealsService {
 			throw new NotFoundException(`No deal with id ${dealId}.`);
 		}
 
-		return this.db.contact.findMany({
+		return await this.db.contact.findMany({
 			where: {
 				companyId: deal.companyId,
 				id: { notIn: deal.contacts.map((row) => row.contactId) },
@@ -653,7 +653,11 @@ export class DealsService {
 					contactId: input.contactId,
 				},
 			},
-			create: { dealId: input.dealId, contactId: input.contactId, role },
+			create: {
+				dealId: input.dealId,
+				contactId: input.contactId,
+				role,
+			},
 			update: role === null ? {} : { role },
 		});
 

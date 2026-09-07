@@ -1,5 +1,7 @@
-import { afterAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect } from "bun:test";
 import { ActivityType, db, EmailDirection, GoogleSyncStatus } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { GoogleConnectionService } from "../src/google/google-connection.service";
 import {
@@ -12,6 +14,7 @@ import type { MailboxMatchService } from "../src/mailbox/mailbox-match.service";
 import { MailboxTokenService } from "../src/mailbox/mailbox-token.service";
 import { SyncStateService } from "../src/mailbox/sync-state.service";
 import { MicrosoftConnectionService } from "../src/microsoft/microsoft-connection.service";
+import { tenantBound, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "mailbox-purge-spec";
 const domain = `purge-${suffix}.test`;
@@ -25,19 +28,31 @@ const shared = `shared-${suffix}`;
 const solo = `solo-${suffix}`;
 const theirs = `theirs-${suffix}`;
 const roots = [shared, solo, theirs];
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
 
 const tokens = new MailboxTokenService(db);
-const state = new SyncStateService(db);
-const stamp = new ActivityStampService(db);
+const rawState = new SyncStateService(scopedDb as never);
+const stamp = new ActivityStampService(scopedDb as never);
+const state = tenantBound(organizationId, rawState);
 
-const google = new GoogleConnectionService(
+const rawGoogle = new GoogleConnectionService(
 	db,
+	scopedDb as never,
 	tokens,
 	state,
 	{} as unknown as MailboxMatchService,
 	stamp,
 );
-const microsoft = new MicrosoftConnectionService(db, tokens, state, stamp);
+const google = tenantBound(organizationId, rawGoogle);
+const rawMicrosoft = new MicrosoftConnectionService(
+	db,
+	scopedDb as never,
+	tokens,
+	state,
+	stamp,
+);
+const microsoft = tenantBound(organizationId, rawMicrosoft);
 
 function at(hour: number): Date {
 	return new Date(Date.UTC(2026, 0, 1, hour));
@@ -61,8 +76,9 @@ async function thread(
 	const last = messages[messages.length - 1];
 	if (!first || !last) return;
 
-	await db.emailThread.create({
+	await scopedDb.emailThread.create({
 		data: {
+			organizationId,
 			rootMessageId,
 			subject: first.subject,
 			companyId,
@@ -71,6 +87,7 @@ async function thread(
 			messageCount: messages.length,
 			messages: {
 				create: messages.map((message) => ({
+					organizationId,
 					rfcMessageId: `${message.id}@${domain}`,
 					syncedByUserId: message.syncedByUserId,
 					gmailMessageId: message.provider === "gmail" ? message.id : null,
@@ -85,6 +102,7 @@ async function thread(
 			},
 			activity: {
 				create: {
+					organizationId,
 					type: ActivityType.EMAIL,
 					subject: first.subject,
 					body: last.snippet,
@@ -99,8 +117,8 @@ async function thread(
 }
 
 async function seed(): Promise<void> {
-	const company = await db.company.create({
-		data: { name: "Purge Co", domain },
+	const company = await scopedDb.company.create({
+		data: { organizationId, name: "Purge Co", domain },
 		select: { id: true },
 	});
 
@@ -153,8 +171,9 @@ async function seed(): Promise<void> {
 		},
 	]);
 
-	await db.calendarEvent.create({
+	await scopedDb.calendarEvent.create({
 		data: {
+			organizationId,
 			iCalUid: `ical-${suffix}`,
 			originalStartTime: at(12),
 			startsAt: at(12),
@@ -167,18 +186,20 @@ async function seed(): Promise<void> {
 }
 
 async function clean(): Promise<void> {
-	await db.calendarEvent.deleteMany({
+	await scopedDb.calendarEvent.deleteMany({
 		where: { syncedByUserId: { in: userIds } },
 	});
-	await db.emailThread.deleteMany({ where: { rootMessageId: { in: roots } } });
-	await db.mailboxSync.deleteMany({ where: { userId: { in: userIds } } });
+	await scopedDb.emailThread.deleteMany({
+		where: { rootMessageId: { in: roots } },
+	});
+	await scopedDb.mailboxSync.deleteMany({ where: { userId: { in: userIds } } });
 	await db.account.deleteMany({ where: { userId: { in: userIds } } });
 	await db.user.deleteMany({ where: { id: { in: userIds } } });
-	await db.company.deleteMany({ where: { domain } });
+	await scopedDb.company.deleteMany({ where: { domain } });
 }
 
 async function messagesOn(rootMessageId: string): Promise<string[]> {
-	const rows = await db.emailMessage.findMany({
+	const rows = await scopedDb.emailMessage.findMany({
 		where: { thread: { rootMessageId } },
 		orderBy: { sentAt: "asc" },
 		select: { snippet: true },
@@ -188,7 +209,7 @@ async function messagesOn(rootMessageId: string): Promise<string[]> {
 }
 
 async function threadState(rootMessageId: string) {
-	return db.emailThread.findUnique({
+	return scopedDb.emailThread.findUnique({
 		where: { rootMessageId },
 		select: {
 			subject: true,
@@ -200,21 +221,23 @@ async function threadState(rootMessageId: string) {
 	});
 }
 
-beforeEach(async () => {
-	await clean();
+beforeEach(() =>
+	runInTenant(organizationId, async () => {
+		await clean();
 
-	await db.user.createMany({
-		data: userIds.map((id) => ({
-			id,
-			name: id,
-			email: `${id}@${domain}`,
-		})),
-	});
+		await db.user.createMany({
+			data: userIds.map((id) => ({
+				id,
+				name: id,
+				email: `${id}@${domain}`,
+			})),
+		});
 
-	await seed();
-});
+		await seed();
+	}),
+);
 
-afterAll(clean);
+afterAll(() => runInTenant(organizationId, clean));
 
 describe("purging Gmail data", () => {
 	it("removes only the caller's Gmail messages and counts them", async () => {
@@ -238,9 +261,9 @@ describe("purging Gmail data", () => {
 		await google.purgeSyncedData(gmailRep);
 
 		expect(await threadState(solo)).toBeNull();
-		expect(await db.activity.count({ where: { subject: "Only mine" } })).toBe(
-			0,
-		);
+		expect(
+			await scopedDb.activity.count({ where: { subject: "Only mine" } }),
+		).toBe(0);
 	});
 
 	it("cannot reach a thread the caller never synced into", async () => {
@@ -259,7 +282,9 @@ describe("purging Gmail data", () => {
 
 describe("purging Outlook data", () => {
 	it("removes only the caller's Outlook messages and counts them", async () => {
-		expect(await microsoft.purgeSyncedData(outlookRep)).toEqual({ purged: 2 });
+		expect(await microsoft.purgeSyncedData(outlookRep)).toEqual({
+			purged: 2,
+		});
 	});
 
 	it("leaves the Gmail messages on a shared thread alone", async () => {
@@ -280,7 +305,9 @@ describe("purging Outlook data", () => {
 
 		expect(await messagesOn(solo)).toEqual(["alone"]);
 		expect(
-			await db.calendarEvent.count({ where: { iCalUid: `ical-${suffix}` } }),
+			await scopedDb.calendarEvent.count({
+				where: { iCalUid: `ical-${suffix}` },
+			}),
 		).toBe(1);
 	});
 });

@@ -1,4 +1,5 @@
 import { auth, isOAuthScope, type OAuthScope, parseScopes } from "@crm/auth";
+import { db } from "@crm/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -46,6 +47,19 @@ export default async function OAuthConsentPage({
 
 	const session = await getSession();
 	if (!session) redirect(`/sign-in?${oauthQuery}`);
+	const organizationId = session.session.activeOrganizationId;
+	if (!organizationId) redirect("/no-organization");
+
+	const membership = await db.member.findUnique({
+		where: {
+			organizationId_userId: {
+				organizationId,
+				userId: session.user.id,
+			},
+		},
+		select: { organization: { select: { name: true } } },
+	});
+	if (!membership) redirect("/no-organization");
 
 	const client = await auth.api.getOAuthClientPublic({
 		query: { client_id: params.client_id },
@@ -57,7 +71,7 @@ export default async function OAuthConsentPage({
 		<AuthShell>
 			<AuthHeading
 				title={`Authorize ${client.client_name ?? client.client_id}`}
-				description={`Signed in as ${session.user.email}`}
+				description={`Grant access to ${membership.organization.name} as ${session.user.email}`}
 			/>
 			<div className="space-y-4">
 				<p className="text-muted-foreground text-sm">

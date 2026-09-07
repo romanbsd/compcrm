@@ -1,8 +1,12 @@
-import { db } from "@crm/db";
 import { DEFAULT_AGENT_MODEL } from "@crm/db/settings";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { defineAgent, defineDynamic } from "eve";
 import { z } from "zod";
-import { attribute, purposeOf } from "../../lib/session-purpose";
+import {
+	attribute,
+	purposeOf,
+	runInSessionTenant,
+} from "../../lib/session-purpose";
 
 export default defineAgent({
 	description:
@@ -15,14 +19,16 @@ export default defineAgent({
 				const runId = attribute(ctx, "runId");
 				if (!runId) return null;
 
-				const run = await db.agentRun.findUnique({
-					where: { id: runId },
-					select: {
-						version: {
-							select: { modelId: true, modelContextWindowTokens: true },
+				const run = await runInSessionTenant(ctx, () =>
+					db.agentRun.findUnique({
+						where: { id: runId },
+						select: {
+							version: {
+								select: { modelId: true, modelContextWindowTokens: true },
+							},
 						},
-					},
-				});
+					}),
+				);
 				return run
 					? {
 							model: run.version.modelId,

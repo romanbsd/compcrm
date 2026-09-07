@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { createField, updateFieldBrief } from "../lib/fields";
+import { runInSessionTenant } from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -46,36 +47,38 @@ export default defineTool({
 			.optional()
 			.describe("False hands the field back to the rep entirely."),
 	}),
-	async execute(input) {
-		if (input.action === "create") {
-			if (!input.label || !input.type) {
+	async execute(input, ctx) {
+		return runInSessionTenant(ctx, async () => {
+			if (input.action === "create") {
+				if (!input.label || !input.type) {
+					return {
+						created: false,
+						reason: "Creating a field needs both a label and a type.",
+					};
+				}
+
+				return createField({
+					entity: input.entity,
+					label: input.label,
+					type: input.type,
+					options: input.options,
+					agentBrief: input.agentBrief,
+				});
+			}
+
+			if (!input.key) {
 				return {
-					created: false,
-					reason: "Creating a field needs both a label and a type.",
+					updated: false,
+					reason: "Changing a brief needs the field key.",
 				};
 			}
 
-			return createField({
+			return updateFieldBrief({
 				entity: input.entity,
-				label: input.label,
-				type: input.type,
-				options: input.options,
-				agentBrief: input.agentBrief,
+				key: input.key,
+				agentBrief: input.agentBrief ?? null,
+				agentFilled: input.agentFilled,
 			});
-		}
-
-		if (!input.key) {
-			return {
-				updated: false,
-				reason: "Changing a brief needs the field key.",
-			};
-		}
-
-		return updateFieldBrief({
-			entity: input.entity,
-			key: input.key,
-			agentBrief: input.agentBrief ?? null,
-			agentFilled: input.agentFilled,
 		});
 	},
 });

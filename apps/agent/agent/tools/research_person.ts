@@ -3,6 +3,7 @@ import { z } from "zod";
 import { enabled, unavailable } from "../lib/capabilities";
 import { spend } from "../lib/focus";
 import { ask } from "../lib/perplexity";
+import { runInSessionTenant } from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -18,28 +19,30 @@ export default defineTool({
 			.default(false)
 			.describe("Reason over more sources. Slower, better for prep briefs."),
 	}),
-	async execute({ question, deep }) {
-		if (!(await enabled("PERPLEXITY_API_KEY")))
-			return unavailable("PERPLEXITY_API_KEY");
+	async execute({ question, deep }, ctx) {
+		return runInSessionTenant(ctx, async () => {
+			if (!(await enabled("PERPLEXITY_API_KEY")))
+				return unavailable("PERPLEXITY_API_KEY");
 
-		const charge = spend(deep ? 2 : 1);
-		if (!charge.ok) return { ok: false as const, reason: charge.reason };
+			const charge = spend(deep ? 2 : 1);
+			if (!charge.ok) return { ok: false as const, reason: charge.reason };
 
-		const answer = await ask(question, {
-			model: deep ? "sonar-pro" : "sonar",
-			system:
-				"You are researching for a B2B sales rep. Be specific and factual. " +
-				"State only what your sources support, prefer recent information, and " +
-				"say plainly when you do not know. Never speculate about a person.",
+			const answer = await ask(question, {
+				model: deep ? "sonar-pro" : "sonar",
+				system:
+					"You are researching for a B2B sales rep. Be specific and factual. " +
+					"State only what your sources support, prefer recent information, and " +
+					"say plainly when you do not know. Never speculate about a person.",
+			});
+
+			if (!answer.ok) return { ok: false as const, reason: answer.reason };
+
+			return {
+				ok: true as const,
+				answer: answer.data.text,
+				citations: answer.data.citations,
+				note: "Only write claims that have a citation.",
+			};
 		});
-
-		if (!answer.ok) return { ok: false as const, reason: answer.reason };
-
-		return {
-			ok: true as const,
-			answer: answer.data.text,
-			citations: answer.data.citations,
-			note: "Only write claims that have a citation.",
-		};
 	},
 });

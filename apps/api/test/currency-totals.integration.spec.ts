@@ -1,7 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { DealStage, db, RateSource } from "@crm/db";
 import { normalizeCurrency } from "@crm/db/currency";
-import { SETTINGS_ID, writeReportingCurrency } from "@crm/db/settings";
+import { writeReportingCurrency as writeReportingCurrencyRaw } from "@crm/db/settings";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
 import type { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { ConversionService } from "../src/currency/conversion.service";
@@ -9,24 +11,47 @@ import { DashboardService } from "../src/dashboard/dashboard.service";
 import { DealsService } from "../src/deals/deals.service";
 import { FieldsService } from "../src/fields/fields.service";
 import { withDiscardedCrmEvents } from "./agent-trigger.stub";
+import { tenantBound, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "currency-totals-spec";
 const userId = `user-${suffix}`;
 const domain = `money-${suffix}.test`;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+
+function writeReportingCurrency(code: string): Promise<string> {
+	return runInTenant(organizationId, () =>
+		writeReportingCurrencyRaw(scopedDb as never, code),
+	);
+}
 
 const agent = {
 	withCrmEvents: withDiscardedCrmEvents,
 } as unknown as AgentTriggerService;
 
-const conversion = new ConversionService(db);
-const deals = new DealsService(
-	db,
-	agent,
-	new ActivityStampService(db),
-	conversion,
-	new FieldsService(db, { fieldBackfill: async () => undefined } as never),
+const conversion = tenantBound(
+	organizationId,
+	new ConversionService(scopedDb as never),
 );
-const dashboard = new DashboardService(db, conversion);
+const deals = tenantBound(
+	organizationId,
+	new DealsService(
+		scopedDb as never,
+		agent,
+		new ActivityStampService(scopedDb as never),
+		conversion,
+		new FieldsService(
+			scopedDb as never,
+			{
+				fieldBackfill: async () => undefined,
+			} as never,
+		),
+	),
+);
+const dashboard = tenantBound(
+	organizationId,
+	new DashboardService(scopedDb as never, conversion),
+);
 
 let companyId: string;
 let previousReportingCurrency: string | null = null;
@@ -68,52 +93,58 @@ async function pipelineCents(): Promise<number> {
 	return summary.pipeline.totalCents;
 }
 
-beforeAll(async () => {
-	const existing = await db.appSetting.findUnique({
-		where: { id: SETTINGS_ID },
-		select: { reportingCurrency: true },
-	});
-	previousReportingCurrency = existing?.reportingCurrency ?? null;
+beforeAll(() =>
+	runInTenant(organizationId, async () => {
+		const existing = await scopedDb.appSetting.findUnique({
+			where: { organizationId },
+			select: { reportingCurrency: true },
+		});
+		previousReportingCurrency = existing?.reportingCurrency ?? null;
 
-	await writeReportingCurrency(db, "USD");
-	await clearRates();
+		await writeReportingCurrency("USD");
+		await clearRates();
 
-	await db.user.upsert({
-		where: { id: userId },
-		create: {
-			id: userId,
-			name: "Rate Tester",
-			email: `rates@${domain}`,
-			emailVerified: true,
-		},
-		update: {},
-	});
+		await db.user.upsert({
+			where: { id: userId },
+			create: {
+				id: userId,
+				name: "Rate Tester",
+				email: `rates@${domain}`,
+				emailVerified: true,
+			},
+			update: {},
+		});
 
-	const company = await db.company.upsert({
-		where: { domain },
-		create: { name: `Money Co ${suffix}`, domain },
-		update: {},
-		select: { id: true },
-	});
-	companyId = company.id;
+		const company = await scopedDb.company.upsert({
+			where: { organizationId_domain: { organizationId, domain } },
+			create: { organizationId, name: `Money Co ${suffix}`, domain },
+			update: {},
+			select: { id: true },
+		});
+		companyId = company.id;
 
-	await rate("EUR", "1.10", RateSource.FETCHED);
-});
+		await rate("EUR", "1.10", RateSource.FETCHED);
+	}),
+);
 
-afterAll(async () => {
-	await db.deal.deleteMany({ where: { companyId } });
-	await db.company.deleteMany({ where: { domain } });
-	await db.user.deleteMany({ where: { id: userId } });
-	await clearRates();
+afterAll(() =>
+	runInTenant(organizationId, async () => {
+		await scopedDb.deal.deleteMany({ where: { companyId } });
+		await scopedDb.company.deleteMany({ where: { domain } });
+		await db.user.deleteMany({ where: { id: userId } });
+		await clearRates();
 
-	if (previousReportingCurrency) {
-		await writeReportingCurrency(db, previousReportingCurrency);
-	} else {
-		await db.appSetting.updateMany({ data: { reportingCurrency: null } });
-	}
+		if (previousReportingCurrency) {
+			await writeReportingCurrency(previousReportingCurrency);
+		} else {
+			await scopedDb.appSetting.updateMany({
+				data: { reportingCurrency: null },
+			});
+		}
 
-	await conversion.rerateAll();
-});
+		await conversion.rerateAll();
+	}),
+);
 
 describe("a total across currencies", () => {
 	it("converts on write and never adds two currencies together", async () => {
@@ -137,7 +168,7 @@ describe("a total across currencies", () => {
 	});
 
 	it("locks the rate onto the deal, so the row says how it was converted", async () => {
-		const row = await db.deal.findFirst({
+		const row = await scopedDb.deal.findFirst({
 			where: { companyId, currency: "EUR" },
 			select: { amount: true, baseAmount: true, fxRate: true, fxRateAt: true },
 		});
@@ -186,7 +217,7 @@ describe("a total across currencies", () => {
 
 		await conversion.fillMissing();
 
-		const row = await db.deal.findFirst({
+		const row = await scopedDb.deal.findFirst({
 			where: { companyId, currency: "EUR" },
 			select: { baseAmount: true },
 		});
@@ -199,7 +230,7 @@ describe("a total across currencies", () => {
 
 		await conversion.rerateAll();
 
-		const row = await db.deal.findFirst({
+		const row = await scopedDb.deal.findFirst({
 			where: { companyId, currency: "EUR" },
 			select: { baseAmount: true, fxRate: true },
 		});
@@ -209,7 +240,7 @@ describe("a total across currencies", () => {
 	});
 
 	it("re-rates everything when the reporting currency changes", async () => {
-		await writeReportingCurrency(db, "EUR");
+		await writeReportingCurrency("EUR");
 
 		const rerated = await conversion.rerateAll();
 		expect(rerated.missing).toContain("USD");
@@ -224,7 +255,7 @@ describe("a total across currencies", () => {
 
 describe("the deals list", () => {
 	it("reports its open pipeline in the reporting currency and discloses the rest", async () => {
-		await writeReportingCurrency(db, "USD");
+		await writeReportingCurrency("USD");
 		await conversion.rerateAll();
 
 		const list = await deals.list({
@@ -254,7 +285,7 @@ describe("the deals list", () => {
 
 describe("a converted figure knows which currency it is in", () => {
 	it("leaves a deal whose baseAmount predates a currency change out of totals", async () => {
-		await writeReportingCurrency(db, "USD");
+		await writeReportingCurrency("USD");
 		await conversion.rerateAll();
 
 		const before = await pipelineCents();
@@ -271,7 +302,7 @@ describe("a converted figure knows which currency it is in", () => {
 
 		expect(await pipelineCents()).toBe(before + MILLION);
 
-		await db.deal.update({
+		await scopedDb.deal.update({
 			where: { id: deal.id },
 			data: { baseCurrency: "JPY" },
 		});
@@ -286,17 +317,18 @@ describe("a converted figure knows which currency it is in", () => {
 
 		expect(await pipelineCents()).toBe(before + MILLION);
 
-		await db.deal.delete({ where: { id: deal.id } });
+		await scopedDb.deal.delete({ where: { id: deal.id } });
 	});
 
 	it("never lets a converted figure with no currency on it go unnoticed", async () => {
-		await writeReportingCurrency(db, "USD");
+		await writeReportingCurrency("USD");
 		await conversion.rerateAll();
 
 		const before = await pipelineCents();
 
-		const orphan = await db.deal.create({
+		const orphan = await scopedDb.deal.create({
 			data: {
+				organizationId,
 				name: `Orphan ${suffix}`,
 				companyId,
 				ownerId: userId,
@@ -316,21 +348,22 @@ describe("a converted figure knows which currency it is in", () => {
 
 		await conversion.fillMissing();
 
-		const healed = await db.deal.findUnique({
+		const healed = await scopedDb.deal.findUnique({
 			where: { id: orphan.id },
 			select: { baseCurrency: true },
 		});
 		expect(healed?.baseCurrency).toBe("USD");
 		expect(await pipelineCents()).toBe(before + 5_000_000);
 
-		await db.deal.delete({ where: { id: orphan.id } });
+		await scopedDb.deal.delete({ where: { id: orphan.id } });
 	});
 
 	it("counts a currency once however it was cased or padded", async () => {
 		const rows = await Promise.all(
 			[" usd ", "Usd"].map((currency, index) =>
-				db.deal.create({
+				scopedDb.deal.create({
 					data: {
+						organizationId,
 						name: `Variant ${index} ${suffix}`,
 						companyId,
 						ownerId: userId,
@@ -349,7 +382,7 @@ describe("a converted figure knows which currency it is in", () => {
 
 		const rerated = await conversion.rerateAll();
 
-		const written = await db.deal.findMany({
+		const written = await scopedDb.deal.findMany({
 			where: { id: { in: rows.map((row) => row.id) } },
 			select: { baseAmount: true, baseCurrency: true },
 		});
@@ -359,7 +392,7 @@ describe("a converted figure knows which currency it is in", () => {
 			expect(row.baseAmount?.toNumber()).toBe(1000);
 		}
 
-		const groups = await db.deal.groupBy({
+		const groups = await scopedDb.deal.groupBy({
 			by: ["currency"],
 			where: { amount: { not: null } },
 			_count: { _all: true },
@@ -373,13 +406,13 @@ describe("a converted figure knows which currency it is in", () => {
 
 		expect(rerated.converted).toBe(convertible);
 
-		await db.deal.deleteMany({
+		await scopedDb.deal.deleteMany({
 			where: { id: { in: rows.map((row) => row.id) } },
 		});
 	});
 
 	it("keeps a converted deal when the rate behind it has gone away", async () => {
-		await writeReportingCurrency(db, "USD");
+		await writeReportingCurrency("USD");
 		await conversion.rerateAll();
 
 		const deal = await deals.create({
@@ -390,7 +423,7 @@ describe("a converted figure knows which currency it is in", () => {
 			currency: "EUR",
 		});
 
-		const frozen = await db.deal.findUnique({
+		const frozen = await scopedDb.deal.findUnique({
 			where: { id: deal.id },
 			select: { baseAmount: true },
 		});
@@ -400,8 +433,9 @@ describe("a converted figure knows which currency it is in", () => {
 
 		await clearRates();
 
-		const stranded = await db.deal.create({
+		const stranded = await scopedDb.deal.create({
 			data: {
+				organizationId,
 				name: `Stranded ${suffix}`,
 				companyId,
 				ownerId: userId,
@@ -415,7 +449,7 @@ describe("a converted figure knows which currency it is in", () => {
 		expect(filled.missing).toContain("EUR");
 		expect(filled.cleared).toBe(0);
 
-		const kept = await db.deal.findUnique({
+		const kept = await scopedDb.deal.findUnique({
 			where: { id: deal.id },
 			select: { baseAmount: true, baseCurrency: true },
 		});
@@ -423,7 +457,7 @@ describe("a converted figure knows which currency it is in", () => {
 		expect(kept?.baseAmount?.toNumber()).toBe(frozen?.baseAmount?.toNumber());
 		expect(await pipelineCents()).toBe(before);
 
-		await db.deal.deleteMany({
+		await scopedDb.deal.deleteMany({
 			where: { id: { in: [deal.id, stranded.id] } },
 		});
 		await rate("EUR", "1.10", RateSource.FETCHED);
@@ -433,31 +467,36 @@ describe("a converted figure knows which currency it is in", () => {
 describe("the dashboard only values what it can convert", () => {
 	const analystId = `analyst-${suffix}`;
 
-	beforeAll(async () => {
-		await writeReportingCurrency(db, "USD");
+	beforeAll(() =>
+		runInTenant(organizationId, async () => {
+			await writeReportingCurrency("USD");
 
-		await db.user.upsert({
-			where: { id: analystId },
-			create: {
-				id: analystId,
-				name: "Dashboard Tester",
-				email: `dashboard@${domain}`,
-				emailVerified: true,
-			},
-			update: {},
-		});
-	});
+			await db.user.upsert({
+				where: { id: analystId },
+				create: {
+					id: analystId,
+					name: "Dashboard Tester",
+					email: `dashboard@${domain}`,
+					emailVerified: true,
+				},
+				update: {},
+			});
+		}),
+	);
 
-	afterAll(async () => {
-		await db.deal.deleteMany({ where: { ownerId: analystId } });
-		await db.user.deleteMany({ where: { id: analystId } });
-	});
+	afterAll(() =>
+		runInTenant(organizationId, async () => {
+			await scopedDb.deal.deleteMany({ where: { ownerId: analystId } });
+			await db.user.deleteMany({ where: { id: analystId } });
+		}),
+	);
 
 	async function stale(name: string, stage: DealStage) {
 		const closed = stage === DealStage.CLOSED_WON;
 
-		return db.deal.create({
+		return scopedDb.deal.create({
 			data: {
+				organizationId,
 				name: `${name} ${suffix}`,
 				companyId,
 				ownerId: analystId,
@@ -492,7 +531,9 @@ describe("the dashboard only values what it can convert", () => {
 		expect(summary.performance.avgDealCents).toBe(10_000);
 		expect(summary.unconverted.count).toBe(1);
 
-		await db.deal.deleteMany({ where: { id: { in: [won.id, unvalued.id] } } });
+		await scopedDb.deal.deleteMany({
+			where: { id: { in: [won.id, unvalued.id] } },
+		});
 	});
 
 	it("does not let a stale figure set the largest open deal", async () => {
@@ -515,6 +556,8 @@ describe("the dashboard only values what it can convert", () => {
 				?.baseAmountCents,
 		).toBeNull();
 
-		await db.deal.deleteMany({ where: { id: { in: [open.id, unvalued.id] } } });
+		await scopedDb.deal.deleteMany({
+			where: { id: { in: [open.id, unvalued.id] } },
+		});
 	});
 });

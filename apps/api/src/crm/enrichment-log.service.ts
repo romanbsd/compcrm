@@ -1,7 +1,11 @@
 import { ActivityType, type Db } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import type { ActivityMetaFields } from "@crm/validation/activity-meta";
 import { Injectable } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 import { ActivityStampService } from "./activity-stamp.service";
 
 export type EnrichmentEvent = {
@@ -16,6 +20,7 @@ export type EnrichmentEvent = {
 export class EnrichmentLogService {
 	constructor(
 		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
 		private readonly stamp: ActivityStampService,
 	) {}
 
@@ -23,7 +28,7 @@ export class EnrichmentLogService {
 		const author = await this.authorFor(event);
 		if (!author) return null;
 
-		const activity = await this.db.activity.create({
+		const activity = await this.scoped.activity.create({
 			data: {
 				type: ActivityType.ENRICHMENT,
 				subject: event.subject,
@@ -47,7 +52,7 @@ export class EnrichmentLogService {
 
 	private async authorFor(event: EnrichmentEvent): Promise<string | null> {
 		if (event.contactId) {
-			const contact = await this.db.contact.findUnique({
+			const contact = await this.scoped.contact.findUnique({
 				where: { id: event.contactId },
 				select: { ownerId: true },
 			});
@@ -55,7 +60,7 @@ export class EnrichmentLogService {
 		}
 
 		if (event.companyId) {
-			const company = await this.db.company.findUnique({
+			const company = await this.scoped.company.findUnique({
 				where: { id: event.companyId },
 				select: { ownerId: true },
 			});

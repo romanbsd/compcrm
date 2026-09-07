@@ -4,13 +4,14 @@ import { joinSlackChannel } from "./slack-membership";
 
 export async function runSlackChannelJoin(
 	value: Prisma.JsonValue,
+	organizationId: string,
 ): Promise<string> {
 	const { channelId, channelName } = parse(
 		schemas.slack.joinPayload,
 		value,
 		"A slack-channel-join task carries an unreadable payload",
 	);
-	const outcome = await joinSlackChannel(channelId);
+	const outcome = await joinSlackChannel(organizationId, channelId);
 
 	if (outcome.joined) {
 		return outcome.already

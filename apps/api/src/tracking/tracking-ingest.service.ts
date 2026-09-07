@@ -1,5 +1,5 @@
-import type { Db } from "@crm/db";
 import { classifyTouch, type RawTouch, type Touch } from "@crm/db/attribution";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import {
 	dedupeKey,
 	EVENTS_PER_MINUTE,
@@ -15,7 +15,7 @@ import {
 import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { normalizeEmail } from "../crm/values";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { TrackingConfigService } from "./tracking-config.service";
 import { TrackingCounterService } from "./tracking-counter.service";
 import { TrackingFilingService } from "./tracking-filing.service";
@@ -79,7 +79,7 @@ export class TrackingIngestService {
 	private readonly logger = new Logger(TrackingIngestService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly config: TrackingConfigService,
 		private readonly counters: TrackingCounterService,
 		private readonly filing: TrackingFilingService,

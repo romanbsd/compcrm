@@ -1,5 +1,6 @@
 import { auth, DAY_SECONDS } from "@crm/auth";
 import type { Db, Prisma } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
 import {
 	HttpException,
 	Injectable,
@@ -68,11 +69,8 @@ export class ApiKeysService {
 
 	constructor(@InjectDatabase() private readonly db: Db) {}
 
-	async list(
-		userId: string,
-		input: ApiKeyListInput,
-	): Promise<ListResult<ApiKeySummary>> {
-		const where = this.searchWhere(userId, input.q);
+	async list(input: ApiKeyListInput): Promise<ListResult<ApiKeySummary>> {
+		const where = this.searchWhere(input.q);
 		const { skip, take } = paginate(input);
 
 		const [rows, total] = await Promise.all([
@@ -98,6 +96,8 @@ export class ApiKeysService {
 			auth.api.createApiKey({
 				headers,
 				body: {
+					organizationId: currentOrganizationId(),
+					metadata: { createdByUserId: userId },
 					name: input.name,
 					expiresIn:
 						input.expiresInDays === null
@@ -130,6 +130,14 @@ export class ApiKeysService {
 		headers: Headers,
 		input: RevokeApiKeyInput,
 	): Promise<{ id: string }> {
+		const existing = await this.db.apikey.findFirst({
+			where: { id: input.id, referenceId: currentOrganizationId() },
+			select: { id: true },
+		});
+		if (!existing) {
+			throw new HttpException("The API key was not found.", 404);
+		}
+
 		await this.call(() =>
 			auth.api.deleteApiKey({ headers, body: { keyId: input.id } }),
 		);
@@ -143,8 +151,10 @@ export class ApiKeysService {
 		return { id: input.id };
 	}
 
-	private searchWhere(userId: string, q: string): Prisma.ApikeyWhereInput {
-		const where: Prisma.ApikeyWhereInput = { referenceId: userId };
+	private searchWhere(q: string): Prisma.ApikeyWhereInput {
+		const where: Prisma.ApikeyWhereInput = {
+			referenceId: currentOrganizationId(),
+		};
 		const term = q.trim();
 
 		if (term) {

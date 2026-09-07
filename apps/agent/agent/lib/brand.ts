@@ -1,4 +1,5 @@
-import { db, EnrichmentStatus } from "@crm/db";
+import { EnrichmentStatus } from "@crm/db";
+import { scopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { mirrorBrandImages } from "./brand-images";
 import { brandToUpdate, filledFields, stillFillable } from "./brand-mapping";
 import { brandByDomain, contextDevEnabled } from "./context-dev";
@@ -51,7 +52,7 @@ export async function runBrand({
 	fresh?: boolean;
 	spend?: Spend;
 }): Promise<BrandResult> {
-	const company = await db.company.findUnique({
+	const company = await scopedDb.company.findUnique({
 		where: { id: companyId },
 		select: COMPANY_FIELDS,
 	});
@@ -78,7 +79,7 @@ export async function runBrand({
 	const charge = spend(2);
 	if (!charge.ok) return { enriched: false, reason: charge.reason };
 
-	await db.company.updateMany({
+	await scopedDb.company.updateMany({
 		where: { id: companyId, ...UNLESS_COMPLETE },
 		data: {
 			enrichmentStatus: EnrichmentStatus.RUNNING,
@@ -106,7 +107,7 @@ export async function runBrand({
 
 	const { mirrored } = await mirrorBrandImages(companyId, update);
 
-	const filled = await db.$transaction(async (tx) => {
+	const filled = await scopedTransaction(async (tx) => {
 		const current = await tx.company.findUnique({
 			where: { id: companyId },
 			select: COMPANY_FIELDS,
@@ -128,7 +129,10 @@ export async function runBrand({
 
 		await tx.companyEnrichment.upsert({
 			where: { companyId },
-			create: { companyId, raw: result.raw as object },
+			create: {
+				companyId,
+				raw: result.raw as object,
+			},
 			update: { raw: result.raw as object, fetchedAt: new Date() },
 		});
 
@@ -173,7 +177,7 @@ async function settle(
 	error: string,
 	guard: SettleGuard = { enrichmentStatus: EnrichmentStatus.RUNNING },
 ): Promise<void> {
-	await db.company.updateMany({
+	await scopedDb.company.updateMany({
 		where: { id: companyId, ...guard },
 		data: { enrichmentStatus: status, enrichmentError: error },
 	});

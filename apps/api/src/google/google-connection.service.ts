@@ -1,9 +1,14 @@
 import { isGoogleConfigured, signsInWithGoogle } from "@crm/auth";
 import type { Db, Prisma } from "@crm/db";
+import { currentOrganizationId, runInTenant } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { normalizeDomain } from "../companies/domain";
 import { ActivityStampService } from "../crm/activity-stamp.service";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 import { MailboxMatchService } from "../mailbox/mailbox-match.service";
 import { MailboxTokenService } from "../mailbox/mailbox-token.service";
 import { SyncStateService } from "../mailbox/sync-state.service";
@@ -29,6 +34,7 @@ export class GoogleConnectionService {
 
 	constructor(
 		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
 		private readonly tokens: MailboxTokenService,
 		private readonly state: SyncStateService,
 		private readonly match: MailboxMatchService,
@@ -106,11 +112,18 @@ export class GoogleConnectionService {
 					scope: { contains: SCOPE_FOR_SOURCE[source] },
 				})),
 			},
-			select: { userId: true },
+			select: {
+				userId: true,
+				user: { select: { members: { select: { organizationId: true } } } },
+			},
 		});
 
-		for (const account of new Set(accounts.map((row) => row.userId))) {
-			await this.onConnected(account);
+		for (const account of accounts) {
+			for (const member of account.user.members) {
+				await runInTenant(member.organizationId, () =>
+					this.onConnected(account.userId),
+				);
+			}
 		}
 	}
 
@@ -120,7 +133,8 @@ export class GoogleConnectionService {
 			gmailMessageId: { not: null },
 		};
 
-		const purged = await this.db.$transaction(
+		const purged = await scopedTransaction(
+			this.scoped,
 			async (tx) => {
 				const touched = await tx.emailMessage.findMany({
 					where: mine,
@@ -191,25 +205,37 @@ export class GoogleConnectionService {
 			);
 		}
 
-		await this.db.suppressedDomain.upsert({
-			where: { domain: normalised },
-			create: { domain: normalised, reason: options.reason ?? null },
+		await this.scoped.suppressedDomain.upsert({
+			where: {
+				organizationId_domain: {
+					organizationId: currentOrganizationId(),
+					domain: normalised,
+				},
+			},
+			create: {
+				domain: normalised,
+				reason: options.reason ?? null,
+			},
 			update: { reason: options.reason ?? null },
 		});
 
 		if (!options.purge) return { domain: normalised, purged: 0 };
 
-		const company = await this.db.company.findUnique({
+		const company = await this.scoped.company.findFirst({
 			where: { domain: normalised },
 			select: { id: true },
 		});
 
 		if (!company) return { domain: normalised, purged: 0 };
 
-		const [threads, events] = await this.db.$transaction([
-			this.db.emailThread.deleteMany({ where: { companyId: company.id } }),
-			this.db.calendarEvent.deleteMany({ where: { companyId: company.id } }),
-		]);
+		const [threads, events] = await scopedTransaction(this.scoped, (tx) =>
+			Promise.all([
+				tx.emailThread.deleteMany({ where: { companyId: company.id } }),
+				tx.calendarEvent.deleteMany({
+					where: { companyId: company.id },
+				}),
+			]),
+		);
 
 		await this.stamp.recomputeAll();
 

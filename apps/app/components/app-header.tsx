@@ -28,10 +28,19 @@ import { signOutAndRedirect } from "@/lib/sign-out";
 import { useTRPC } from "@/lib/trpc/client";
 import { useWorkspaceUrl } from "@/lib/use-workspace-url";
 import { workspaceLabel } from "@/lib/workspace-label";
+import { type OrgOption, OrgSwitcher } from "./org-switcher";
 
 type User = { name: string; email: string; image: string | null };
 
-export function AppHeader({ user }: { user: User }) {
+type OrganizationSwitcher = { current: OrgOption; options: OrgOption[] };
+
+export function AppHeader({
+	user,
+	organizationSwitcher,
+}: {
+	user: User;
+	organizationSwitcher: OrganizationSwitcher;
+}) {
 	const { setOpen: setMobileNavOpen } = useMobileNav();
 	const trpc = useTRPC();
 	const workspaceUrl = useWorkspaceUrl();
@@ -58,6 +67,7 @@ export function AppHeader({ user }: { user: User }) {
 					<Logo className="size-5" />
 				</Link>
 				<Separator orientation="vertical" className="mx-1 h-5 bg-transparent" />
+				<OrgSwitcher {...organizationSwitcher} />
 				<span className="min-w-0 truncate font-medium text-sm">{label}</span>
 			</div>
 

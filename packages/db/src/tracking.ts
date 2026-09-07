@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Db } from "./client";
-import { SETTINGS_ID } from "./settings";
+import { currentOrganizationId } from "./tenant-context";
 
 export const SITE_ID_PREFIX = "cmp_";
 
@@ -256,7 +256,7 @@ export async function readTrackingConfig(
 ): Promise<TrackingConfig | null> {
 	const [settings, domains] = await Promise.all([
 		db.appSetting.findUnique({
-			where: { id: SETTINGS_ID },
+			where: { organizationId: currentOrganizationId() },
 			select: {
 				trackingSiteId: true,
 				trackingCrossDomain: true,

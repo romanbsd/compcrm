@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { listFields } from "../lib/fields";
+import { runInSessionTenant } from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -10,8 +11,8 @@ export default defineTool({
 			.enum(["COMPANY", "CONTACT", "DEAL"])
 			.describe("Which record type the fields belong to."),
 	}),
-	async execute({ entity }) {
-		const fields = await listFields(entity);
+	async execute({ entity }, ctx) {
+		const fields = await runInSessionTenant(ctx, () => listFields(entity));
 
 		return {
 			fields: fields.map((field) => ({

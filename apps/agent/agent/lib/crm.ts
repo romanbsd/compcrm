@@ -1,4 +1,5 @@
-import { db, EnrichmentStatus, type Prisma } from "@crm/db";
+import { EnrichmentStatus, type Prisma } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { domainOf, isDerivedName } from "./names";
 import type { Person } from "./socials";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { collapsing, runLimited } from "../agent/lib/pool";
+import { collapsing, runLimited } from "./pool";
 
 describe("runLimited", () => {
 	it("runs every item", async () => {

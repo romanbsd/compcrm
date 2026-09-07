@@ -1,9 +1,7 @@
-import {
-	canManageConnections,
-	isSlackConfigured,
-	WORKSPACE_ID,
-} from "@crm/auth";
+import { canManageConnections, isSlackConfigured } from "@crm/auth";
 import type { Db, Prisma } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { schemas } from "@crm/validation";
 import {
 	BadRequestException,
@@ -13,7 +11,10 @@ import {
 } from "@nestjs/common";
 import { AgentAccessService } from "../agent/agent-access.service";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 import type {
 	SlackChannelsInput,
 	SlackChannelsResult,
@@ -36,6 +37,7 @@ const SLACK_WORKSPACE_RESOURCE_ID =
 export class SlackConnectionService {
 	constructor(
 		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
 		private readonly agent: AgentTriggerService,
 		private readonly slackChannels: SlackChannelsService,
 		private readonly access: AgentAccessService,
@@ -43,13 +45,18 @@ export class SlackConnectionService {
 
 	async status(userId: string): Promise<SlackStatus> {
 		const role = await this.access.assertMember(userId);
-		const [account, agents, matches, memberCount, grant] = await Promise.all([
-			this.db.account.findFirst({
-				where: { providerId: "slack", accessToken: { not: null } },
-				orderBy: { updatedAt: "desc" },
-				select: { accountId: true, updatedAt: true, scope: true },
+		const [grant, agents, matches, memberCount] = await Promise.all([
+			this.scoped.slackWorkspaceGrant.findFirst({
+				select: {
+					id: true,
+					teamName: true,
+					botToken: true,
+					botScopes: true,
+					userToken: true,
+					updatedAt: true,
+				},
 			}),
-			this.db.agentDefinition.findMany({
+			this.scoped.agentDefinition.findMany({
 				where: {
 					status: { in: ["LIVE", "PAUSED"] },
 					deletedAt: null,
@@ -65,25 +72,27 @@ export class SlackConnectionService {
 				take: 30,
 				select: { id: true, name: true, description: true, status: true },
 			}),
-			this.db.slackMemberMatch.findMany({
+			this.scoped.slackMemberMatch.findMany({
 				where: {
-					crmUser: { members: { some: { organizationId: WORKSPACE_ID } } },
+					crmUser: {
+						members: { some: { organizationId: currentOrganizationId() } },
+					},
 				},
 				select: { slackUserId: true, updatedAt: true },
 			}),
-			this.db.member.count({ where: { organizationId: WORKSPACE_ID } }),
-			this.db.slackWorkspaceGrant.findFirst({
-				select: { id: true, teamName: true },
+			this.db.member.count({
+				where: { organizationId: currentOrganizationId() },
 			}),
 		]);
 
+		const connection = grant?.botToken ? grant : null;
 		const matched = matches.filter((match) => match.slackUserId).length;
 		const reviewed = matches.length;
 		const inventoryFresh =
-			account &&
+			connection &&
 			reviewed === memberCount &&
-			matches.every((match) => match.updatedAt >= account.updatedAt);
-		if (account && !inventoryFresh) {
+			matches.every((match) => match.updatedAt >= connection.updatedAt);
+		if (connection && !inventoryFresh) {
 			await this.agent.slackPeopleRequested(
 				"Match workspace members to Slack accounts by exact email",
 			);
@@ -91,14 +100,14 @@ export class SlackConnectionService {
 
 		return {
 			configured: isSlackConfigured(),
-			connected: Boolean(account),
-			workspace: account ? (grant?.teamName ?? null) : null,
-			lastConnectedAt: account?.updatedAt.toISOString() ?? null,
-			scopes: (account?.scope ?? "")
+			connected: Boolean(connection),
+			workspace: connection?.teamName ?? null,
+			lastConnectedAt: connection?.updatedAt.toISOString() ?? null,
+			scopes: (connection?.botScopes ?? "")
 				.split(",")
 				.map((scope) => scope.trim())
 				.filter(Boolean),
-			canInviteItself: Boolean(grant),
+			canInviteItself: Boolean(grant?.userToken),
 			canManage: canManageConnections(role),
 			agents,
 			people: { matched, reviewed },
@@ -109,7 +118,7 @@ export class SlackConnectionService {
 		await this.access.assertMember(userId);
 		const [members, syncing] = await Promise.all([
 			this.db.member.findMany({
-				where: { organizationId: WORKSPACE_ID },
+				where: { organizationId: currentOrganizationId() },
 				orderBy: { user: { name: "asc" } },
 				select: {
 					user: {
@@ -143,7 +152,7 @@ export class SlackConnectionService {
 	}
 
 	private async peopleSyncState(): Promise<SlackSyncState> {
-		const pending = await this.db.agentTask.findFirst({
+		const pending = await this.scoped.agentTask.findFirst({
 			where: { kind: "slack-people-match", finishedAt: null },
 			orderBy: { createdAt: "desc" },
 			select: { createdAt: true, startedAt: true, leasedUntil: true },
@@ -163,12 +172,11 @@ export class SlackConnectionService {
 
 	async refreshPeople(userId: string): Promise<SlackRefreshPeopleResult> {
 		await this.access.assertMember(userId);
-		const account = await this.db.account.findFirst({
-			where: { providerId: "slack", accessToken: { not: null } },
-			orderBy: { updatedAt: "desc" },
+		const connection = await this.scoped.slackWorkspaceGrant.findFirst({
+			where: { botToken: { not: null } },
 			select: { id: true },
 		});
-		if (!account) throw new NotFoundException("Slack is not connected.");
+		if (!connection) throw new NotFoundException("Slack is not connected.");
 
 		await this.agent.slackPeopleRequested(
 			"Refresh Slack people and channels from the connection page",
@@ -191,7 +199,7 @@ export class SlackConnectionService {
 		if (needle) where.name = { contains: needle, mode: "insensitive" };
 
 		const [rows, grant, sync] = await Promise.all([
-			this.db.slackChannel.findMany({
+			this.scoped.slackChannel.findMany({
 				where,
 				orderBy: [{ isMember: "desc" }, { name: "asc" }, { id: "asc" }],
 				take: take + 1,
@@ -207,7 +215,7 @@ export class SlackConnectionService {
 					inviteRequestedAt: true,
 				},
 			}),
-			this.db.slackWorkspaceGrant.findFirst({ select: { id: true } }),
+			this.scoped.slackWorkspaceGrant.findFirst({ select: { id: true } }),
 			this.peopleSyncState(),
 		]);
 
@@ -230,18 +238,18 @@ export class SlackConnectionService {
 		userId: string,
 	): Promise<SlackJoinChannelResult> {
 		await this.access.assertMember(userId);
-		const channel = await this.db.slackChannel.findUnique({
+		const channel = await this.scoped.slackChannel.findUnique({
 			where: { id: input.channelId },
 			select: { id: true, name: true, isMember: true, isPrivate: true },
 		});
 		if (!channel) throw new NotFoundException("No such Slack channel.");
 		if (channel.isMember) return { queued: false, alreadyJoined: true };
 
-		const grant = await this.db.slackWorkspaceGrant.findFirst({
+		const grant = await this.scoped.slackWorkspaceGrant.findFirst({
 			select: { id: true },
 		});
 		if (channel.isPrivate && !grant) {
-			await this.db.slackChannel.update({
+			await this.scoped.slackChannel.update({
 				where: { id: channel.id },
 				data: { inviteRequestedAt: new Date() },
 			});
@@ -257,7 +265,7 @@ export class SlackConnectionService {
 		userId: string,
 	): Promise<SlackCreateChannelResult> {
 		await this.access.assertMember(userId);
-		const existing = await this.db.slackChannel.findFirst({
+		const existing = await this.scoped.slackChannel.findFirst({
 			where: { name: input.name },
 			select: { id: true },
 		});
@@ -277,16 +285,15 @@ export class SlackConnectionService {
 			);
 		}
 
-		const removed = await this.db.$transaction(async (tx) => {
-			const accounts = await tx.account.deleteMany({
-				where: { providerId: "slack" },
-			});
-			await tx.slackChannel.deleteMany({});
-			await tx.slackWorkspaceGrant.deleteMany({});
-			return accounts.count;
+		const grant = await this.scoped.slackWorkspaceGrant.findFirst({
+			select: { id: true },
 		});
+		if (!grant) throw new NotFoundException("Slack is not connected.");
 
-		if (removed === 0) throw new NotFoundException("Slack is not connected.");
+		await scopedTransaction(this.scoped, async (tx) => {
+			await tx.slackChannel.deleteMany({});
+			await tx.slackWorkspaceGrant.delete({ where: { id: grant.id } });
+		});
 
 		return { disconnected: true };
 	}

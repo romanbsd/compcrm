@@ -1,4 +1,5 @@
-import { ActivityType, type Db, type Prisma } from "@crm/db";
+import { ActivityType, type Prisma } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { activityMeta } from "@crm/validation/activity-meta";
 import {
 	BadRequestException,
@@ -8,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { ActivityStampService } from "../crm/activity-stamp.service";
 import { blankToNull } from "../crm/values";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type {
 	ActivityCreateInput,
 	ActivityEntry,
@@ -73,7 +74,7 @@ export class ActivitiesService {
 	private readonly logger = new Logger(ActivitiesService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly stamp: ActivityStampService,
 	) {}
 

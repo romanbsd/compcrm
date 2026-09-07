@@ -36,10 +36,12 @@ export default defineEval({
 			});
 			const conversation = await db.agentConversation.create({
 				data: {
+					organizationId: "workspace",
 					kind: "BUILDER",
 					userId,
 					submissions: {
 						create: {
+							organizationId: "workspace",
 							submittedById: userId,
 							clientRequestId: crypto.randomUUID(),
 							commandType: "CREATE_AGENT",

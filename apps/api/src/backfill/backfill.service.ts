@@ -1,13 +1,16 @@
 import { onSignedIn } from "@crm/auth";
-import { type Db, EnrichmentStatus, type Prisma } from "@crm/db";
+import { EnrichmentStatus, type Prisma } from "@crm/db";
 import { PRIORITY } from "@crm/db/agent-tasks";
+import { runInTenant } from "@crm/db/tenant-context";
+import type { ScopedDb } from "@crm/db/tenant-scope";
+import { organizationIds } from "@crm/db/tenants";
 import { readWorkspaceIdentity } from "@crm/db/workspace";
 import { CACHE_MANAGER } from "@nestjs/cache-manager";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Cache } from "cache-manager";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
 import { FaviconService } from "../companies/favicon.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { ImageMirrorService } from "./image-mirror.service";
 
 export type BackfillScope = "companies" | "contacts" | "deals";
@@ -49,7 +52,7 @@ export class BackfillService implements OnModuleInit {
 	private readonly logger = new Logger(BackfillService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly agent: AgentTriggerService,
 		private readonly favicon: FaviconService,
 		private readonly images: ImageMirrorService,
@@ -68,19 +71,30 @@ export class BackfillService implements OnModuleInit {
 
 		void (async () => {
 			try {
-				await this.sweepWorkspace();
-
-				const companies = await this.runCompanies(false);
-				const contacts = await this.runContacts();
-
-				const mirrored = await this.images.sweep();
+				const organizations = await organizationIds(this.db);
+				let queued = 0;
+				let remaining = 0;
+				let iconsResolving = 0;
+				let imagesMirrored = 0;
+				for (const organizationId of organizations) {
+					await runInTenant(organizationId, async () => {
+						await this.sweepWorkspace();
+						const companies = await this.runCompanies(false);
+						const contacts = await this.runContacts();
+						const mirrored = await this.images.sweep();
+						queued += companies.queued + contacts.queued;
+						remaining += companies.remaining + contacts.remaining;
+						iconsResolving += companies.iconsResolving;
+						imagesMirrored += mirrored.copied;
+					});
+				}
 
 				this.logger.log({
 					message: "Automatic backfill swept",
-					queued: companies.queued + contacts.queued,
-					remaining: companies.remaining + contacts.remaining,
-					iconsResolving: companies.iconsResolving,
-					imagesMirrored: mirrored.copied,
+					queued,
+					remaining,
+					iconsResolving,
+					imagesMirrored,
 				});
 			} catch (error) {
 				this.logger.error(

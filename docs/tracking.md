@@ -4,9 +4,9 @@ A first-party script on the customer's own marketing site, a collector in the AP
 and one rule about what it is for: **a form submission becomes a contact.** Page
 views exist to give that contact a story, not to be a web-analytics product.
 
-Everything here is one install's own website. There is no second tenant, no shared
-pixel, and no vendor: the script is served from the same origin as the app, the
-cookie is first-party, and the only thing that ever leaves the browser is a POST to
+Each workspace tracks its own marketing sites with a separate site id and tenant
+storage. Workspaces share no pixel identity, and there is no vendor. The script is
+served from the app origin, the cookie is first-party, and the browser only posts to
 `/api/t/e` on the install's own API.
 
 ## Two scripts, and why
@@ -74,6 +74,10 @@ The header is set on the response, not switched off in `helmet`, so the exceptio
 stays with the route that needs it.
 
 The gauntlet, in order, in `TrackingIngestService.accept`:
+
+The anonymous endpoints resolve the opaque site id through `trackingSiteLocator`.
+This global table stores only the site id and organization id. Minting or rotating
+a site id updates the locator and tenant settings in one transaction.
 
 1. **User agent** — the `BOT` pattern.
 2. **Site id** — must be a live `cmp_` id, and `forSite` refuses a rotated one.
@@ -177,6 +181,10 @@ deleted* comes to be true of email and not of forms.
 
 `POST /internal/tracking/retention`, nightly at 04:00 via `apps/api/vercel.json`,
 `CRON_SECRET` or nothing.
+
+The job discovers organizations globally. It then rolls up and removes each
+organization's records inside transaction-local tenant context. Expired tracking
+counters use the same tenant boundary.
 
 - **The cutoff is a whole UTC day**, `EVENT_RETENTION_DAYS` back and then truncated.
   A mid-day cutoff splits one calendar day across two nightly runs, and

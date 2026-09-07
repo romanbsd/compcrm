@@ -1,18 +1,51 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { persistBuilderInputRequest } from "../agent/lib/builder-input";
 import {
-	saveBuilderDraft,
-	writeBuilderArtifact,
+	saveBuilderDraft as saveBuilderDraftForTenant,
+	writeBuilderArtifact as writeBuilderArtifactForTenant,
 } from "../agent/lib/builder-runtime";
 import { setBuilderConversationTitle } from "../agent/lib/conversation-title";
 import { builderToken } from "../agent/lib/custom-agent-dispatch";
+import { tenantAfterAll, tenantBeforeAll, tenantTest } from "@crm/db/test-support";
 
 const suffix = crypto.randomUUID();
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const afterAll = tenantAfterAll(organizationId);
 const userId = `builder-runtime-user-${suffix}`;
 let conversationId = "";
 let agentId = "";
 const conversationIds: string[] = [];
+
+function writeBuilderArtifact(
+	conversationId: string,
+	userId: string,
+	path: Parameters<typeof writeBuilderArtifactForTenant>[3],
+	content: string,
+) {
+	return writeBuilderArtifactForTenant(
+		organizationId,
+		conversationId,
+		userId,
+		path,
+		content,
+	);
+}
+
+function saveBuilderDraft(
+	conversationId: string,
+	userId: string,
+	input: Parameters<typeof saveBuilderDraftForTenant>[3],
+) {
+	return saveBuilderDraftForTenant(
+		organizationId,
+		conversationId,
+		userId,
+		input,
+	);
+}
 
 beforeAll(async () => {
 	await db.user.create({
@@ -24,6 +57,7 @@ beforeAll(async () => {
 	});
 	const conversation = await db.agentConversation.create({
 		data: {
+			organizationId,
 			kind: "BUILDER",
 			userId,
 			sessionId: `builder-question-session-${suffix}`,
@@ -96,7 +130,12 @@ describe("builder persistence", () => {
 		};
 
 		expect(
-			await persistBuilderInputRequest(event, undefined, conversationId),
+			await persistBuilderInputRequest(
+				event,
+				undefined,
+				organizationId,
+				conversationId,
+			),
 		).toBe(true);
 		expect(
 			await db.agentConversation.findUnique({
@@ -132,11 +171,21 @@ describe("builder persistence", () => {
 			],
 		};
 		expect(
-			await persistBuilderInputRequest(newer, undefined, conversationId),
+			await persistBuilderInputRequest(
+				newer,
+				undefined,
+				organizationId,
+				conversationId,
+			),
 		).toBe(true);
 
 		expect(
-			await persistBuilderInputRequest(event, undefined, conversationId),
+			await persistBuilderInputRequest(
+				event,
+				undefined,
+				organizationId,
+				conversationId,
+			),
 		).toBe(false);
 		expect(
 			await persistBuilderInputRequest(
@@ -146,6 +195,7 @@ describe("builder persistence", () => {
 					requests: [{ ...request, requestId: "stale-question-from-child" }],
 				},
 				undefined,
+				organizationId,
 				conversationId,
 			),
 		).toBe(false);
@@ -168,6 +218,7 @@ describe("builder persistence", () => {
 	it("ignores a delayed question from a turn the session has already left", async () => {
 		const conversation = await db.agentConversation.create({
 			data: {
+				organizationId,
 				kind: "BUILDER",
 				userId,
 				sessionId: `builder-stale-turn-session-${suffix}`,
@@ -199,6 +250,7 @@ describe("builder persistence", () => {
 					turnId: "turn_5",
 				},
 				undefined,
+				organizationId,
 				conversation.id,
 			),
 		).toBe(true);
@@ -212,6 +264,7 @@ describe("builder persistence", () => {
 					turnId: "turn_3",
 				},
 				undefined,
+				organizationId,
 				conversation.id,
 			),
 		).toBe(false);
@@ -233,7 +286,7 @@ describe("builder persistence", () => {
 
 	it("sets a concise model-authored title only once", async () => {
 		const conversation = await db.agentConversation.create({
-			data: { kind: "BUILDER", userId },
+			data: { organizationId, kind: "BUILDER", userId },
 			select: { id: true },
 		});
 		conversationIds.push(conversation.id);
@@ -323,7 +376,7 @@ describe("builder persistence", () => {
 
 	it("assigns consecutive versions to distinct concurrent drafts", async () => {
 		const conversation = await db.agentConversation.create({
-			data: { kind: "BUILDER", userId },
+			data: { organizationId, kind: "BUILDER", userId },
 			select: { id: true },
 		});
 		conversationIds.push(conversation.id);
@@ -372,7 +425,7 @@ describe("builder persistence", () => {
 
 	it("persists every event trigger on one agent version", async () => {
 		const conversation = await db.agentConversation.create({
-			data: { kind: "BUILDER", userId },
+			data: { organizationId, kind: "BUILDER", userId },
 			select: { id: true },
 		});
 		conversationIds.push(conversation.id);
@@ -442,7 +495,7 @@ describe("builder persistence", () => {
 
 	it("fails closed on unsupported integrations and ambiguous record scope", async () => {
 		const conversation = await db.agentConversation.create({
-			data: { kind: "BUILDER", userId },
+			data: { organizationId, kind: "BUILDER", userId },
 			select: { id: true },
 		});
 		conversationIds.push(conversation.id);
@@ -522,7 +575,7 @@ describe("builder persistence", () => {
 
 	it("keeps a live definition unchanged until a revised version is deployed", async () => {
 		const conversation = await db.agentConversation.create({
-			data: { kind: "BUILDER", userId },
+			data: { organizationId, kind: "BUILDER", userId },
 			select: { id: true },
 		});
 		conversationIds.push(conversation.id);

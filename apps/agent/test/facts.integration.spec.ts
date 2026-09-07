@@ -1,9 +1,19 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import type { Evidence } from "../agent/lib/evidence";
-import { recordFact, writeBrief } from "../agent/lib/facts";
+import {
+	type RecordFactInput,
+	recordFact as recordFactInTenant,
+	writeBrief as writeBriefInTenant,
+} from "../agent/lib/facts";
+import { tenantAfterAll, tenantBeforeAll, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "facts-spec";
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const afterAll = tenantAfterAll(organizationId);
 const email = `evidence.subject.${suffix}@example.test`;
 
 let contactId: string;
@@ -13,10 +23,16 @@ const seen = (kind: Evidence["kind"], detail = "observed"): Evidence => ({
 	detail,
 });
 
+const recordFact = (input: RecordFactInput) =>
+	runInTenant(organizationId, () => recordFactInTenant(input));
+
+const writeBrief = (input: Parameters<typeof writeBriefInTenant>[0]) =>
+	runInTenant(organizationId, () => writeBriefInTenant(input));
+
 beforeAll(async () => {
 	await db.contact.deleteMany({ where: { email } });
 	const contact = await db.contact.create({
-		data: { firstName: "Subject", lastName: null, email },
+		data: { organizationId, firstName: "Subject", lastName: null, email },
 		select: { id: true },
 	});
 	contactId = contact.id;

@@ -1,5 +1,4 @@
 import {
-	type Db,
 	type FieldEntity,
 	type Prisma,
 	Prisma as PrismaNamespace,
@@ -18,6 +17,7 @@ import {
 	usesOptions,
 	writeValues,
 } from "@crm/db/fields";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	BadRequestException,
 	ConflictException,
@@ -25,7 +25,7 @@ import {
 	NotFoundException,
 } from "@nestjs/common";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type {
 	FieldCreateInput,
 	FieldReorderInput,
@@ -46,7 +46,7 @@ const RELATIONS = {
 @Injectable()
 export class FieldsService {
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly agent: AgentTriggerService,
 	) {}
 
@@ -64,8 +64,8 @@ export class FieldsService {
 	}
 
 	async byKey(entity: FieldEntity, key: string): Promise<SerializedField> {
-		const definition = await this.db.fieldDefinition.findUnique({
-			where: { entity_key: { entity, key } },
+		const definition = await this.db.fieldDefinition.findFirst({
+			where: { entity, key },
 			include: WITH_OPTIONS,
 		});
 
@@ -81,8 +81,8 @@ export class FieldsService {
 			throw new BadRequestException("That label does not make a usable key.");
 		}
 
-		const taken = await this.db.fieldDefinition.findUnique({
-			where: { entity_key: { entity: input.entity, key } },
+		const taken = await this.db.fieldDefinition.findFirst({
+			where: { entity: input.entity, key },
 			select: { id: true },
 		});
 
@@ -172,7 +172,7 @@ export class FieldsService {
 			throw new BadRequestException("A select needs at least one option.");
 		}
 
-		const definition = await this.db.$transaction(async (tx) => {
+		const definition = await scopedTransaction(this.db, async (tx) => {
 			if (data.options && usesOptions(type)) {
 				const keep = new Set(
 					data.options
@@ -195,7 +195,11 @@ export class FieldsService {
 					}
 
 					await tx.fieldOption.create({
-						data: { fieldId: id, label: option.label, position: index },
+						data: {
+							fieldId: id,
+							label: option.label,
+							position: index,
+						},
 					});
 				}
 			}
@@ -251,14 +255,16 @@ export class FieldsService {
 			);
 		}
 
-		await this.db.$transaction(
-			input.ids.map((id, index) =>
-				this.db.fieldDefinition.update({
-					where: { id },
-					data: { position: index },
-				}),
-			),
-		);
+		await scopedTransaction(this.db, async (tx) => {
+			await Promise.all(
+				input.ids.map((id, index) =>
+					tx.fieldDefinition.update({
+						where: { id },
+						data: { position: index },
+					}),
+				),
+			);
+		});
 
 		return this.list(input.entity, false);
 	}

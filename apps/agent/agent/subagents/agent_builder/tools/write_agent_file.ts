@@ -4,7 +4,10 @@ import {
 	BUILDER_ARTIFACT_PATHS,
 	writeBuilderArtifact,
 } from "../../../lib/builder-runtime";
-import { requireBuilderAttribute } from "../../../lib/session-purpose";
+import {
+	requireBuilderAttribute,
+	requireOrganizationId,
+} from "../../../lib/session-purpose";
 import { assertBuilderDraftOpen } from "../lib/execution-state";
 
 export default defineTool({
@@ -17,6 +20,7 @@ export default defineTool({
 	async execute(input, ctx) {
 		assertBuilderDraftOpen();
 		return writeBuilderArtifact(
+			requireOrganizationId(ctx),
 			requireBuilderAttribute(ctx, "conversationId"),
 			requireBuilderAttribute(ctx, "userId"),
 			input.path,

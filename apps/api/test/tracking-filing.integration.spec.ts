@@ -1,12 +1,7 @@
-import {
-	afterAll,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-} from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect } from "bun:test";
 import { db } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
 import {
 	CONTACT_CAP_REASON,
 	CONTACTS_PER_HOUR,
@@ -18,10 +13,13 @@ import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { TrackingCounterService } from "../src/tracking/tracking-counter.service";
 import { TrackingFilingService } from "../src/tracking/tracking-filing.service";
 import { withDiscardedCrmEvents } from "./agent-trigger.stub";
+import { tenantBound, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "filing-spec";
 const domain = `visitors-${suffix}.test`;
 const host = `www.${domain}`;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
 
 const queued: string[] = [];
 
@@ -35,16 +33,25 @@ const agent = {
 	withCrmEvents: withDiscardedCrmEvents,
 } as unknown as AgentTriggerService;
 
-const stamp = new ActivityStampService(db);
-const counters = new TrackingCounterService(db);
+const stamp = new ActivityStampService(scopedDb as never);
+const rawCounters = new TrackingCounterService();
+const counters = tenantBound(organizationId, rawCounters);
 const directory = new CompanyDirectoryService(agent);
-const filing = new TrackingFilingService(db, counters, directory, agent, stamp);
+const rawFiling = new TrackingFilingService(
+	scopedDb as never,
+	counters,
+	directory,
+	agent,
+	stamp,
+);
+const filing = tenantBound(organizationId, rawFiling);
 
 let userId: string;
 
 async function submit(email: string | null, name: string | null = "Dana Reed") {
-	const row = await db.formSubmission.create({
+	const row = await scopedDb.formSubmission.create({
 		data: {
+			organizationId,
 			host,
 			path: "/pricing",
 			email,
@@ -62,7 +69,7 @@ async function submit(email: string | null, name: string | null = "Dana Reed") {
 		name,
 	});
 
-	const stored = await db.formSubmission.findUnique({
+	const stored = await scopedDb.formSubmission.findUnique({
 		where: { id: row.id },
 		select: { contactId: true, filedAt: true, skipReason: true },
 	});
@@ -71,19 +78,25 @@ async function submit(email: string | null, name: string | null = "Dana Reed") {
 }
 
 async function clean() {
-	await db.activity.deleteMany({ where: { body: { contains: host } } });
-	await db.formSubmission.deleteMany({ where: { host } });
-	await db.trackedVisitor.deleteMany({
-		where: { id: { startsWith: "visitor-" } },
+	await runInTenant(organizationId, async () => {
+		await scopedDb.activity.deleteMany({ where: { body: { contains: host } } });
+		await scopedDb.formSubmission.deleteMany({ where: { host } });
+		await scopedDb.trackedVisitor.deleteMany({
+			where: { id: { startsWith: "visitor-" } },
+		});
+		await scopedDb.contact.deleteMany({
+			where: { email: { endsWith: `@${domain}` } },
+		});
+		await scopedDb.contact.deleteMany({
+			where: { email: `free-${suffix}@gmail.com` },
+		});
+		await scopedDb.company.deleteMany({ where: { domain } });
+		await scopedDb.suppressedContact.deleteMany({
+			where: { email: { endsWith: `@${domain}` } },
+		});
+		await scopedDb.suppressedDomain.deleteMany({ where: { domain } });
+		await scopedDb.trackingCounter.deleteMany({ where: {} });
 	});
-	await db.contact.deleteMany({ where: { email: { endsWith: `@${domain}` } } });
-	await db.contact.deleteMany({ where: { email: `free-${suffix}@gmail.com` } });
-	await db.company.deleteMany({ where: { domain } });
-	await db.suppressedContact.deleteMany({
-		where: { email: { endsWith: `@${domain}` } },
-	});
-	await db.suppressedDomain.deleteMany({ where: { domain } });
-	await db.trackingCounter.deleteMany({ where: {} });
 }
 
 beforeAll(async () => {
@@ -104,10 +117,12 @@ beforeAll(async () => {
 		).id;
 });
 
-beforeEach(async () => {
-	queued.length = 0;
-	await db.trackingCounter.deleteMany({ where: {} });
-});
+beforeEach(() =>
+	runInTenant(organizationId, async () => {
+		queued.length = 0;
+		await scopedDb.trackingCounter.deleteMany({ where: {} });
+	}),
+);
 
 afterAll(async () => {
 	await clean();
@@ -134,7 +149,9 @@ describe("filing a form submission", () => {
 
 	it("refuses an address a rep has deleted", async () => {
 		const email = `deleted@${domain}`;
-		await db.suppressedContact.create({ data: { email } });
+		await scopedDb.suppressedContact.create({
+			data: { organizationId, email },
+		});
 
 		const { outcome, stored } = await submit(email);
 
@@ -143,14 +160,16 @@ describe("filing a form submission", () => {
 	});
 
 	it("refuses a suppressed domain", async () => {
-		await db.suppressedDomain.create({ data: { domain } });
+		await scopedDb.suppressedDomain.create({
+			data: { organizationId, domain },
+		});
 
 		const { outcome, stored } = await submit(`someone@${domain}`);
 
 		expect(outcome.filed).toBe(false);
 		expect(stored?.skipReason).toContain("suppressed");
 
-		await db.suppressedDomain.deleteMany({ where: { domain } });
+		await scopedDb.suppressedDomain.deleteMany({ where: { domain } });
 	});
 
 	it("files a free-mail address as a contact with no company", async () => {
@@ -159,8 +178,13 @@ describe("filing a form submission", () => {
 		expect(outcome.filed).toBe(true);
 		expect(stored?.filedAt).not.toBeNull();
 
-		const contact = await db.contact.findUnique({
-			where: { email: `free-${suffix}@gmail.com` },
+		const contact = await scopedDb.contact.findUnique({
+			where: {
+				organizationId_email: {
+					organizationId,
+					email: `free-${suffix}@gmail.com`,
+				},
+			},
 			select: { companyId: true, source: true },
 		});
 
@@ -176,8 +200,8 @@ describe("filing a form submission", () => {
 		expect(stored?.contactId).toBeTruthy();
 		expect(queued).toHaveLength(1);
 
-		const contact = await db.contact.findUnique({
-			where: { email },
+		const contact = await scopedDb.contact.findUnique({
+			where: { organizationId_email: { organizationId, email } },
 			select: { companyId: true, firstName: true },
 		});
 
@@ -187,8 +211,9 @@ describe("filing a form submission", () => {
 
 	it("writes one note when the same submission is filed twice at once", async () => {
 		const email = `raced@${domain}`;
-		const row = await db.formSubmission.create({
+		const row = await scopedDb.formSubmission.create({
 			data: {
+				organizationId,
 				host,
 				path: "/pricing",
 				email,
@@ -211,9 +236,9 @@ describe("filing a form submission", () => {
 
 		expect(first.filed).toBe(true);
 		expect(second.filed).toBe(true);
-		expect(await db.contact.count({ where: { email } })).toBe(1);
+		expect(await scopedDb.contact.count({ where: { email } })).toBe(1);
 
-		const notes = await db.activity.count({
+		const notes = await scopedDb.activity.count({
 			where: { body: { contains: host }, contact: { email } },
 		});
 
@@ -224,8 +249,9 @@ describe("filing a form submission", () => {
 		const email = `refunded@${domain}`;
 		const rows = await Promise.all(
 			[1, 2].map((n) =>
-				db.formSubmission.create({
+				scopedDb.formSubmission.create({
 					data: {
+						organizationId,
 						host,
 						path: "/pricing",
 						email,
@@ -249,10 +275,12 @@ describe("filing a form submission", () => {
 			),
 		);
 
-		expect(await db.contact.count({ where: { email } })).toBe(1);
+		expect(await scopedDb.contact.count({ where: { email } })).toBe(1);
 
-		const counter = await db.trackingCounter.findUnique({
-			where: { key: contactWindowKey() },
+		const counter = await scopedDb.trackingCounter.findUnique({
+			where: {
+				organizationId_key: { organizationId, key: contactWindowKey() },
+			},
 			select: { value: true },
 		});
 
@@ -271,14 +299,17 @@ describe("filing a form submission", () => {
 		expect(second.stored?.contactId).toBe(first.stored?.contactId ?? "");
 		expect(queued).toHaveLength(0);
 
-		const count = await db.contact.count({ where: { email } });
+		const count = await scopedDb.contact.count({ where: { email } });
 		expect(count).toBe(1);
 	});
 
 	it("stores but does not file once the hourly cap is reached", async () => {
-		await db.trackingCounter.upsert({
-			where: { key: contactWindowKey() },
+		await scopedDb.trackingCounter.upsert({
+			where: {
+				organizationId_key: { organizationId, key: contactWindowKey() },
+			},
 			create: {
+				organizationId,
 				key: contactWindowKey(),
 				value: CONTACTS_PER_HOUR,
 				expiresAt: new Date(Date.now() + 3_600_000),
@@ -303,17 +334,23 @@ describe("the hourly counter", () => {
 		expect(await counters.take(key, 2)).toBe(false);
 		expect(await counters.take(key, 2)).toBe(false);
 
-		await db.trackingCounter.deleteMany({ where: { key } });
+		await scopedDb.trackingCounter.deleteMany({
+			where: { organizationId, key },
+		});
 	});
 
 	it("keeps a fixed window rather than sliding on every write", async () => {
 		const key = contactWindowKey();
 
 		await counters.take(key, 10);
-		const first = await db.trackingCounter.findUnique({ where: { key } });
+		const first = await scopedDb.trackingCounter.findUnique({
+			where: { organizationId_key: { organizationId, key } },
+		});
 
 		await counters.take(key, 10);
-		const second = await db.trackingCounter.findUnique({ where: { key } });
+		const second = await scopedDb.trackingCounter.findUnique({
+			where: { organizationId_key: { organizationId, key } },
+		});
 
 		expect(second?.expiresAt.getTime()).toBe(first?.expiresAt.getTime() ?? 0);
 		expect(second?.value).toBe(2);

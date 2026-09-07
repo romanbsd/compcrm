@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 
 export const BUILDER_CONVERSATION_TITLE_MAX_LENGTH = 60;
 

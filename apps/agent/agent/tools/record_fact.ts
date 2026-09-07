@@ -4,7 +4,10 @@ import type { Evidence, EvidenceKind } from "../lib/evidence";
 import { WEIGHTS } from "../lib/evidence";
 import { FACT_FIELDS, type FactField, recordFact } from "../lib/facts";
 import { focusOn } from "../lib/focus";
-import { assertResearchPurpose } from "../lib/session-purpose";
+import {
+	assertResearchPurpose,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -47,24 +50,26 @@ export default defineTool({
 	}),
 	async execute(input, ctx) {
 		assertResearchPurpose(ctx);
-		focusOn({ contactId: input.contactId });
+		return runInSessionTenant(ctx, async () => {
+			focusOn({ contactId: input.contactId });
 
-		const result = await recordFact({
-			contactId: input.contactId,
-			field: input.field,
-			value: input.value,
-			evidence: input.evidence as Evidence[],
-			method: input.method,
-			sourceUrl: input.sourceUrl,
+			const result = await recordFact({
+				contactId: input.contactId,
+				field: input.field,
+				value: input.value,
+				evidence: input.evidence as Evidence[],
+				method: input.method,
+				sourceUrl: input.sourceUrl,
+			});
+
+			return {
+				stored: result.stored,
+				applied: result.applied,
+				band: result.band,
+				score: Number(result.score.toFixed(2)),
+				rationale: result.rationale,
+				reason: result.reason || undefined,
+			};
 		});
-
-		return {
-			stored: result.stored,
-			applied: result.applied,
-			band: result.band,
-			score: Number(result.score.toFixed(2)),
-			rationale: result.rationale,
-			reason: result.reason || undefined,
-		};
 	},
 });

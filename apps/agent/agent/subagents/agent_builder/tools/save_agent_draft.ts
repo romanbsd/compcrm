@@ -1,6 +1,9 @@
 import { defineTool } from "eve/tools";
 import { saveBuilderDraft } from "../../../lib/builder-runtime";
-import { requireBuilderAttribute } from "../../../lib/session-purpose";
+import {
+	requireBuilderAttribute,
+	requireOrganizationId,
+} from "../../../lib/session-purpose";
 import { builderDraftToolInput, draftInputFromTool } from "../lib/draft-input";
 import {
 	assertBuilderDraftOpen,
@@ -14,6 +17,7 @@ export default defineTool({
 	async execute(input, ctx) {
 		assertBuilderDraftOpen();
 		const result = await saveBuilderDraft(
+			requireOrganizationId(ctx),
 			requireBuilderAttribute(ctx, "conversationId"),
 			requireBuilderAttribute(ctx, "userId"),
 			draftInputFromTool(input),

@@ -1,4 +1,5 @@
-import { db, type Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import type { CrmEventInput } from "../src/agent/agent-trigger.service";
 
 export function withDiscardedCrmEvents<Result>(
@@ -7,5 +8,5 @@ export function withDiscardedCrmEvents<Result>(
 		emit: (input: CrmEventInput) => Promise<void>,
 	) => Promise<Result>,
 ): Promise<Result> {
-	return db.$transaction((tx) => work(tx, async () => undefined));
+	return scopedTransaction((tx) => work(tx, async () => undefined));
 }

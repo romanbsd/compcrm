@@ -1,4 +1,4 @@
-import { db } from "@crm/db";
+import { scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	MAX_LINE,
 	MAX_NARRATIVE,
@@ -7,7 +7,10 @@ import {
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { currentFocus } from "../lib/focus";
-import { assertResearchPurpose } from "../lib/session-purpose";
+import {
+	assertResearchPurpose,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 import { identity } from "../lib/workspace";
 
 const line = (what: string) =>
@@ -38,43 +41,48 @@ export default defineTool({
 	}),
 	async execute(input, ctx) {
 		assertResearchPurpose(ctx);
-		const us = await identity();
+		return runInSessionTenant(ctx, async () => {
+			const us = await identity();
 
-		if (!us?.website) {
+			if (!us?.website) {
+				return {
+					written: false as const,
+					reason:
+						"This install has not been told its own website, so there is nothing to file a profile against.",
+				};
+			}
+			const website = us.website;
+
+			const narrative = input.narrative.trim();
+
+			if (narrative.length < 40) {
+				return {
+					written: false as const,
+					reason:
+						"Too short to tell anybody anything. Say what we sell and to whom, or say nothing.",
+				};
+			}
+
+			const profile = await scopedTransaction((tx) =>
+				writeWorkspaceProfile(tx, {
+					website,
+					narrative,
+					sections: {
+						sells: input.sells,
+						sellsTo: input.sellsTo,
+						edge: input.edge,
+					},
+					sourceUrl: input.sourceUrl,
+					sessionId: currentFocus().sessionId,
+				}),
+			);
+
 			return {
-				written: false as const,
-				reason:
-					"This install has not been told its own website, so there is nothing to file a profile against.",
+				written: true as const,
+				website: profile.website,
+				narrative: profile.narrative,
+				sections: profile.sections,
 			};
-		}
-
-		const narrative = input.narrative.trim();
-
-		if (narrative.length < 40) {
-			return {
-				written: false as const,
-				reason:
-					"Too short to tell anybody anything. Say what we sell and to whom, or say nothing.",
-			};
-		}
-
-		const profile = await writeWorkspaceProfile(db, {
-			website: us.website,
-			narrative,
-			sections: {
-				sells: input.sells,
-				sellsTo: input.sellsTo,
-				edge: input.edge,
-			},
-			sourceUrl: input.sourceUrl,
-			sessionId: currentFocus().sessionId,
 		});
-
-		return {
-			written: true as const,
-			website: profile.website,
-			narrative: profile.narrative,
-			sections: profile.sections,
-		};
 	},
 });

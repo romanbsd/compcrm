@@ -1,10 +1,10 @@
 import {
-	type Db,
 	GoogleSyncStatus,
 	type MailboxSyncModel as MailboxSync,
 } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type { MatchContext } from "../mailbox/mailbox-match.service";
 import { MailboxTokenService } from "../mailbox/mailbox-token.service";
 import {
@@ -41,7 +41,7 @@ export class GmailSyncService {
 	private readonly logger = new Logger(GmailSyncService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly gmail: GmailClient,
 		private readonly tokens: MailboxTokenService,
 		private readonly state: SyncStateService,

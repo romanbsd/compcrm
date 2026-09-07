@@ -48,7 +48,6 @@ export const ALLOWED_PROPERTIES = [
 	"facts_by_method",
 	"facts_by_evidence_kind",
 	"fact_dismissal_rate",
-	"fact_decision_median_hours",
 	"facts_superseded_within_7_days",
 
 	"contacts_bucket",

@@ -1,122 +1,137 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { db } from "@crm/db";
-import { ensureWorkspaceMembership, WORKSPACE_ID } from "../src/organization";
+import { runInTenant } from "@crm/db/tenant-context";
+import {
+	activeWorkspaceRoleOf,
+	resolveActiveOrganization,
+	workspaceRoleOf,
+} from "../src/organization";
 
 const suffix = process.env.TEST_RUN_ID ?? "organization-spec";
 
 const emailOf = (label: string) => `${label}.${suffix}@example.test`;
 
-let firstId: string;
-let secondId: string;
+let userId: string;
+let orgAId: string;
+let orgBId: string;
 
-const seedUser = async (label: string, createdAt: Date): Promise<string> => {
+const seedUser = async (label: string): Promise<string> => {
 	const user = await db.user.create({
-		data: {
-			id: `${suffix}-${label}`,
-			name: label,
-			email: emailOf(label),
-			createdAt,
-			updatedAt: createdAt,
-		},
+		data: { id: `${suffix}-${label}`, name: label, email: emailOf(label) },
 		select: { id: true },
 	});
-
 	return user.id;
 };
 
-const roleOf = async (userId: string): Promise<string | null> => {
-	const member = await db.member.findUnique({
-		where: { organizationId_userId: { organizationId: WORKSPACE_ID, userId } },
-		select: { role: true },
+const seedOrg = async (label: string): Promise<string> => {
+	const org = await db.organization.create({
+		data: {
+			id: `${suffix}-${label}`,
+			name: label,
+			slug: `${suffix}-${label}`,
+			createdAt: new Date(),
+		},
+		select: { id: true },
 	});
+	return org.id;
+};
 
-	return member?.role ?? null;
+const addMember = async (
+	organizationId: string,
+	memberUserId: string,
+	role: string,
+	createdAt: Date,
+) => {
+	await db.member.create({
+		data: {
+			id: `${suffix}-${organizationId}-${memberUserId}`,
+			organizationId,
+			userId: memberUserId,
+			role,
+			createdAt,
+		},
+	});
 };
 
 const clear = async () => {
 	await db.member.deleteMany({
 		where: { userId: { startsWith: `${suffix}-` } },
 	});
+	await db.organization.deleteMany({
+		where: { id: { startsWith: `${suffix}-` } },
+	});
 	await db.user.deleteMany({
 		where: { email: { endsWith: `.${suffix}@example.test` } },
 	});
-
-	const strangers = await db.member.count({
-		where: { organizationId: WORKSPACE_ID },
-	});
-
-	if (strangers > 0) {
-		throw new Error(
-			`${strangers} member row(s) this spec did not create are in the workspace, and it needs an empty one to test the owner backfill. It will not delete them: that is somebody's access. Point TEST_DATABASE_URL at a database of your own, or find the spec that leaked them.`,
-		);
-	}
 };
 
 beforeEach(async () => {
 	await clear();
-
-	firstId = await seedUser("first", new Date("2020-01-01T00:00:00Z"));
-	secondId = await seedUser("second", new Date("2021-01-01T00:00:00Z"));
+	userId = await seedUser("user");
+	orgAId = await seedOrg("org-a");
+	orgBId = await seedOrg("org-b");
 });
 
 afterAll(clear);
 
-describe("ensureWorkspaceMembership", () => {
-	it("creates the one workspace and enrols everyone who already had an account", async () => {
-		const workspaceId = await ensureWorkspaceMembership(secondId);
-
-		expect(workspaceId).toBe(WORKSPACE_ID);
-		expect(await roleOf(firstId)).toBe("owner");
-		expect(await roleOf(secondId)).toBe("member");
+describe("resolveActiveOrganization", () => {
+	it("returns null for a user with no membership anywhere", async () => {
+		expect(await resolveActiveOrganization(userId)).toBeNull();
 	});
 
-	it("is idempotent, so signing in again neither duplicates nor re-roles", async () => {
-		await ensureWorkspaceMembership(secondId);
+	it("returns the user's sole organization", async () => {
+		await addMember(orgAId, userId, "member", new Date("2026-01-01T00:00:00Z"));
 
-		await db.member.update({
-			where: {
-				organizationId_userId: {
-					organizationId: WORKSPACE_ID,
-					userId: secondId,
-				},
-			},
-			data: { role: "admin" },
-		});
-
-		await ensureWorkspaceMembership(secondId);
-		await ensureWorkspaceMembership(secondId);
-
-		const rows = await db.member.findMany({
-			where: { organizationId: WORKSPACE_ID, userId: secondId },
-		});
-
-		expect(rows).toHaveLength(1);
-		expect(rows[0]?.role).toBe("admin");
+		expect(await resolveActiveOrganization(userId)).toBe(orgAId);
 	});
 
-	it("joins someone who signs up later as a member", async () => {
-		await ensureWorkspaceMembership(secondId);
+	it("returns the earliest-joined organization when the user belongs to several", async () => {
+		await addMember(orgBId, userId, "member", new Date("2026-02-01T00:00:00Z"));
+		await addMember(orgAId, userId, "member", new Date("2026-01-01T00:00:00Z"));
 
-		const laterId = await seedUser("later", new Date("2026-01-01T00:00:00Z"));
-
-		await ensureWorkspaceMembership(laterId);
-
-		expect(await roleOf(laterId)).toBe("member");
+		expect(await resolveActiveOrganization(userId)).toBe(orgAId);
 	});
 
-	it("leaves the owner alone when a later arrival signs in", async () => {
-		await ensureWorkspaceMembership(secondId);
+	it("does not create any organization or membership as a side effect", async () => {
+		await resolveActiveOrganization(userId);
 
-		const laterId = await seedUser("later", new Date("2026-01-01T00:00:00Z"));
+		const memberCount = await db.member.count({ where: { userId } });
+		expect(memberCount).toBe(0);
+	});
+});
 
-		await ensureWorkspaceMembership(laterId);
+describe("workspaceRoleOf", () => {
+	it("returns the role for the given user in the given organization", async () => {
+		await addMember(orgAId, userId, "admin", new Date());
 
-		expect(await roleOf(firstId)).toBe("owner");
+		expect(await workspaceRoleOf(userId, orgAId)).toBe("admin");
+	});
 
-		const owners = await db.member.count({
-			where: { organizationId: WORKSPACE_ID, role: "owner" },
-		});
+	it("returns null when the user is not a member of that organization", async () => {
+		await addMember(orgAId, userId, "admin", new Date());
 
-		expect(owners).toBe(1);
+		expect(await workspaceRoleOf(userId, orgBId)).toBeNull();
+	});
+
+	it("keeps roles isolated across a user's two organizations", async () => {
+		await addMember(orgAId, userId, "owner", new Date());
+		await addMember(orgBId, userId, "member", new Date());
+
+		expect(await workspaceRoleOf(userId, orgAId)).toBe("owner");
+		expect(await workspaceRoleOf(userId, orgBId)).toBe("member");
+	});
+});
+
+describe("activeWorkspaceRoleOf", () => {
+	it("reads the role from the active organization", async () => {
+		await addMember(orgAId, userId, "admin", new Date());
+		await addMember(orgBId, userId, "member", new Date());
+
+		expect(await runInTenant(orgAId, () => activeWorkspaceRoleOf(userId))).toBe(
+			"admin",
+		);
+		expect(await runInTenant(orgBId, () => activeWorkspaceRoleOf(userId))).toBe(
+			"member",
+		);
 	});
 });

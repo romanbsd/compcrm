@@ -1,12 +1,13 @@
 import { isDeepStrictEqual } from "node:util";
-import { db, type Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
 import {
 	CRM_EVENT_CATALOG,
 	CRM_EVENT_TYPES,
 	type CrmEventType,
 } from "@crm/db/crm-events";
 import { readAgentModel } from "@crm/db/settings";
-import { WORKSPACE_ID } from "@crm/db/workspace";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedTransaction, tenantTransaction } from "@crm/db/tenant-scope";
 import { AGENT_ACTION_TYPES } from "@crm/validation/agent-manifest";
 import { z } from "zod";
 import { actionDependency } from "./agent-actions";
@@ -93,6 +94,7 @@ const ARTIFACT_LANGUAGES = {
 } satisfies Record<BuilderArtifactPath, string>;
 
 export async function writeBuilderArtifact(
+	organizationId: string,
 	conversationId: string,
 	userId: string,
 	path: BuilderArtifactPath,
@@ -100,7 +102,7 @@ export async function writeBuilderArtifact(
 ) {
 	assertSafeArtifact(content);
 
-	return db.$transaction(async (tx) => {
+	return tenantTransaction(organizationId, async (tx) => {
 		const [conversation] = await tx.$queryRaw<Array<{ id: string }>>`
 			SELECT id
 			FROM "agentConversation"
@@ -120,7 +122,11 @@ export async function writeBuilderArtifact(
 		});
 
 		if (latest?.content === content) {
-			return { saved: true as const, id: latest.id, revision: latest.revision };
+			return {
+				saved: true as const,
+				id: latest.id,
+				revision: latest.revision,
+			};
 		}
 
 		const artifact = await tx.agentBuilderArtifact.create({
@@ -140,37 +146,43 @@ export async function writeBuilderArtifact(
 	});
 }
 
-export async function builderContext(conversationId: string, userId: string) {
-	const conversation = await db.agentConversation.findFirst({
-		where: { id: conversationId, userId, kind: "BUILDER" },
-		select: {
-			id: true,
-			title: true,
-			agent: {
-				select: {
-					id: true,
-					name: true,
-					description: true,
-					status: true,
-					versions: {
-						orderBy: { number: "desc" },
-						take: 1,
-						select: {
-							id: true,
-							number: true,
-							status: true,
-							manifest: true,
-							instructions: true,
+export async function builderContext(
+	organizationId: string,
+	conversationId: string,
+	userId: string,
+) {
+	const conversation = await tenantTransaction(organizationId, (tx) =>
+		tx.agentConversation.findFirst({
+			where: { id: conversationId, userId, kind: "BUILDER" },
+			select: {
+				id: true,
+				title: true,
+				agent: {
+					select: {
+						id: true,
+						name: true,
+						description: true,
+						status: true,
+						versions: {
+							orderBy: { number: "desc" },
+							take: 1,
+							select: {
+								id: true,
+								number: true,
+								status: true,
+								manifest: true,
+								instructions: true,
+							},
 						},
 					},
 				},
+				submissions: {
+					orderBy: { createdAt: "asc" },
+					select: { id: true, message: true, createdAt: true },
+				},
 			},
-			submissions: {
-				orderBy: { createdAt: "asc" },
-				select: { id: true, message: true, createdAt: true },
-			},
-		},
-	});
+		}),
+	);
 
 	if (!conversation)
 		throw new Error("This builder conversation is unavailable.");
@@ -181,34 +193,46 @@ export async function builderContext(conversationId: string, userId: string) {
 		),
 	);
 
+	const [availableConnections, describedResources] = await runInTenant(
+		organizationId,
+		() =>
+			Promise.all([
+				connectionStatus(userId, organizationId),
+				describeResources(resources),
+			]),
+	);
+
 	return {
 		conversation: {
 			id: conversation.id,
 			title: conversation.title,
 		},
-		availableConnections: await connectionStatus(userId),
+		availableConnections,
 		crmEvents: CRM_EVENT_TYPES.map((type) => ({
 			type,
 			...CRM_EVENT_CATALOG[type],
 		})),
-		resources: await describeResources(resources),
+		resources: describedResources,
 		existingDraft: conversation.agent,
 		now: new Date().toISOString(),
 	};
 }
 
 export async function saveBuilderDraft(
+	organizationId: string,
 	conversationId: string,
 	userId: string,
 	input: DraftAgentInput,
 ) {
-	const conversation = await db.agentConversation.findFirst({
-		where: { id: conversationId, userId, kind: "BUILDER" },
-		select: {
-			id: true,
-			submissions: { select: { message: true } },
-		},
-	});
+	const conversation = await tenantTransaction(organizationId, (tx) =>
+		tx.agentConversation.findFirst({
+			where: { id: conversationId, userId, kind: "BUILDER" },
+			select: {
+				id: true,
+				submissions: { select: { message: true } },
+			},
+		}),
+	);
 
 	if (!conversation)
 		throw new Error("This builder conversation is unavailable.");
@@ -218,7 +242,9 @@ export async function saveBuilderDraft(
 			resourcesOf(submission.message),
 		),
 	);
-	const validation = await validateDraft(userId, input, taggedResources);
+	const validation = await runInTenant(organizationId, () =>
+		validateDraft(userId, input, taggedResources, organizationId),
+	);
 	if (!validation.valid) {
 		return {
 			saved: false as const,
@@ -227,7 +253,9 @@ export async function saveBuilderDraft(
 		};
 	}
 
-	const model = await readAgentModel(db);
+	const model = await tenantTransaction(organizationId, (tx) =>
+		readAgentModel(tx),
+	);
 	const now = new Date();
 	const manifestTriggers = input.triggers.map((trigger) => ({
 		type: trigger.type,
@@ -265,7 +293,7 @@ export async function saveBuilderDraft(
 	const files = artifactFiles(input, JSON.stringify(manifest, null, 2));
 	for (const file of files) assertSafeArtifact(file.content);
 
-	return db.$transaction(async (tx) => {
+	return tenantTransaction(organizationId, async (tx) => {
 		const [lockedConversation] = await tx.$queryRaw<
 			Array<{ id: string; agentId: string | null }>
 		>`
@@ -481,8 +509,9 @@ async function validateDraft(
 	userId: string,
 	input: DraftAgentInput,
 	taggedResources: BuilderResource[],
+	organizationId: string,
 ) {
-	const connections = await connectionStatus(userId);
+	const connections = await connectionStatus(userId, organizationId);
 	const issues: string[] = [];
 	const capabilities = new Set(["crm.read"]);
 	const resourceKeys = new Set<string>();
@@ -622,45 +651,47 @@ async function validateDraft(
 	};
 }
 
-async function connectionStatus(userId: string) {
-	const [googleAccounts, slackAccount, workspaceMembers] = await Promise.all([
-		db.account.findMany({
-			where: { userId, providerId: "google" },
-			select: { providerId: true, scope: true },
-		}),
-		db.account.findFirst({
-			where: { providerId: "slack", accessToken: { not: null } },
-			orderBy: { updatedAt: "desc" },
-			select: { id: true },
-		}),
-		db.member.findMany({
-			where: { organizationId: WORKSPACE_ID },
-			orderBy: { user: { name: "asc" } },
-			select: {
-				user: {
+async function connectionStatus(userId: string, organizationId: string) {
+	const [googleAccounts, slackAccount, workspaceMembers, slackChannels] =
+		await scopedTransaction((tx) =>
+			Promise.all([
+				tx.account.findMany({
+					where: { userId, providerId: "google" },
+					select: { providerId: true, scope: true },
+				}),
+				tx.slackWorkspaceGrant.findFirst({
+					where: { botToken: { not: null } },
+					orderBy: { updatedAt: "desc" },
+					select: { id: true },
+				}),
+				tx.member.findMany({
+					where: { organizationId },
+					orderBy: { user: { name: "asc" } },
 					select: {
-						name: true,
-						email: true,
-						slackMemberMatch: {
+						user: {
 							select: {
-								slackUserId: true,
-								slackHandle: true,
-								slackEmail: true,
+								name: true,
+								email: true,
+								slackMemberMatch: {
+									select: {
+										slackUserId: true,
+										slackHandle: true,
+										slackEmail: true,
+									},
+								},
 							},
 						},
 					},
-				},
-			},
-		}),
-	]);
-	if (slackAccount) void requestStaleSlackInventorySync();
-
-	const slackChannels = await db.slackChannel.findMany({
-		where: { available: true },
-		orderBy: { name: "asc" },
-		take: 100,
-		select: { id: true, name: true, memberCount: true },
-	});
+				}),
+				tx.slackChannel.findMany({
+					where: { available: true },
+					orderBy: { name: "asc" },
+					take: 100,
+					select: { id: true, name: true, memberCount: true },
+				}),
+			]),
+		);
+	if (slackAccount) void requestStaleSlackInventorySync(organizationId);
 	const scopes = new Set(
 		googleAccounts.flatMap((account) => (account.scope ?? "").split(/[,\s]+/)),
 	);
@@ -735,53 +766,55 @@ export function slackDestinationIssues(
 }
 
 async function describeResources(resources: BuilderResource[]) {
-	return Promise.all(
-		resources.map(async (resource) => {
-			if (resource.kind === "company") {
-				const row = await db.company.findUnique({
-					where: { id: resource.id },
-					select: { id: true, name: true, domain: true, industry: true },
-				});
-				return { ...resource, record: row };
-			}
-			if (resource.kind === "contact") {
-				const row = await db.contact.findUnique({
-					where: { id: resource.id },
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						email: true,
-						title: true,
-						company: { select: { id: true, name: true } },
-					},
-				});
-				return { ...resource, record: row };
-			}
-			if (resource.kind === "deal") {
-				const row = await db.deal.findUnique({
-					where: { id: resource.id },
-					select: {
-						id: true,
-						name: true,
-						stage: true,
-						amount: true,
-						currency: true,
-						company: { select: { id: true, name: true } },
-					},
-				});
-				return {
-					...resource,
-					record: row
-						? {
-								...row,
-								amount: row.amount === null ? null : Number(row.amount),
-							}
-						: null,
-				};
-			}
-			return { ...resource, record: null };
-		}),
+	return scopedTransaction((tx) =>
+		Promise.all(
+			resources.map(async (resource) => {
+				if (resource.kind === "company") {
+					const row = await tx.company.findFirst({
+						where: { id: resource.id },
+						select: { id: true, name: true, domain: true, industry: true },
+					});
+					return { ...resource, record: row };
+				}
+				if (resource.kind === "contact") {
+					const row = await tx.contact.findFirst({
+						where: { id: resource.id },
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							title: true,
+							company: { select: { id: true, name: true } },
+						},
+					});
+					return { ...resource, record: row };
+				}
+				if (resource.kind === "deal") {
+					const row = await tx.deal.findFirst({
+						where: { id: resource.id },
+						select: {
+							id: true,
+							name: true,
+							stage: true,
+							amount: true,
+							currency: true,
+							company: { select: { id: true, name: true } },
+						},
+					});
+					return {
+						...resource,
+						record: row
+							? {
+									...row,
+									amount: row.amount === null ? null : Number(row.amount),
+								}
+							: null,
+					};
+				}
+				return { ...resource, record: null };
+			}),
+		),
 	);
 }
 

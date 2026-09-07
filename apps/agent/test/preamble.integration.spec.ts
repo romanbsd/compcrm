@@ -1,18 +1,38 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { DealStage, db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { DealStage } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import {
-	companyPreamble,
-	composeClosing,
-	contactPreamble,
-	dealPreamble,
-	noRecordPreamble,
-	sessionPreamble,
-	workspacePreamble,
+	companyPreamble as companyPreambleWithoutTenant,
+	composeClosing as composeClosingWithoutTenant,
+	contactPreamble as contactPreambleWithoutTenant,
+	dealPreamble as dealPreambleWithoutTenant,
+	noRecordPreamble as noRecordPreambleWithoutTenant,
+	sessionPreamble as sessionPreambleWithoutTenant,
+	workspacePreamble as workspacePreambleWithoutTenant,
 } from "../agent/lib/preamble";
-import { identity } from "../agent/lib/workspace";
+import { identity as identityWithoutTenant } from "../agent/lib/workspace";
+import { tenantAfterAll, tenantBeforeAll, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "preamble-spec";
 const domain = `fernhill-${suffix}.test`;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const afterAll = tenantAfterAll(organizationId);
+
+const tenantBound =
+	<TArgs extends unknown[], TResult>(fn: (...args: TArgs) => TResult) =>
+	(...args: TArgs): TResult =>
+		runInTenant(organizationId, () => fn(...args));
+const companyPreamble = tenantBound(companyPreambleWithoutTenant);
+const composeClosing = tenantBound(composeClosingWithoutTenant);
+const contactPreamble = tenantBound(contactPreambleWithoutTenant);
+const dealPreamble = tenantBound(dealPreambleWithoutTenant);
+const noRecordPreamble = tenantBound(noRecordPreambleWithoutTenant);
+const sessionPreamble = tenantBound(sessionPreambleWithoutTenant);
+const workspacePreamble = tenantBound(workspacePreambleWithoutTenant);
+const identity = tenantBound(identityWithoutTenant);
 
 let companyId: string;
 let dealId: string;
@@ -36,6 +56,7 @@ beforeAll(async () => {
 
 	const company = await db.company.create({
 		data: {
+			organizationId,
 			name: `Fernhill Systems ${suffix}`,
 			domain,
 			industry: "Security software",
@@ -46,6 +67,7 @@ beforeAll(async () => {
 
 	const paula = await db.contact.create({
 		data: {
+			organizationId,
 			firstName: "Paula",
 			lastName: "Marchetti",
 			title: "Growth Specialist",
@@ -59,6 +81,7 @@ beforeAll(async () => {
 
 	const tomi = await db.contact.create({
 		data: {
+			organizationId,
 			firstName: "Tomi",
 			lastName: "Okonkwo",
 			title: "Head of Security",
@@ -71,12 +94,15 @@ beforeAll(async () => {
 
 	const deal = await db.deal.create({
 		data: {
+			organizationId,
 			name: `Fernhill platform ${suffix}`,
 			companyId,
 			ownerId: user.id,
 			stage: DealStage.CONTRACT_SENT,
 			amount: 48_000,
-			contacts: { create: [{ contactId: paulaId, role: "Champion" }] },
+			contacts: {
+				create: [{ organizationId, contactId: paulaId, role: "Champion" }],
+			},
 		},
 		select: { id: true },
 	});
@@ -86,6 +112,9 @@ beforeAll(async () => {
 afterAll(cleanup);
 
 async function cleanup(): Promise<void> {
+	await db.contact.deleteMany({
+		where: { email: `nobody.${suffix}@example.test` },
+	});
 	const company = await db.company.findFirst({
 		where: { domain },
 		select: { id: true },
@@ -143,7 +172,11 @@ describe("contactPreamble", () => {
 
 	it("offers a way out when they have no company", async () => {
 		const orphan = await db.contact.create({
-			data: { firstName: "Nobody", email: `nobody.${suffix}@example.test` },
+			data: {
+				organizationId,
+				firstName: "Nobody",
+				email: `nobody.${suffix}@example.test`,
+			},
 			select: { id: true },
 		});
 

@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
+import type { Db } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import {
 	ENRICHMENT_PAGE,
 	ENRICHMENT_PAGE_MAX,
@@ -7,13 +8,18 @@ import {
 	pageSize,
 } from "@crm/validation/enrichment-queue";
 import { EnrichmentService } from "../src/enrichment/enrichment.service";
+import { tenantBound, tenantContext, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "enrichment-queue-spec";
 const email = `queue-${suffix}@example.test`;
 const name = `Queue Co ${suffix}`;
 const kind = "test-queue-split";
+const organizationId = "workspace";
+const db = scopedDb as unknown as Db;
+const it = tenantTest(organizationId);
 
-const enrichment = new EnrichmentService(db);
+const rawEnrichment = new EnrichmentService(db);
+const enrichment = tenantBound(organizationId, rawEnrichment);
 
 const DAY_MS = 86_400_000;
 
@@ -24,6 +30,8 @@ let companyId: string;
 let dueId: string;
 let scheduledId: string;
 
+const inTenant = tenantContext(organizationId);
+
 async function clean() {
 	await db.agentTask.deleteMany({ where: { kind } });
 	await db.contact.deleteMany({ where: { email } });
@@ -33,68 +41,74 @@ async function clean() {
 	await db.company.deleteMany({ where: { name } });
 }
 
-beforeAll(async () => {
-	await clean();
+beforeAll(() =>
+	inTenant(async () => {
+		await clean();
 
-	const contact = await db.contact.create({
-		data: { firstName: "Queue", lastName: "Split", email },
-		select: { id: true },
-	});
-	const company = await db.company.create({
-		data: { name },
-		select: { id: true },
-	});
-
-	contactId = contact.id;
-	companyId = company.id;
-
-	const due = await db.agentTask.create({
-		data: {
-			kind,
-			reason: "due now",
-			dueAt: new Date(Date.now() - 60_000),
-			budget: 4,
-			companyId,
-		},
-		select: { id: true },
-	});
-	const scheduled = await db.agentTask.create({
-		data: {
-			kind,
-			reason: "booked for later",
-			dueAt: new Date(Date.now() + 90 * DAY_MS),
-			budget: 4,
-			contactId,
-		},
-		select: { id: true },
-	});
-
-	dueId = due.id;
-	scheduledId = scheduled.id;
-
-	for (let index = 0; index < EXTRA_ROWS; index++) {
-		const extra = await db.contact.create({
-			data: {
-				firstName: "Queue",
-				lastName: `Page ${index}`,
-				email: `page-${index}-${suffix}@example.test`,
-			},
+		const contact = await db.contact.create({
+			data: { organizationId, firstName: "Queue", lastName: "Split", email },
+			select: { id: true },
+		});
+		const company = await db.company.create({
+			data: { organizationId, name },
 			select: { id: true },
 		});
 
-		await db.agentTask.create({
+		contactId = contact.id;
+		companyId = company.id;
+
+		const due = await db.agentTask.create({
 			data: {
+				organizationId,
 				kind,
 				reason: "due now",
 				dueAt: new Date(Date.now() - 60_000),
 				budget: 4,
-				contactId: extra.id,
+				companyId,
 			},
+			select: { id: true },
 		});
-	}
-});
+		const scheduled = await db.agentTask.create({
+			data: {
+				organizationId,
+				kind,
+				reason: "booked for later",
+				dueAt: new Date(Date.now() + 90 * DAY_MS),
+				budget: 4,
+				contactId,
+			},
+			select: { id: true },
+		});
 
-afterAll(clean);
+		dueId = due.id;
+		scheduledId = scheduled.id;
+
+		for (let index = 0; index < EXTRA_ROWS; index++) {
+			const extra = await db.contact.create({
+				data: {
+					organizationId,
+					firstName: "Queue",
+					lastName: `Page ${index}`,
+					email: `page-${index}-${suffix}@example.test`,
+				},
+				select: { id: true },
+			});
+
+			await db.agentTask.create({
+				data: {
+					organizationId,
+					kind,
+					reason: "due now",
+					dueAt: new Date(Date.now() - 60_000),
+					budget: 4,
+					contactId: extra.id,
+				},
+			});
+		}
+	}),
+);
+
+afterAll(() => inTenant(clean));
 
 describe("what the enrichment widget reads", () => {
 	it("lists work that is due now", async () => {

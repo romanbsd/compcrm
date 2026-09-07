@@ -1,11 +1,15 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
-import { DEFAULT_WORKSPACE_NAME, WORKSPACE_ID } from "@crm/auth";
-import { db } from "@crm/db";
-import { workspaceSlug } from "@crm/db/workspace";
+import { afterAll, afterEach, beforeAll, describe, expect } from "bun:test";
+import { db as globalDb } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { AgentAccessService } from "../src/agent/agent-access.service";
 import { AgentRunsService } from "../src/agent/agent-runs.service";
 import { AgentTriggerService } from "../src/agent/agent-trigger.service";
+import { tenantBound, tenantContext, tenantTest } from "@crm/db/test-support";
+import { ensureTestWorkspace } from "./workspace.fixture";
 
+const WORKSPACE_ID = "agent-runs-spec-workspace";
+const DEFAULT_WORKSPACE_NAME = "Agent Runs Spec Workspace";
+const it = tenantTest(WORKSPACE_ID);
 const suffix = crypto.randomUUID();
 const userId = `agent-run-user-${suffix}`;
 const outsiderId = `agent-run-outsider-${suffix}`;
@@ -24,129 +28,152 @@ const trigger = {
 		cancelPokes.push(runId);
 	},
 } as AgentTriggerService;
-const service = new AgentRunsService(db, new AgentAccessService(db), trigger);
+const rawService = new AgentRunsService(
+	scopedDb as never,
+	new AgentAccessService(scopedDb as never),
+	trigger,
+);
+const service = tenantBound(WORKSPACE_ID, rawService);
+const db = scopedDb;
 
-beforeAll(async () => {
-	await db.organization.upsert({
-		where: { id: WORKSPACE_ID },
-		update: {},
-		create: {
-			id: WORKSPACE_ID,
-			name: DEFAULT_WORKSPACE_NAME,
-			slug: workspaceSlug(DEFAULT_WORKSPACE_NAME),
-			createdAt: new Date(),
-		},
-	});
-	await db.user.createMany({
-		data: [
-			{
-				id: userId,
-				name: "Agent Run Test",
-				email: `${userId}@example.test`,
-			},
-			{
-				id: outsiderId,
-				name: "Agent Run Outsider",
-				email: `${outsiderId}@example.test`,
-			},
-		],
-	});
-	await db.member.create({
-		data: {
-			id: memberId,
-			organizationId: WORKSPACE_ID,
-			userId,
-			role: "member",
-			createdAt: new Date(),
-		},
-	});
-	const agent = await db.agentDefinition.create({
-		data: { name: "Run safely", status: "LIVE", createdById: userId },
-		select: { id: true },
-	});
-	agentId = agent.id;
-	const version = await db.agentVersion.create({
-		data: {
-			agentId,
-			number: 1,
-			status: "DEPLOYED",
-			instructions: "Run once.",
-			manifest: {},
-			modelId: "test/model",
-			sandboxPolicy: {},
-			createdById: userId,
-		},
-		select: { id: true },
-	});
-	versionId = version.id;
-	const company = await db.company.create({
-		data: { name: `Agent run company ${suffix}` },
-		select: { id: true },
-	});
-	companyId = company.id;
-	const deal = await db.deal.create({
-		data: { name: "Agent run deal", companyId, ownerId: userId },
-		select: { id: true },
-	});
-	dealId = deal.id;
-	await db.agentDefinition.update({
-		where: { id: agentId },
-		data: { currentVersionId: versionId },
-	});
-});
+const inTenant = tenantContext(WORKSPACE_ID);
 
-afterAll(async () => {
-	const agentIds = (
-		await db.agentDefinition.findMany({
-			where: { createdById: userId },
+beforeAll(() =>
+	inTenant(async () => {
+		await ensureTestWorkspace(WORKSPACE_ID, DEFAULT_WORKSPACE_NAME);
+		await globalDb.user.createMany({
+			data: [
+				{
+					id: userId,
+					name: "Agent Run Test",
+					email: `${userId}@example.test`,
+				},
+				{
+					id: outsiderId,
+					name: "Agent Run Outsider",
+					email: `${outsiderId}@example.test`,
+				},
+			],
+		});
+		await db.member.createMany({
+			data: [
+				{
+					id: memberId,
+					userId,
+					organizationId: WORKSPACE_ID,
+					role: "member",
+					createdAt: new Date(),
+				},
+			],
+		});
+		const agent = await db.agentDefinition.create({
+			data: {
+				organizationId: WORKSPACE_ID,
+				name: "Run safely",
+				status: "LIVE",
+				createdById: userId,
+			},
 			select: { id: true },
-		})
-	).map((agent) => agent.id);
-	if (agentIds.length > 0) {
-		await db.agentRunEvent.deleteMany({
-			where: { run: { agentId: { in: agentIds } } },
 		});
-		await db.agentAction.deleteMany({
-			where: { agentId: { in: agentIds } },
+		agentId = agent.id;
+		const version = await db.agentVersion.create({
+			data: {
+				organizationId: WORKSPACE_ID,
+				agentId,
+				number: 1,
+				status: "DEPLOYED",
+				instructions: "Run once.",
+				manifest: {},
+				modelId: "test/model",
+				sandboxPolicy: {},
+				createdById: userId,
+			},
+			select: { id: true },
 		});
-		await db.agentAuditEvent.deleteMany({
-			where: { agentId: { in: agentIds } },
+		versionId = version.id;
+		const company = await db.company.create({
+			data: {
+				organizationId: WORKSPACE_ID,
+				name: `Agent run company ${suffix}`,
+			},
+			select: { id: true },
 		});
-		await db.agentRun.deleteMany({
-			where: { agentId: { in: agentIds } },
+		companyId = company.id;
+		const deal = await db.deal.create({
+			data: {
+				organizationId: WORKSPACE_ID,
+				name: "Agent run deal",
+				companyId,
+				ownerId: userId,
+			},
+			select: { id: true },
 		});
-		await db.agentDefinition.updateMany({
-			where: { id: { in: agentIds } },
-			data: { currentVersionId: null },
+		dealId = deal.id;
+		await db.agentDefinition.update({
+			where: { id: agentId },
+			data: { currentVersionId: versionId },
 		});
-		await db.agentVersion.deleteMany({
-			where: { agentId: { in: agentIds } },
-		});
-		await db.agentDefinition.deleteMany({
-			where: { id: { in: agentIds } },
-		});
-	}
-	await db.member.deleteMany({ where: { id: memberId } });
-	await db.deal.deleteMany({ where: { id: dealId } });
-	await db.company.deleteMany({ where: { id: companyId } });
-	await db.user.deleteMany({ where: { id: { in: [userId, outsiderId] } } });
-});
+	}),
+);
 
-afterEach(async () => {
-	if (!agentId) return;
-	await db.agentRun.updateMany({
-		where: {
-			agentId,
-			status: { in: ["QUEUED", "RUNNING", "WAITING_FOR_APPROVAL"] },
-		},
-		data: {
-			status: "CANCELLED",
-			errorCode: "TEST_CLEANUP",
-			errorMessage: "Settled between tests.",
-			finishedAt: new Date(),
-		},
-	});
-});
+afterAll(() =>
+	inTenant(async () => {
+		const agentIds = (
+			await db.agentDefinition.findMany({
+				where: { createdById: userId },
+				select: { id: true },
+			})
+		).map((agent) => agent.id);
+		if (agentIds.length > 0) {
+			await db.agentRunEvent.deleteMany({
+				where: { run: { agentId: { in: agentIds } } },
+			});
+			await db.agentAction.deleteMany({
+				where: { agentId: { in: agentIds } },
+			});
+			await db.agentAuditEvent.deleteMany({
+				where: { agentId: { in: agentIds } },
+			});
+			await db.agentRun.deleteMany({
+				where: { agentId: { in: agentIds } },
+			});
+			await db.agentDefinition.updateMany({
+				where: { id: { in: agentIds } },
+				data: { currentVersionId: null },
+			});
+			await db.agentVersion.deleteMany({
+				where: { agentId: { in: agentIds } },
+			});
+			await db.agentDefinition.deleteMany({
+				where: { id: { in: agentIds } },
+			});
+		}
+		await db.member.deleteMany({ where: { id: memberId } });
+		await db.deal.deleteMany({ where: { id: dealId } });
+		await db.company.deleteMany({ where: { id: companyId } });
+		await globalDb.user.deleteMany({
+			where: { id: { in: [userId, outsiderId] } },
+		});
+	}),
+);
+
+afterEach(() =>
+	inTenant(async () => {
+		if (!agentId) return;
+		await db.agentRun.updateMany({
+			where: {
+				agentId,
+				status: { in: ["QUEUED", "RUNNING", "WAITING_FOR_APPROVAL"] },
+			},
+			data: {
+				status: "CANCELLED",
+				errorCode: "TEST_CLEANUP",
+				errorMessage: "Settled between tests.",
+				finishedAt: new Date(),
+			},
+		});
+	}),
+);
 
 describe("manual agent runs", () => {
 	it("returns ordered, transport-safe run and activity history", async () => {
@@ -172,6 +199,7 @@ describe("manual agent runs", () => {
 		});
 		await db.agentRunEvent.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				runId,
 				sequence: 1,
 				type: "run.completed",
@@ -181,6 +209,7 @@ describe("manual agent runs", () => {
 		});
 		await db.agentAction.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				agentId,
 				runId,
 				type: "timeline.note.created",
@@ -242,6 +271,7 @@ describe("manual agent runs", () => {
 		const beforePokeCount = pokeCount;
 		const draft = await db.agentDefinition.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				name: "Draft run guard",
 				status: "DRAFT",
 				createdById: userId,
@@ -345,6 +375,7 @@ describe("manual agent runs", () => {
 		});
 		const redeployed = await db.agentVersion.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				agentId,
 				number: 2,
 				status: "DEPLOYED",
@@ -382,7 +413,11 @@ describe("manual agent runs", () => {
 			).toEqual({ dealId });
 			expect(
 				await db.agentAuditEvent.findFirstOrThrow({
-					where: { agentId, type: "run.requested", requestId: clientRequestId },
+					where: {
+						agentId,
+						type: "run.requested",
+						requestId: clientRequestId,
+					},
 					select: { versionId: true },
 				}),
 			).toEqual({ versionId });
@@ -396,11 +431,17 @@ describe("manual agent runs", () => {
 
 	it("allows only one agent to claim a globally reused request id", async () => {
 		const otherAgent = await db.agentDefinition.create({
-			data: { name: "Other live agent", status: "LIVE", createdById: userId },
+			data: {
+				organizationId: WORKSPACE_ID,
+				name: "Other live agent",
+				status: "LIVE",
+				createdById: userId,
+			},
 			select: { id: true },
 		});
 		const otherVersion = await db.agentVersion.create({
 			data: {
+				organizationId: WORKSPACE_ID,
 				agentId: otherAgent.id,
 				number: 1,
 				status: "DEPLOYED",
@@ -485,6 +526,7 @@ describe("cancelling a run", () => {
 		await db.agentAction.createMany({
 			data: [
 				{
+					organizationId: WORKSPACE_ID,
 					agentId,
 					runId,
 					type: "crm.activity.create",
@@ -495,6 +537,7 @@ describe("cancelling a run", () => {
 					requestHash: "planned",
 				},
 				{
+					organizationId: WORKSPACE_ID,
 					agentId,
 					runId,
 					type: "slack.message.post",
@@ -551,7 +594,12 @@ describe("cancelling a run", () => {
 	it("refuses a run id that belongs to another agent", async () => {
 		const runId = await queuedRun();
 		const other = await db.agentDefinition.create({
-			data: { name: "Unrelated", status: "LIVE", createdById: userId },
+			data: {
+				organizationId: WORKSPACE_ID,
+				name: "Unrelated",
+				status: "LIVE",
+				createdById: userId,
+			},
 			select: { id: true },
 		});
 
@@ -596,7 +644,7 @@ describe("cancelling a run", () => {
 		});
 		await service.cancelRun({ id: agentId, runId }, userId);
 
-		const trigger = new AgentTriggerService(db);
+		const trigger = new AgentTriggerService(db as never);
 		const asked: string[] = [];
 		const asksForRun = () => asked.filter((id) => id === runId).length;
 		let status = 502;

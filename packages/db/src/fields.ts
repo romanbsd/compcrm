@@ -291,7 +291,11 @@ export async function writeValues(
 			where: {
 				[`fieldId_${column}`]: { fieldId: definition.id, [column]: recordId },
 			},
-			create: { fieldId: definition.id, [column]: recordId, ...data },
+			create: {
+				fieldId: definition.id,
+				[column]: recordId,
+				...data,
+			},
 			update: data,
 		});
 	}

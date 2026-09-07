@@ -1,6 +1,7 @@
 import { AUTH_COOKIE_PREFIX } from "@crm/auth/cookies";
 import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
+import { appPath, isUnder } from "@/lib/app-path";
 import { isMarketing } from "@/lib/env";
 import {
 	ONBOARDING_PATH,
@@ -8,7 +9,6 @@ import {
 	readResearchGate,
 	readWorkspaceGate,
 } from "@/lib/onboarding";
-import { workspaceUrl } from "@/lib/workspace-url";
 
 const LANDING_PATH = "/";
 
@@ -17,8 +17,6 @@ const SIGN_IN_PATH = "/sign-in";
 const UNGATED = ["/grant-access", "/eve", "/oauth"];
 
 const ANONYMOUS = ["/t"];
-
-const SECTIONS = ["/companies", "/contacts", "/deals", "/settings"];
 
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
@@ -44,34 +42,20 @@ export async function proxy(request: NextRequest) {
 		readResearchGate(request),
 	]);
 
-	if (workspace.gate === "required") return sendTo(ONBOARDING_PATH, request);
+	if (workspace.hasOrganization === false) {
+		return sendTo(appPath(pathname, workspace), request);
+	}
+
+	if (workspace.hasOrganization && workspace.gate === "required") {
+		return sendTo(ONBOARDING_PATH, request);
+	}
 	if (research === "required") return sendTo(RESEARCH_PATH, request);
 
 	const settled = workspace.gate === "settled" && research === "settled";
 
 	if (!settled || !workspace.slug) return NextResponse.next();
 
-	return sendTo(appPath(pathname, workspace.slug), request);
-}
-
-function appPath(pathname: string, slug: string): string {
-	if (pathname === LANDING_PATH || isSetup(pathname)) {
-		return workspaceUrl(slug);
-	}
-
-	if (SECTIONS.some((section) => isUnder(pathname, section))) {
-		return workspaceUrl(slug, pathname);
-	}
-
-	const [first, ...rest] = pathname.slice(1).split("/");
-
-	if (first === slug) return pathname;
-
-	return workspaceUrl(slug, rest.length ? `/${rest.join("/")}` : "/");
-}
-
-function isUnder(pathname: string, prefix: string): boolean {
-	return pathname === prefix || pathname.startsWith(`${prefix}/`);
+	return sendTo(appPath(pathname, workspace), request);
 }
 
 function isPublic(pathname: string): boolean {
@@ -84,10 +68,6 @@ function isUngated(pathname: string): boolean {
 
 function isAnonymous(pathname: string): boolean {
 	return ANONYMOUS.some((prefix) => isUnder(pathname, prefix));
-}
-
-function isSetup(pathname: string): boolean {
-	return pathname === ONBOARDING_PATH || pathname === RESEARCH_PATH;
 }
 
 function sendTo(path: string, request: NextRequest): NextResponse {

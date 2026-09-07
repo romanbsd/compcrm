@@ -1,11 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db, EnrichmentStatus } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { EnrichmentStatus, db as rawDb } from "@crm/db";
 import { MAX_ATTEMPTS, RETIRED_OUTCOME } from "@crm/db/agent-tasks";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { reconcileStaleTasks } from "../agent/lib/stale-tasks";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const kind = "recheck";
 
 const REASON = "stale-spec";
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeEach = tenantBeforeEach(organizationId);
+const afterEach = tenantAfterEach(organizationId);
+const otherOrganizationId = "stale-other-workspace";
 
 const MINUTE_MS = 60_000;
 
@@ -13,32 +21,68 @@ async function clear() {
 	await db.agentTask.deleteMany({ where: { reason: REASON } });
 	await db.contact.deleteMany({ where: { email: { startsWith: "stale-" } } });
 	await db.company.deleteMany({ where: { name: { startsWith: "Stale Co " } } });
+	await db.organization.deleteMany({ where: { id: otherOrganizationId } });
+	await db.organization.upsert({
+		where: { id: organizationId },
+		create: {
+			id: organizationId,
+			name: "Workspace",
+			slug: "workspace",
+			createdAt: new Date(),
+		},
+		update: {},
+	});
 }
 
 beforeEach(clear);
 afterEach(clear);
 
-async function someone(status: EnrichmentStatus, enrichedAt?: Date) {
-	return db.contact.create({
+async function createOtherOrganization() {
+	await db.organization.create({
 		data: {
-			firstName: "Stale",
-			email: `stale-${crypto.randomUUID()}@example.test`,
-			enrichmentStatus: status,
-			enrichedAt: enrichedAt ?? null,
+			id: otherOrganizationId,
+			name: "Other Workspace",
+			slug: otherOrganizationId,
+			createdAt: new Date(),
 		},
-		select: { id: true },
 	});
 }
 
-async function anAccount(status: EnrichmentStatus, enrichedAt?: Date) {
-	return db.company.create({
-		data: {
-			name: `Stale Co ${crypto.randomUUID()}`,
-			enrichmentStatus: status,
-			enrichedAt: enrichedAt ?? null,
-		},
-		select: { id: true },
-	});
+async function someone(
+	status: EnrichmentStatus,
+	enrichedAt?: Date,
+	workspaceId = organizationId,
+) {
+	return runInTenant(workspaceId, () =>
+		db.contact.create({
+			data: {
+				firstName: "Stale",
+				email: `stale-${crypto.randomUUID()}@example.test`,
+				organizationId: workspaceId,
+				enrichmentStatus: status,
+				enrichedAt: enrichedAt ?? null,
+			},
+			select: { id: true },
+		}),
+	);
+}
+
+async function anAccount(
+	status: EnrichmentStatus,
+	enrichedAt?: Date,
+	workspaceId = organizationId,
+) {
+	return runInTenant(workspaceId, () =>
+		db.company.create({
+			data: {
+				name: `Stale Co ${crypto.randomUUID()}`,
+				organizationId: workspaceId,
+				enrichmentStatus: status,
+				enrichedAt: enrichedAt ?? null,
+			},
+			select: { id: true },
+		}),
+	);
 }
 
 async function queue(overrides: {
@@ -49,29 +93,36 @@ async function queue(overrides: {
 	dueAt?: Date;
 	startedAt?: Date | null;
 	leasedUntil?: Date | null;
+	organizationId?: string;
 }) {
-	return db.agentTask.create({
-		data: {
-			kind: overrides.kind ?? (overrides.companyId ? "brand" : kind),
-			reason: REASON,
-			dueAt: overrides.dueAt ?? new Date(Date.now() - MINUTE_MS),
-			priority: 0,
-			budget: 4,
-			contactId: overrides.contactId ?? null,
-			companyId: overrides.companyId ?? null,
-			attempts: overrides.attempts ?? 0,
-			startedAt: overrides.startedAt ?? null,
-			leasedUntil: overrides.leasedUntil ?? null,
-		},
-		select: { id: true },
-	});
+	const tenant = overrides.organizationId ?? organizationId;
+	return runInTenant(tenant, () =>
+		db.agentTask.create({
+			data: {
+				organizationId: overrides.organizationId ?? organizationId,
+				kind: overrides.kind ?? (overrides.companyId ? "brand" : kind),
+				reason: REASON,
+				dueAt: overrides.dueAt ?? new Date(Date.now() - MINUTE_MS),
+				priority: 0,
+				budget: 4,
+				contactId: overrides.contactId ?? null,
+				companyId: overrides.companyId ?? null,
+				attempts: overrides.attempts ?? 0,
+				startedAt: overrides.startedAt ?? null,
+				leasedUntil: overrides.leasedUntil ?? null,
+			},
+			select: { id: true },
+		}),
+	);
 }
 
-async function row(id: string) {
-	return db.agentTask.findUnique({
-		where: { id },
-		select: { finishedAt: true, outcome: true, leasedUntil: true },
-	});
+async function row(id: string, tenant = organizationId) {
+	return runInTenant(tenant, () =>
+		db.agentTask.findUnique({
+			where: { id },
+			select: { finishedAt: true, outcome: true, leasedUntil: true },
+		}),
+	);
 }
 
 describe("a task whose lease ran out", () => {
@@ -240,21 +291,24 @@ describe("a task whose record is already done", () => {
 			leasedUntil: new Date(Date.now() - MINUTE_MS),
 		});
 
-		const findMany = db.agentTask.findMany;
-		db.agentTask.findMany = async (...args) => {
-			const rows = await findMany.apply(db.agentTask, args);
-			await db.agentTask.update({
-				where: { id: task.id },
-				data: { leasedUntil: new Date(Date.now() + 10 * MINUTE_MS) },
-			});
-
-			return rows;
+		const organizationCount = await db.organization.count();
+		const transaction = rawDb.$transaction.bind(rawDb);
+		let calls = 0;
+		rawDb.$transaction = async (...args) => {
+			calls += 1;
+			if (calls === organizationCount + 1) {
+				await db.agentTask.update({
+					where: { id: task.id },
+					data: { leasedUntil: new Date(Date.now() + 10 * MINUTE_MS) },
+				});
+			}
+			return transaction(...args);
 		};
 
 		try {
 			await reconcileStaleTasks();
 		} finally {
-			db.agentTask.findMany = findMany;
+			rawDb.$transaction = transaction;
 		}
 
 		expect((await row(task.id))?.finishedAt).toBeNull();
@@ -297,6 +351,31 @@ describe("a task whose record is already done", () => {
 	});
 });
 
+describe("multiple workspaces", () => {
+	it("reconciles stale tasks in every workspace", async () => {
+		await createOtherOrganization();
+		const first = await queue({
+			contactId: (await someone(EnrichmentStatus.RUNNING)).id,
+			attempts: 1,
+			leasedUntil: new Date(Date.now() - MINUTE_MS),
+		});
+		const second = await queue({
+			contactId: (
+				await someone(EnrichmentStatus.RUNNING, undefined, otherOrganizationId)
+			).id,
+			attempts: 1,
+			leasedUntil: new Date(Date.now() - MINUTE_MS),
+			organizationId: otherOrganizationId,
+		});
+
+		const sweep = await reconcileStaleTasks();
+
+		expect(sweep.released).toBeGreaterThanOrEqual(2);
+		expect((await row(first.id))?.leasedUntil).toBeNull();
+		expect((await row(second.id, otherOrganizationId))?.leasedUntil).toBeNull();
+	});
+});
+
 describe("running it twice", () => {
 	it("changes nothing the second time", async () => {
 		const startedAt = new Date(Date.now() - 30 * MINUTE_MS);
@@ -336,8 +415,8 @@ describe("running it twice", () => {
 	});
 
 	it("reports a database failure instead of throwing", async () => {
-		const findMany = db.agentTask.findMany;
-		db.agentTask.findMany = () => {
+		const findMany = rawDb.organization.findMany;
+		rawDb.organization.findMany = () => {
 			throw new Error("the database is unreachable");
 		};
 
@@ -346,7 +425,7 @@ describe("running it twice", () => {
 			expect(sweep.error).toBe("the database is unreachable");
 			expect(sweep.scanned).toBe(0);
 		} finally {
-			db.agentTask.findMany = findMany;
+			rawDb.organization.findMany = findMany;
 		}
 
 		expect((await reconcileStaleTasks()).error).toBeNull();
@@ -360,16 +439,20 @@ describe("running it twice", () => {
 			leasedUntil: new Date(Date.now() - MINUTE_MS),
 		});
 
-		const updateMany = db.agentTask.updateMany;
-		db.agentTask.updateMany = () => {
-			throw new Error("the write failed");
+		const organizationCount = await db.organization.count();
+		const transaction = rawDb.$transaction.bind(rawDb);
+		let calls = 0;
+		rawDb.$transaction = async (...args) => {
+			calls += 1;
+			if (calls === organizationCount + 1) throw new Error("the write failed");
+			return transaction(...args);
 		};
 
 		let sweep: Awaited<ReturnType<typeof reconcileStaleTasks>>;
 		try {
 			sweep = await reconcileStaleTasks();
 		} finally {
-			db.agentTask.updateMany = updateMany;
+			rawDb.$transaction = transaction;
 		}
 
 		expect(sweep.error).toBe("the write failed");

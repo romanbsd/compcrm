@@ -105,12 +105,12 @@ task row; exists because the API may not call Context.
 
 `sweepBlankFacts` (`lib/blank-facts.ts`) applies every pending suggestion whose field is
 still empty and clears the ones that have stopped saying anything. It runs at the top of
-`schedules/dispatch.ts`, every minute, over **every contact in the workspace** — it is a
-database pass with no session, no model, no task row and no credits, so there is nothing
-to ration and nobody to scope it to.
+`schedules/dispatch.ts`, every minute, over **every organization**. The global pass reads
+the organization list, then runs each organization's reads and writes inside its tenant
+scope. It has no session, model, task row, or credits.
 
-- **Scans 2000 suggestions and fills at most 500 a pass**, and reports what it did not
-  reach (`unscanned`) rather than a clean sweep it did not make.
+- **Scans 2000 suggestions and fills at most 500 per organization**, and reports what it
+  did not reach (`unscanned`) rather than a clean sweep it did not make.
 - **Idempotent** — a second pass fills nothing, because those fields are no longer blank.
 - **The suggestions left are conflicts**, every one against a value already on the
   record. That number should stay small and reads as work for a rep.
@@ -294,7 +294,7 @@ preamble; `lib/workspace.ts` is the only renderer.
 - **The profile dies with its website** — `readWorkspaceIdentity` returns it only while
   `website` matches.
 - **Not a `Company` row** — that needs excluding from every list, facet and join. One
-  `WorkspaceProfile` keyed on `WORKSPACE_ID`.
+  `WorkspaceProfile` is keyed on the current organization.
 
 The pass is a `workspace-profile` task using `web_fetch` (no credits), filed only via
 `write_workspace_profile`, queued by `WorkspaceService.update` on a website change. **A

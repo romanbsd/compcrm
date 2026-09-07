@@ -1,15 +1,19 @@
-import { canManageCurrency, workspaceRoleOf } from "@crm/auth";
+import { activeWorkspaceRoleOf, canManageCurrency } from "@crm/auth";
 import type { Db } from "@crm/db";
 import { Prisma, RateSource } from "@crm/db";
 import { CURRENCIES, currencyName, normalizeCurrency } from "@crm/db/currency";
 import { writeReportingCurrency } from "@crm/db/settings";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import {
 	BadRequestException,
 	ForbiddenException,
 	Injectable,
 	Logger,
 } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 import { ConversionService } from "./conversion.service";
 import type { CurrencyRate, CurrencySettings } from "./currency.contracts";
 import { RatesService } from "./rates.service";
@@ -20,6 +24,7 @@ export class CurrencyService {
 
 	constructor(
 		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
 		private readonly conversion: ConversionService,
 		private readonly rates: RatesService,
 	) {}
@@ -40,7 +45,7 @@ export class CurrencyService {
 			}),
 			this.rates.refreshedAt(),
 			this.conversion.unconverted(),
-			this.db.deal.groupBy({
+			this.scoped.deal.groupBy({
 				by: ["currency"],
 				where: { amount: { not: null } },
 				_count: { _all: true },
@@ -97,12 +102,12 @@ export class CurrencyService {
 				),
 			unconverted,
 			catalog: [...CURRENCIES],
-			canManage: canManageCurrency(await workspaceRoleOf(actingUserId)),
+			canManage: canManageCurrency(await activeWorkspaceRoleOf(actingUserId)),
 		};
 	}
 
 	private async requireManager(userId: string): Promise<void> {
-		if (!canManageCurrency(await workspaceRoleOf(userId))) {
+		if (!canManageCurrency(await activeWorkspaceRoleOf(userId))) {
 			throw new ForbiddenException(
 				"Only an owner or an admin can change how money is reported.",
 			);

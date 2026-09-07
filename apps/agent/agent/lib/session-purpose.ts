@@ -1,3 +1,4 @@
+import { runInTenant } from "@crm/db/tenant-context";
 import { z } from "zod";
 
 export type SessionPurpose = "builder" | "team-agent" | "research";
@@ -36,6 +37,14 @@ export function requireAttribute(ctx: PurposeContext, key: string): string {
 	const value = attribute(ctx, key);
 	if (!value) throw new Error(`This session is missing ${key}.`);
 	return value;
+}
+
+export function requireOrganizationId(ctx: PurposeContext): string {
+	return requireAttribute(ctx, "organizationId");
+}
+
+export function runInSessionTenant<T>(ctx: PurposeContext, action: () => T): T {
+	return runInTenant(requireOrganizationId(ctx), action);
 }
 
 export function requireBuilderAttribute(

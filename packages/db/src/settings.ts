@@ -4,8 +4,10 @@ import {
 	isCurrencyCode,
 	normalizeCurrency,
 } from "./currency";
+import type { Prisma } from "./generated/prisma/client";
+import { currentOrganizationId } from "./tenant-context";
 
-export const SETTINGS_ID = "app";
+type SettingsDb = Pick<Db, "appSetting">;
 
 export const DEFAULT_AGENT_MODEL = {
 	id: "zai/glm-5.2-fast",
@@ -18,9 +20,26 @@ export interface AgentModelSetting {
 	isDefault: boolean;
 }
 
-export async function readAgentModel(db: Db): Promise<AgentModelSetting> {
+type AgentModelReader = {
+	appSetting: {
+		findUnique(args: {
+			where: { organizationId: string };
+			select: {
+				agentModelId: true;
+				agentModelContextWindow: true;
+			};
+		}): PromiseLike<{
+			agentModelId: string | null;
+			agentModelContextWindow: number | null;
+		} | null>;
+	};
+};
+
+export async function readAgentModel(
+	db: AgentModelReader,
+): Promise<AgentModelSetting> {
 	const row = await db.appSetting.findUnique({
-		where: { id: SETTINGS_ID },
+		where: { organizationId: currentOrganizationId() },
 		select: { agentModelId: true, agentModelContextWindow: true },
 	});
 
@@ -37,18 +56,12 @@ export async function readAgentModel(db: Db): Promise<AgentModelSetting> {
 }
 
 export async function writeAgentModel(
-	db: Db,
+	db: SettingsDb,
 	model: { id: string; contextWindowTokens: number } | null,
 ): Promise<void> {
-	const fields = {
+	await writeAppSetting(db, {
 		agentModelId: model?.id ?? null,
 		agentModelContextWindow: model?.contextWindowTokens ?? null,
-	};
-
-	await db.appSetting.upsert({
-		where: { id: SETTINGS_ID },
-		create: { id: SETTINGS_ID, ...fields },
-		update: fields,
 	});
 }
 
@@ -56,28 +69,27 @@ export const CONTEXT_DEV_SIGNUP_URL = "https://link.context.dev/crm";
 
 export const CONTEXT_DEV_DISCOUNT_CODE = "CRM";
 
-export async function readContextDevKey(db: Db): Promise<string | null> {
+export async function readContextDevKey(
+	db: SettingsDb,
+): Promise<string | null> {
 	const row = await db.appSetting.findUnique({
-		where: { id: SETTINGS_ID },
+		where: { organizationId: currentOrganizationId() },
 		select: { contextDevApiKey: true },
 	});
 
 	return row?.contextDevApiKey?.trim() || null;
 }
 
-export async function writeContextDevKey(db: Db, key: string): Promise<void> {
-	const contextDevApiKey = key.trim();
-
-	await db.appSetting.upsert({
-		where: { id: SETTINGS_ID },
-		create: { id: SETTINGS_ID, contextDevApiKey },
-		update: { contextDevApiKey },
-	});
+export async function writeContextDevKey(
+	db: SettingsDb,
+	key: string,
+): Promise<void> {
+	await writeAppSetting(db, { contextDevApiKey: key.trim() });
 }
 
-export async function readReportingCurrency(db: Db): Promise<string> {
+export async function readReportingCurrency(db: SettingsDb): Promise<string> {
 	const row = await db.appSetting.findUnique({
-		where: { id: SETTINGS_ID },
+		where: { organizationId: currentOrganizationId() },
 		select: { reportingCurrency: true },
 	});
 
@@ -87,23 +99,21 @@ export async function readReportingCurrency(db: Db): Promise<string> {
 }
 
 export async function writeReportingCurrency(
-	db: Db,
+	db: SettingsDb,
 	code: string,
 ): Promise<string> {
 	const reportingCurrency = normalizeCurrency(code);
 
-	await db.appSetting.upsert({
-		where: { id: SETTINGS_ID },
-		create: { id: SETTINGS_ID, reportingCurrency },
-		update: { reportingCurrency },
-	});
+	await writeAppSetting(db, { reportingCurrency });
 
 	return reportingCurrency;
 }
 
-export async function readRatesRefreshedAt(db: Db): Promise<Date | null> {
+export async function readRatesRefreshedAt(
+	db: SettingsDb,
+): Promise<Date | null> {
 	const row = await db.appSetting.findUnique({
-		where: { id: SETTINGS_ID },
+		where: { organizationId: currentOrganizationId() },
 		select: { ratesRefreshedAt: true },
 	});
 
@@ -111,14 +121,10 @@ export async function readRatesRefreshedAt(db: Db): Promise<Date | null> {
 }
 
 export async function writeRatesRefreshedAt(
-	db: Db,
+	db: SettingsDb,
 	ratesRefreshedAt: Date,
 ): Promise<void> {
-	await db.appSetting.upsert({
-		where: { id: SETTINGS_ID },
-		create: { id: SETTINGS_ID, ratesRefreshedAt },
-		update: { ratesRefreshedAt },
-	});
+	await writeAppSetting(db, { ratesRefreshedAt });
 }
 
 export const DEFAULT_ARCHIVE_RETENTION_DAYS = 180;
@@ -127,9 +133,12 @@ export const MIN_ARCHIVE_RETENTION_DAYS = 1;
 
 export const MAX_ARCHIVE_RETENTION_DAYS = 3650;
 
-export async function readArchiveRetentionDays(db: Db): Promise<number> {
+export async function readArchiveRetentionDays(
+	db: SettingsDb,
+): Promise<number> {
+	const organizationId = currentOrganizationId();
 	const row = await db.appSetting.findUnique({
-		where: { id: SETTINGS_ID },
+		where: { organizationId },
 		select: { archiveRetentionDays: true },
 	});
 
@@ -137,7 +146,7 @@ export async function readArchiveRetentionDays(db: Db): Promise<number> {
 }
 
 export async function writeArchiveRetentionDays(
-	db: Db,
+	db: SettingsDb,
 	days: number,
 ): Promise<number> {
 	const archiveRetentionDays = Math.min(
@@ -145,11 +154,7 @@ export async function writeArchiveRetentionDays(
 		MAX_ARCHIVE_RETENTION_DAYS,
 	);
 
-	await db.appSetting.upsert({
-		where: { id: SETTINGS_ID },
-		create: { id: SETTINGS_ID, archiveRetentionDays },
-		update: { archiveRetentionDays },
-	});
+	await writeAppSetting(db, { archiveRetentionDays });
 
 	return archiveRetentionDays;
 }
@@ -157,4 +162,22 @@ export async function writeArchiveRetentionDays(
 export function maskKey(key: string): string {
 	const trimmed = key.trim();
 	return trimmed.length > 4 ? `••••${trimmed.slice(-4)}` : "••••";
+}
+
+type AppSettingFields = Omit<
+	Prisma.AppSettingUncheckedCreateInput,
+	"organizationId"
+>;
+
+async function writeAppSetting(
+	db: SettingsDb,
+	fields: AppSettingFields,
+): Promise<void> {
+	const organizationId = currentOrganizationId();
+
+	await db.appSetting.upsert({
+		where: { organizationId },
+		create: fields,
+		update: fields,
+	});
 }

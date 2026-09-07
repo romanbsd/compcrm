@@ -3,6 +3,7 @@ import {
 	GoogleSyncStatus,
 	type MailboxSyncModel as MailboxSync,
 } from "@crm/db";
+import { runInTenant, tryCurrentOrganizationId } from "@crm/db/tenant-context";
 import type { GoogleConnectionService } from "../src/google/google-connection.service";
 import type { GoogleSyncService } from "../src/google/google-sync.service";
 import {
@@ -26,6 +27,7 @@ class FakeState {
 	add(id: string, source: string, overrides: Partial<MailboxSync> = {}): void {
 		this.rows.set(id, {
 			id,
+			organizationId: `organization-${id}`,
 			userId: `user-${id}`,
 			source,
 			status: GoogleSyncStatus.IDLE,
@@ -133,6 +135,20 @@ beforeEach(() => {
 });
 
 describe("runDue claims a mailbox before it syncs", () => {
+	it("runs each row inside its organization context", async () => {
+		state.add("a", "gmail");
+		let seenOrganizationId: string | undefined;
+
+		const service = build(state, async (userId, source) => {
+			seenOrganizationId = tryCurrentOrganizationId();
+			return { source, userId, status: "synced" };
+		});
+
+		await runInTenant("another-organization", () => service.runDue());
+
+		expect(seenOrganizationId).toBe(state.rows.get("a")?.organizationId);
+	});
+
 	it("does not let two overlapping ticks run the same mailbox", async () => {
 		state.add("a", "gmail");
 

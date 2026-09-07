@@ -1,8 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db, EnrichmentStatus } from "@crm/db";
-import { markRunning, settle } from "../agent/lib/enrichment";
+import { describe, expect } from "bun:test";
+import { EnrichmentStatus } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
+import {
+	markRunning as markRunningWithoutTenant,
+	settle as settleWithoutTenant,
+} from "../agent/lib/enrichment";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const domain = "lifecycle.example.test";
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeEach = tenantBeforeEach(organizationId);
+const afterEach = tenantAfterEach(organizationId);
+
+const markRunning: typeof markRunningWithoutTenant = (subject) =>
+	runInTenant(organizationId, () => markRunningWithoutTenant(subject));
+const settle: typeof settleWithoutTenant = (subject, status, error) =>
+	runInTenant(organizationId, () =>
+		settleWithoutTenant(subject, status, error),
+	);
 
 async function clear() {
 	await db.agentTask.deleteMany({ where: { reason: "lifecycle" } });
@@ -17,7 +34,7 @@ afterEach(clear);
 
 async function company() {
 	return db.company.create({
-		data: { name: "Lifecycle", domain },
+		data: { organizationId, name: "Lifecycle", domain },
 		select: { id: true },
 	});
 }
@@ -25,6 +42,7 @@ async function company() {
 async function contact() {
 	return db.contact.create({
 		data: {
+			organizationId,
 			firstName: "Lifecycle",
 			email: `lifecycle-${crypto.randomUUID()}@example.test`,
 		},
@@ -47,8 +65,9 @@ async function retiredTask(companyId: string) {
 		select: { updatedAt: true },
 	});
 
-	return db.agentTask.create({
+	return await db.agentTask.create({
 		data: {
+			organizationId,
 			companyId,
 			kind: "company-profile",
 			reason: "lifecycle",
@@ -192,6 +211,7 @@ describe("the record follows the task", () => {
 		const org = await company();
 		const open = await db.agentTask.create({
 			data: {
+				organizationId,
 				companyId: org.id,
 				kind: "company-profile",
 				reason: "lifecycle",
@@ -227,6 +247,7 @@ describe("the record follows the task", () => {
 		const task = await retiredTask(org.id);
 		await db.agentTask.create({
 			data: {
+				organizationId,
 				companyId: org.id,
 				kind: "recheck",
 				reason: "lifecycle",
@@ -316,6 +337,7 @@ describe("the record follows the task", () => {
 
 		const task = await db.agentTask.create({
 			data: {
+				organizationId,
 				contactId: person.id,
 				kind: "identify",
 				reason: "lifecycle",
@@ -346,6 +368,7 @@ describe("the record follows the task", () => {
 
 		const ended = await db.agentTask.create({
 			data: {
+				organizationId,
 				contactId: person.id,
 				kind: "identify",
 				reason: "lifecycle",
@@ -358,6 +381,7 @@ describe("the record follows the task", () => {
 
 		await db.agentTask.create({
 			data: {
+				organizationId,
 				contactId: person.id,
 				kind: "recheck",
 				reason: "lifecycle",

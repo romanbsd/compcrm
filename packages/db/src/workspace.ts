@@ -6,6 +6,9 @@ import {
 	jsonText,
 	type WorkspaceProfileSections,
 } from "./json";
+import { currentOrganizationId } from "./tenant-context";
+
+type WorkspaceDb = Pick<Db, "organization" | "workspaceProfile">;
 
 export const WORKSPACE_ID = "workspace";
 
@@ -88,10 +91,10 @@ export type WorkspaceIdentity = {
 };
 
 export async function readWorkspaceProfile(
-	db: Db,
+	db: WorkspaceDb,
 ): Promise<WorkspaceProfile | null> {
 	const row = await db.workspaceProfile.findUnique({
-		where: { id: WORKSPACE_ID },
+		where: { organizationId: currentOrganizationId() },
 		select: {
 			website: true,
 			narrative: true,
@@ -137,11 +140,12 @@ export function profileOf(
 }
 
 export async function readWorkspaceIdentity(
-	db: Db,
+	db: WorkspaceDb,
 ): Promise<WorkspaceIdentity | null> {
+	const organizationId = currentOrganizationId();
 	const [workspace, profile] = await Promise.all([
 		db.organization.findUnique({
-			where: { id: WORKSPACE_ID },
+			where: { id: organizationId },
 			select: { name: true, website: true },
 		}),
 		readWorkspaceProfile(db),
@@ -157,7 +161,7 @@ export async function readWorkspaceIdentity(
 }
 
 export async function writeWorkspaceProfile(
-	db: Db,
+	db: WorkspaceDb,
 	input: {
 		website: string;
 		narrative: string;
@@ -166,6 +170,7 @@ export async function writeWorkspaceProfile(
 		sessionId?: string | null;
 	},
 ): Promise<WorkspaceProfile> {
+	const organizationId = currentOrganizationId();
 	const fields = {
 		website: input.website,
 		narrative: clamp(input.narrative, MAX_NARRATIVE) ?? "",
@@ -176,8 +181,8 @@ export async function writeWorkspaceProfile(
 	};
 
 	const row = await db.workspaceProfile.upsert({
-		where: { id: WORKSPACE_ID },
-		create: { id: WORKSPACE_ID, ...fields },
+		where: { organizationId },
+		create: fields,
 		update: fields,
 		select: {
 			website: true,

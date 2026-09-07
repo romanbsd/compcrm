@@ -1,7 +1,14 @@
 import type { Prisma } from "./generated/prisma/client";
 
+type IdempotencyTransaction = {
+	$queryRaw<T>(
+		query: TemplateStringsArray | Prisma.Sql,
+		...values: unknown[]
+	): Promise<T>;
+};
+
 export async function lockIdempotencyKey(
-	tx: Prisma.TransactionClient,
+	tx: IdempotencyTransaction,
 	key: string,
 ): Promise<void> {
 	await tx.$queryRaw<Array<{ locked: boolean }>>`

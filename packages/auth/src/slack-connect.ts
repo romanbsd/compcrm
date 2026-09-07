@@ -8,7 +8,6 @@ import {
 import * as z from "zod";
 import {
 	canManageConnections,
-	WORKSPACE_ID,
 	WORKSPACE_ROLES,
 	workspaceRoleOf,
 } from "./organization";
@@ -45,12 +44,18 @@ export const slackConnectGuard = createAuthMiddleware(async (ctx) => {
 			message: "Sign in to the CRM before you connect Slack.",
 		});
 	}
+	const organizationId = session.session.activeOrganizationId;
+	if (!organizationId) {
+		throw new APIError("FORBIDDEN", {
+			message: "Join an organization before you connect Slack.",
+		});
+	}
 
 	const [role, managers] = await Promise.all([
-		workspaceRoleOf(session.user.id),
+		workspaceRoleOf(session.user.id, organizationId),
 		db.member.count({
 			where: {
-				organizationId: WORKSPACE_ID,
+				organizationId,
 				role: { in: [...CONNECT_MANAGER_ROLES] },
 			},
 		}),

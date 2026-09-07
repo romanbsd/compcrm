@@ -1,41 +1,56 @@
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-} from "bun:test";
-import { db, type Prisma } from "@crm/db";
+import { describe, expect } from "bun:test";
 import {
 	DEFAULT_AGENT_MODEL,
-	readAgentModel,
-	SETTINGS_ID,
-	writeAgentModel,
+	readAgentModel as readAgentModelWithoutTenant,
+	writeAgentModel as writeAgentModelWithoutTenant,
 } from "@crm/db/settings";
-import { selectedModel } from "../agent/lib/model";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
+import { selectedModel as selectedModelWithoutTenant } from "../agent/lib/model";
+import {
+	tenantAfterAll,
+	tenantAfterEach,
+	tenantBeforeAll,
+	tenantBeforeEach,
+	tenantTest,
+} from "@crm/db/test-support";
+
+const testPrefix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const organizationId = `model-test-org-${testPrefix}`;
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const beforeEach = tenantBeforeEach(organizationId);
+const afterEach = tenantAfterEach(organizationId);
+const afterAll = tenantAfterAll(organizationId);
+const readAgentModel: typeof readAgentModelWithoutTenant = (client) =>
+	runInTenant(organizationId, () => readAgentModelWithoutTenant(client));
+const writeAgentModel: typeof writeAgentModelWithoutTenant = (client, input) =>
+	runInTenant(organizationId, () =>
+		writeAgentModelWithoutTenant(client, input),
+	);
+const selectedModel: typeof selectedModelWithoutTenant = () =>
+	runInTenant(organizationId, selectedModelWithoutTenant);
 
 async function clear() {
-	await db.appSetting.deleteMany({ where: { id: SETTINGS_ID } });
+	await db.appSetting.deleteMany({ where: { organizationId } });
 }
 
-/**
- * The row holds the Context key a rep typed and the model they chose, and
- * DATABASE_URL is somebody's working database. Deleting it and not putting it
- * back sends them through the research-key gate again with nothing saying why.
- */
-let saved: Prisma.AppSettingUncheckedCreateInput | null = null;
-
 beforeAll(async () => {
-	saved = await db.appSetting.findUnique({ where: { id: SETTINGS_ID } });
+	await db.organization.create({
+		data: {
+			id: organizationId,
+			name: `Model test ${testPrefix}`,
+			slug: `model-test-${testPrefix}`,
+			createdAt: new Date(),
+		},
+	});
 });
 
 beforeEach(clear);
 afterEach(clear);
 
 afterAll(async () => {
-	if (saved) await db.appSetting.create({ data: saved });
+	await db.organization.delete({ where: { id: organizationId } });
 });
 
 describe("the configured model", () => {
@@ -75,7 +90,7 @@ describe("the configured model", () => {
 		await writeAgentModel(db, { id: "openai/gpt-5.5", contextWindowTokens: 1 });
 		await writeAgentModel(db, { id: "zai/glm-5.2", contextWindowTokens: 2 });
 
-		expect(await db.appSetting.count()).toBe(1);
+		expect(await db.appSetting.count({ where: { organizationId } })).toBe(1);
 		expect((await readAgentModel(db)).id).toBe("zai/glm-5.2");
 	});
 });

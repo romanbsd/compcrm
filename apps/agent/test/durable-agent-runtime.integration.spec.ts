@@ -1,5 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import type { SendFn } from "eve/channels";
 import { z } from "zod";
 import audit from "../agent/hooks/audit";
@@ -14,15 +15,26 @@ import {
 	queueEventAgentRuns,
 } from "../agent/lib/custom-agent-dispatch";
 import {
-	createRunActivity,
-	finishRun,
+	createRunActivity as createRunActivityInTenant,
+	finishRun as finishRunInTenant,
 	runResultOf,
-	stageRunResult,
+	stageRunResult as stageRunResultInTenant,
 } from "../agent/lib/run-runtime";
+import {
+	tenantAfterAll,
+	tenantAfterEach,
+	tenantBeforeAll,
+	tenantTest,
+} from "@crm/db/test-support";
 
 const attachmentBytes = z.object({ data: z.instanceof(Uint8Array) });
 
 const suffix = crypto.randomUUID();
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeAll = tenantBeforeAll(organizationId);
+const afterEach = tenantAfterEach(organizationId);
+const afterAll = tenantAfterAll(organizationId);
 const userId = `durable-runtime-user-${suffix}`;
 const domain = `durable-${suffix}.example.test`;
 let agentId = "";
@@ -31,6 +43,16 @@ let companyId = "";
 let otherCompanyId = "";
 let triggerId = "";
 const builderConversationIds: string[] = [];
+
+const createRunActivity = (
+	...args: Parameters<typeof createRunActivityInTenant>
+) => runInTenant(organizationId, () => createRunActivityInTenant(...args));
+
+const finishRun = (...args: Parameters<typeof finishRunInTenant>) =>
+	runInTenant(organizationId, () => finishRunInTenant(...args));
+
+const stageRunResult = (...args: Parameters<typeof stageRunResultInTenant>) =>
+	runInTenant(organizationId, () => stageRunResultInTenant(...args));
 
 beforeAll(async () => {
 	await db.user.create({
@@ -42,11 +64,15 @@ beforeAll(async () => {
 	});
 	const [company, otherCompany] = await Promise.all([
 		db.company.create({
-			data: { name: "Durable Runtime Company", domain },
+			data: { organizationId, name: "Durable Runtime Company", domain },
 			select: { id: true },
 		}),
 		db.company.create({
-			data: { name: "Out of Scope Company", domain: `other-${domain}` },
+			data: {
+				organizationId,
+				name: "Out of Scope Company",
+				domain: `other-${domain}`,
+			},
 			select: { id: true },
 		}),
 	]);
@@ -55,6 +81,7 @@ beforeAll(async () => {
 
 	const agent = await db.agentDefinition.create({
 		data: {
+			organizationId,
 			name: "Durable runtime",
 			status: "LIVE",
 			createdById: userId,
@@ -64,6 +91,7 @@ beforeAll(async () => {
 	agentId = agent.id;
 	const version = await db.agentVersion.create({
 		data: {
+			organizationId,
 			agentId,
 			number: 1,
 			status: "DEPLOYED",
@@ -120,6 +148,7 @@ beforeAll(async () => {
 	});
 	const trigger = await db.agentTrigger.create({
 		data: {
+			organizationId,
 			agentId,
 			versionId,
 			type: "SCHEDULE",
@@ -189,6 +218,7 @@ async function createRun(
 ) {
 	return db.agentRun.create({
 		data: {
+			organizationId,
 			agentId,
 			versionId,
 			triggerType,
@@ -197,7 +227,9 @@ async function createRun(
 			sessionId,
 			idempotencyKey: `durable-run-${crypto.randomUUID()}`,
 			correlationId: crypto.randomUUID(),
-			events: { create: { sequence: 0, type: "run.queued", data: {} } },
+			events: {
+				create: { organizationId, sequence: 0, type: "run.queued", data: {} },
+			},
 		},
 		select: { id: true },
 	});
@@ -217,6 +249,7 @@ describe("durable custom-agent runtime", () => {
 	it("queues one run per matching event trigger and event occurrence", async () => {
 		const trigger = await db.agentTrigger.create({
 			data: {
+				organizationId,
 				agentId,
 				versionId,
 				type: "EVENT",
@@ -229,6 +262,7 @@ describe("durable custom-agent runtime", () => {
 		});
 		const eventDeal = await db.deal.create({
 			data: {
+				organizationId,
 				id: `event-deal-${suffix}`,
 				name: "Event deal",
 				ownerId: userId,
@@ -239,6 +273,7 @@ describe("durable custom-agent runtime", () => {
 		const occurredAt = new Date().toISOString();
 		const task = {
 			id: `event-task-${suffix}`,
+			organizationId,
 			contactId: null,
 			companyId: null,
 			dealId: eventDeal.id,
@@ -385,12 +420,14 @@ describe("durable custom-agent runtime", () => {
 	it("restores a builder continuation when a delivery lease expires", async () => {
 		const conversation = await db.agentConversation.create({
 			data: {
+				organizationId,
 				kind: "BUILDER",
 				userId,
 				sessionId: `durable-session-${suffix}-builder`,
 				continuationToken: null,
 				submissions: {
 					create: {
+						organizationId,
 						submittedById: userId,
 						clientRequestId: crypto.randomUUID(),
 						message: { text: "Continue building" },
@@ -419,7 +456,7 @@ describe("durable custom-agent runtime", () => {
 
 	it("keeps concurrent builder dispatches in conversation order", async () => {
 		const conversation = await db.agentConversation.create({
-			data: { kind: "BUILDER", userId },
+			data: { organizationId, kind: "BUILDER", userId },
 			select: { id: true },
 		});
 		builderConversationIds.push(conversation.id);
@@ -427,6 +464,7 @@ describe("durable custom-agent runtime", () => {
 		const [first, second] = await Promise.all([
 			db.agentConversationSubmission.create({
 				data: {
+					organizationId,
 					conversationId: conversation.id,
 					submittedById: userId,
 					clientRequestId: crypto.randomUUID(),
@@ -437,6 +475,7 @@ describe("durable custom-agent runtime", () => {
 			}),
 			db.agentConversationSubmission.create({
 				data: {
+					organizationId,
 					conversationId: conversation.id,
 					submittedById: userId,
 					clientRequestId: crypto.randomUUID(),
@@ -486,10 +525,12 @@ describe("durable custom-agent runtime", () => {
 		const content = Buffer.from("durable attachment");
 		const conversation = await db.agentConversation.create({
 			data: {
+				organizationId,
 				kind: "BUILDER",
 				userId,
 				submissions: {
 					create: {
+						organizationId,
 						submittedById: userId,
 						clientRequestId: crypto.randomUUID(),
 						message: {
@@ -505,6 +546,7 @@ describe("durable custom-agent runtime", () => {
 						},
 						attachments: {
 							create: {
+								organizationId,
 								position: 0,
 								name: "brief.txt",
 								mediaType: "text/plain",
@@ -568,7 +610,11 @@ describe("durable custom-agent runtime", () => {
 				id: `durable-session-${suffix}-usage`,
 				auth: {
 					current: {
-						attributes: { purpose: "team-agent", runId: run.id },
+						attributes: {
+							purpose: "team-agent",
+							runId: run.id,
+							organizationId,
+						},
 					},
 					initiator: null,
 				},
@@ -628,7 +674,11 @@ describe("durable custom-agent runtime", () => {
 					parent: { id: rootSessionId },
 					auth: {
 						current: {
-							attributes: { purpose: "team-agent", runId: run.id },
+							attributes: {
+								purpose: "team-agent",
+								runId: run.id,
+								organizationId,
+							},
 						},
 						initiator: null,
 					},

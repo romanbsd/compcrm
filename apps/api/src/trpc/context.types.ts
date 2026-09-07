@@ -8,7 +8,14 @@ export type BaseTrpcContext = {
 	session: Session | null;
 };
 
+export type SessionTrpcContext = BaseTrpcContext & {
+	session: Session;
+	user: SessionUser;
+	principal: RequestPrincipal;
+};
+
 export type AuthedTrpcContext = BaseTrpcContext & {
 	user: SessionUser;
 	principal: RequestPrincipal;
+	organizationId: string;
 };

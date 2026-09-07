@@ -7,22 +7,20 @@ import {
 	it,
 } from "bun:test";
 import { db } from "@crm/db";
-import { workspaceSlug } from "@crm/db/workspace";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { applySetCookies } from "better-auth/cookies";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
+import { organization } from "better-auth/plugins/organization";
 import * as z from "zod";
-import {
-	DEFAULT_WORKSPACE_NAME,
-	WORKSPACE_ID,
-	type WorkspaceRole,
-} from "../src/organization";
+import type { WorkspaceRole } from "../src/organization";
 import { GOOGLE_PROVIDER_ID, SLACK_PROVIDER_ID } from "../src/scopes";
 import { slackConnectGuard } from "../src/slack-connect";
 
 const suffix = process.env.TEST_RUN_ID ?? "slack-connect-spec";
+const ORGANIZATION_ID = `${suffix}-organization`;
+const CALLBACK_INSTALLER = `slack-connect-${suffix}-installer`;
 
 const EMAIL_SUFFIX = `.slack-connect.${suffix}@example.test`;
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -53,6 +51,7 @@ const guarded = betterAuth({
 		genericOAuth({
 			config: [provider(SLACK_PROVIDER_ID), provider(GOOGLE_PROVIDER_ID)],
 		}),
+		organization({ allowUserToCreateOrganization: false }),
 	],
 });
 
@@ -73,7 +72,10 @@ let snapshot: Snapshot;
 
 const idOf = (label: string) => `slack-connect-${suffix}-${label}`;
 
-const sessionCookie = async (userId: string): Promise<string> => {
+const sessionCookie = async (
+	userId: string,
+	activeOrganizationId: string | null,
+): Promise<string> => {
 	const context = await guarded.$context;
 	const token = idOf(`${userId}-token`);
 
@@ -85,6 +87,7 @@ const sessionCookie = async (userId: string): Promise<string> => {
 			expiresAt: new Date(Date.now() + SESSION_MS),
 			createdAt: new Date(),
 			updatedAt: new Date(),
+			activeOrganizationId,
 		},
 	});
 
@@ -120,7 +123,7 @@ const seat = async (
 		await db.member.create({
 			data: {
 				id: idOf(`${label}-member`),
-				organizationId: WORKSPACE_ID,
+				organizationId: ORGANIZATION_ID,
 				userId: user.id,
 				role,
 				createdAt: now,
@@ -128,7 +131,7 @@ const seat = async (
 		});
 	}
 
-	return sessionCookie(user.id);
+	return sessionCookie(user.id, role ? ORGANIZATION_ID : null);
 };
 
 const startConnect = (
@@ -199,21 +202,24 @@ const clear = async () => {
 	await db.verification.deleteMany({
 		where: { identifier: { startsWith: "slack-connect-state-" } },
 	});
-	await db.member.deleteMany({ where: { organizationId: WORKSPACE_ID } });
-	await db.organization.deleteMany({ where: { id: WORKSPACE_ID } });
+	await db.slackInstallation.deleteMany({
+		where: { installerId: CALLBACK_INSTALLER },
+	});
+	await db.member.deleteMany({ where: { organizationId: ORGANIZATION_ID } });
+	await db.organization.deleteMany({ where: { id: ORGANIZATION_ID } });
 	await db.user.deleteMany({ where: { email: { endsWith: EMAIL_SUFFIX } } });
 };
 
 beforeAll(async () => {
 	const organization = await db.organization.findUnique({
-		where: { id: WORKSPACE_ID },
+		where: { id: ORGANIZATION_ID },
 		select: { name: true, slug: true, website: true, metadata: true },
 	});
 
 	snapshot = {
 		organization,
 		members: await db.member.findMany({
-			where: { organizationId: WORKSPACE_ID },
+			where: { organizationId: ORGANIZATION_ID },
 			select: { id: true, userId: true, role: true, createdAt: true },
 		}),
 	};
@@ -224,9 +230,9 @@ beforeEach(async () => {
 
 	await db.organization.create({
 		data: {
-			id: WORKSPACE_ID,
-			name: DEFAULT_WORKSPACE_NAME,
-			slug: workspaceSlug(DEFAULT_WORKSPACE_NAME),
+			id: ORGANIZATION_ID,
+			name: "CRM",
+			slug: ORGANIZATION_ID,
 			createdAt: new Date(),
 		},
 	});
@@ -238,7 +244,7 @@ afterAll(async () => {
 	if (snapshot.organization) {
 		await db.organization.create({
 			data: {
-				id: WORKSPACE_ID,
+				id: ORGANIZATION_ID,
 				createdAt: new Date(),
 				...snapshot.organization,
 			},
@@ -247,7 +253,7 @@ afterAll(async () => {
 		await db.member.createMany({
 			data: snapshot.members.map((member) => ({
 				...member,
-				organizationId: WORKSPACE_ID,
+				organizationId: ORGANIZATION_ID,
 			})),
 		});
 	}
@@ -289,7 +295,9 @@ describe("Slack linking callback authorization", () => {
 		);
 
 		expect(response.status).toBe(403);
-		expect(await messageOf(response)).toContain("member of this workspace");
+		expect(await messageOf(response)).toContain(
+			"Only a member of this workspace",
+		);
 	});
 
 	it("lets an admin reach token exchange", async () => {

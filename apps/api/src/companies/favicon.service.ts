@@ -1,14 +1,14 @@
-import type { Db } from "@crm/db";
 import { mirror } from "@crm/db/blob";
 import { resolveFavicon } from "@crm/db/favicon";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 
 @Injectable()
 export class FaviconService {
 	private readonly logger = new Logger(FaviconService.name);
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async backfill(companyId: string, domain: string | null): Promise<boolean> {
 		try {

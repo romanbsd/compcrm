@@ -39,11 +39,8 @@ export class ApiKeysRouter {
 		output: apiKeyListOutput,
 		meta: restMeta("GET", "/api-keys", ["API Keys"]),
 	})
-	async list(
-		@Ctx() ctx: AuthedTrpcContext,
-		@Input() input: z.infer<typeof apiKeyListInput>,
-	) {
-		return this.apiKeys.list(ctx.user.id, input);
+	async list(@Input() input: z.infer<typeof apiKeyListInput>) {
+		return this.apiKeys.list(input);
 	}
 
 	@Mutation({

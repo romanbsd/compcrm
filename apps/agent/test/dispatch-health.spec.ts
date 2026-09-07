@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { collapsing } from "@crm/db/pool";
 import { settledWithin } from "../agent/lib/deadline";
 import {
 	DRAIN_TIMEOUT_MS,
@@ -6,7 +7,6 @@ import {
 	linkSession,
 	runDirect,
 } from "../agent/lib/dispatch";
-import { collapsing } from "../agent/lib/pool";
 import type { LeasedTask } from "../agent/lib/tasks";
 
 describe("dispatch wedging", () => {
@@ -90,6 +90,7 @@ async function flush(): Promise<void> {
 function directTask(overrides: Partial<LeasedTask> = {}): LeasedTask {
 	return {
 		id: "task_direct",
+		organizationId: "workspace_1",
 		contactId: null,
 		companyId: null,
 		dealId: null,

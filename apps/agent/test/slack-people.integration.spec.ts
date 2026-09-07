@@ -1,13 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import {
 	persistSlackChannels,
 	refreshSlackChannels,
 } from "../agent/lib/slack-people";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const USER_ID = "slack-people-spec-user";
 const ACCOUNT_ID = "slack-people-spec-account";
 const PREFIX = "CSPEC";
+const ORGANIZATION_ID = "workspace";
+const it = tenantTest(ORGANIZATION_ID);
+const beforeEach = tenantBeforeEach(ORGANIZATION_ID);
+const afterEach = tenantAfterEach(ORGANIZATION_ID);
+const OTHER_ORGANIZATION_ID = "slack-people-other-workspace";
+const OTHER_USER_ID = "slack-people-other-user";
+const OTHER_ACCOUNT_ID = "slack-people-other-account";
 
 const realFetch = globalThis.fetch;
 
@@ -35,14 +44,46 @@ async function connect() {
 		},
 		update: { accessToken: "xoxb-spec" },
 	});
+	await db.slackWorkspaceGrant.upsert({
+		where: {
+			organizationId_teamId: {
+				organizationId: ORGANIZATION_ID,
+				teamId: "T-SPEC",
+			},
+		},
+		create: {
+			organizationId: ORGANIZATION_ID,
+			teamId: "T-SPEC",
+			botToken: "xoxb-spec",
+			botScopes: "channels:read",
+			userToken: "xoxp-spec",
+			userScopes: "channels:read",
+		},
+		update: {
+			organizationId: ORGANIZATION_ID,
+			botToken: "xoxb-spec",
+			botScopes: "channels:read",
+		},
+	});
 }
 
 async function disconnect() {
 	await db.account.deleteMany({ where: { providerId: "slack" } });
+	await db.slackWorkspaceGrant.deleteMany({ where: { teamId: "T-SPEC" } });
 	await db.slackChannel.deleteMany({ where: { id: { startsWith: PREFIX } } });
 }
 
 beforeEach(async () => {
+	await db.organization.upsert({
+		where: { id: ORGANIZATION_ID },
+		create: {
+			id: ORGANIZATION_ID,
+			name: "Workspace",
+			slug: "workspace",
+			createdAt: new Date(),
+		},
+		update: {},
+	});
 	restore = await db.slackChannel.findMany({
 		select: { id: true, available: true },
 	});
@@ -54,6 +95,11 @@ afterEach(async () => {
 	globalThis.fetch = realFetch;
 	await db.slackChannel.deleteMany({ where: { id: { startsWith: PREFIX } } });
 	await db.account.deleteMany({ where: { id: ACCOUNT_ID } });
+	await db.slackWorkspaceGrant.deleteMany({ where: { teamId: "T-SPEC" } });
+	await db.slackWorkspaceGrant.deleteMany({ where: { teamId: "T-OTHER" } });
+	await db.account.deleteMany({ where: { id: OTHER_ACCOUNT_ID } });
+	await db.user.deleteMany({ where: { id: OTHER_USER_ID } });
+	await db.organization.deleteMany({ where: { id: OTHER_ORGANIZATION_ID } });
 	await db.user.deleteMany({ where: { id: USER_ID } });
 	for (const row of restore) {
 		await db.slackChannel.updateMany({
@@ -89,34 +135,43 @@ describe("persistSlackChannels", () => {
 		await db.slackChannel.create({
 			data: {
 				id: `${PREFIX}-keep`,
+				organizationId: ORGANIZATION_ID,
 				name: "old-name",
 				memberCount: 1,
 				available: false,
 			},
 		});
 		await db.slackChannel.create({
-			data: { id: `${PREFIX}-gone`, name: "gone", available: true },
+			data: {
+				id: `${PREFIX}-gone`,
+				organizationId: ORGANIZATION_ID,
+				name: "gone",
+				available: true,
+			},
 		});
 
-		const written = await persistSlackChannels(
-			[
-				{
-					id: `${PREFIX}-keep`,
-					name: "keep",
-					num_members: 12,
-					is_member: true,
-				},
-				{
-					id: `${PREFIX}-new`,
-					name: "new",
-					num_members: 3,
-					is_private: true,
-					is_member: false,
-				},
-				{ id: `${PREFIX}-quiet`, name: "quiet", is_member: true },
-				{ id: `${PREFIX}-archived`, name: "archived", is_archived: true },
-			],
-			true,
+		const written = await runInTenant(ORGANIZATION_ID, () =>
+			persistSlackChannels(
+				[
+					{
+						id: `${PREFIX}-keep`,
+						name: "keep",
+						num_members: 12,
+						is_member: true,
+					},
+					{
+						id: `${PREFIX}-new`,
+						name: "new",
+						num_members: 3,
+						is_private: true,
+						is_member: false,
+					},
+					{ id: `${PREFIX}-quiet`, name: "quiet", is_member: true },
+					{ id: `${PREFIX}-archived`, name: "archived", is_archived: true },
+				],
+				true,
+				ORGANIZATION_ID,
+			),
 		);
 
 		expect(written).toBe(3);
@@ -171,14 +226,24 @@ describe("persistSlackChannels", () => {
 	});
 
 	it("retires every channel when nothing is available", async () => {
+		const emptyId = `${PREFIX}-empty-${crypto.randomUUID()}`;
 		await db.slackChannel.create({
-			data: { id: `${PREFIX}-only`, name: "only", available: true },
+			data: {
+				id: emptyId,
+				organizationId: ORGANIZATION_ID,
+				name: "only",
+				available: true,
+			},
 		});
 
-		expect(await persistSlackChannels([], false)).toBe(0);
+		expect(
+			await runInTenant(ORGANIZATION_ID, () =>
+				persistSlackChannels([], false, ORGANIZATION_ID),
+			),
+		).toBe(0);
 
 		const row = await db.slackChannel.findUnique({
-			where: { id: `${PREFIX}-only` },
+			where: { id: emptyId },
 			select: { available: true },
 		});
 		expect(row?.available).toBe(false);
@@ -187,14 +252,71 @@ describe("persistSlackChannels", () => {
 	it("writes nothing when Slack is disconnected", async () => {
 		await disconnect();
 
-		const written = await persistSlackChannels(
-			[{ id: `${PREFIX}-ghost`, name: "ghost", is_member: true }],
-			false,
+		const written = await runInTenant(ORGANIZATION_ID, () =>
+			persistSlackChannels(
+				[{ id: `${PREFIX}-ghost`, name: "ghost", is_member: true }],
+				false,
+				ORGANIZATION_ID,
+			),
 		);
 
 		expect(written).toBe(0);
 		expect(
 			await db.slackChannel.count({ where: { id: `${PREFIX}-ghost` } }),
+		).toBe(0);
+	});
+
+	it("ignores another organization's active Slack connection", async () => {
+		await disconnect();
+		await db.organization.create({
+			data: {
+				id: OTHER_ORGANIZATION_ID,
+				name: "Other Workspace",
+				slug: OTHER_ORGANIZATION_ID,
+				createdAt: new Date(),
+			},
+		});
+		await db.user.create({
+			data: {
+				id: OTHER_USER_ID,
+				name: "Other Slack User",
+				email: `${OTHER_USER_ID}@example.com`,
+			},
+		});
+		await db.account.create({
+			data: {
+				id: OTHER_ACCOUNT_ID,
+				issuer: "local:oauth:slack",
+				accountId: "T-OTHER",
+				providerId: "slack",
+				userId: OTHER_USER_ID,
+				accessToken: "xoxb-other",
+			},
+		});
+		await runInTenant(OTHER_ORGANIZATION_ID, () =>
+			db.slackWorkspaceGrant.create({
+				data: {
+					organizationId: OTHER_ORGANIZATION_ID,
+					teamId: "T-OTHER",
+					botToken: "xoxb-other",
+					botScopes: "channels:read",
+					userToken: "xoxp-other",
+					userScopes: "channels:read",
+				},
+			}),
+		);
+
+		const written = await runInTenant(ORGANIZATION_ID, () =>
+			persistSlackChannels(
+				[{ id: `${PREFIX}-other`, name: "other", is_member: true }],
+				false,
+				ORGANIZATION_ID,
+			),
+		);
+
+		expect(written).toBe(0);
+		expect(
+			await db.slackChannel.count({ where: { id: `${PREFIX}-other` } }),
 		).toBe(0);
 	});
 });
@@ -210,7 +332,9 @@ describe("refreshSlackChannels", () => {
 			return slackReply({ ok: true, channels: [] });
 		}) as typeof fetch;
 
-		await refreshSlackChannels();
+		await runInTenant(ORGANIZATION_ID, () =>
+			refreshSlackChannels(ORGANIZATION_ID),
+		);
 
 		expect(signal).toBeInstanceOf(AbortSignal);
 	});
@@ -236,7 +360,11 @@ describe("refreshSlackChannels", () => {
 			});
 		}) as unknown as typeof fetch;
 
-		expect(await refreshSlackChannels()).toBe(2);
+		expect(
+			await runInTenant(ORGANIZATION_ID, () =>
+				refreshSlackChannels(ORGANIZATION_ID),
+			),
+		).toBe(2);
 		expect([...new Set(seen)]).toEqual(["", "page-2"]);
 	});
 
@@ -249,7 +377,11 @@ describe("refreshSlackChannels", () => {
 			});
 		}) as typeof fetch;
 
-		expect(await refreshSlackChannels()).toBe(0);
+		expect(
+			await runInTenant(ORGANIZATION_ID, () =>
+				refreshSlackChannels(ORGANIZATION_ID),
+			),
+		).toBe(0);
 		expect(
 			await db.slackChannel.count({ where: { id: { startsWith: PREFIX } } }),
 		).toBe(0);
@@ -259,7 +391,9 @@ describe("refreshSlackChannels", () => {
 		globalThis.fetch = (async () =>
 			slackReply({ ok: false, error: "missing_scope" })) as typeof fetch;
 
-		expect(refreshSlackChannels()).rejects.toThrow(
+		expect(
+			runInTenant(ORGANIZATION_ID, () => refreshSlackChannels(ORGANIZATION_ID)),
+		).rejects.toThrow(
 			"Slack channel lookup needs an additional permission. Reconnect Slack and retry.",
 		);
 	});

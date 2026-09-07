@@ -1,10 +1,11 @@
-import type { Db, Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 
 @Injectable()
 export class AgentQueueService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async queuedCompanies(ids: readonly string[]): Promise<Set<string>> {
 		if (ids.length === 0) return new Set();

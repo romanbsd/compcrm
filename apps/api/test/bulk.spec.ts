@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { db } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { AgentQueueService } from "../src/agent/agent-queue.service";
 import type { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { CompaniesService } from "../src/companies/companies.service";
@@ -11,11 +13,14 @@ import { ConversionService } from "../src/currency/conversion.service";
 import { DealsService } from "../src/deals/deals.service";
 import { FieldsService } from "../src/fields/fields.service";
 import { withDiscardedCrmEvents } from "./agent-trigger.stub";
+import { tenantBound, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "bulk-spec";
 const domain = `bulk-${suffix}.test`;
 const ownerId = `owner-${suffix}`;
 const secondOwnerId = `second-owner-${suffix}`;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
 const ours = { OR: [{ email: { endsWith: `@${domain}` } }] };
 
 const agent = {
@@ -25,67 +30,99 @@ const agent = {
 	withCrmEvents: withDiscardedCrmEvents,
 } as unknown as AgentTriggerService;
 
-const stamp = new ActivityStampService(db);
-const queue = new AgentQueueService(db);
-const conversion = new ConversionService(db);
-const directory = new CompanyDirectoryService(agent);
+const stamp = tenantBound(
+	organizationId,
+	new ActivityStampService(scopedDb as never),
+);
+const queue = tenantBound(
+	organizationId,
+	new AgentQueueService(scopedDb as never),
+);
+const conversion = tenantBound(
+	organizationId,
+	new ConversionService(scopedDb as never),
+);
+const directory = tenantBound(
+	organizationId,
+	new CompanyDirectoryService(agent),
+);
 
-const fields = new FieldsService(db, agent);
-const contacts = new ContactsService(
-	db,
-	directory,
-	agent,
-	queue,
-	stamp,
-	fields,
+const fields = tenantBound(
+	organizationId,
+	new FieldsService(scopedDb as never, agent),
 );
-const companies = new CompaniesService(
-	db,
-	agent,
-	queue,
-	{ backfill: async () => undefined } as unknown as FaviconService,
-	stamp,
-	conversion,
-	fields,
+const contacts = tenantBound(
+	organizationId,
+	new ContactsService(
+		scopedDb as never,
+		directory,
+		agent,
+		queue,
+		stamp,
+		fields,
+	),
 );
-const deals = new DealsService(db, agent, stamp, conversion, fields);
+const companies = tenantBound(
+	organizationId,
+	new CompaniesService(
+		scopedDb as never,
+		agent,
+		queue,
+		{ backfill: async () => undefined } as unknown as FaviconService,
+		stamp,
+		conversion,
+		fields,
+	),
+);
+const deals = tenantBound(
+	organizationId,
+	new DealsService(scopedDb as never, agent, stamp, conversion, fields),
+);
 
 let companyId: string;
 
 async function clean() {
-	const owned = await db.company.findMany({
+	const owned = await scopedDb.company.findMany({
 		where: { domain: { endsWith: domain } },
 		select: { id: true },
 	});
 	const companyIds = owned.map((row) => row.id);
 
-	await db.deal.deleteMany({ where: { companyId: { in: companyIds } } });
-	await db.activity.deleteMany({ where: { companyId: { in: companyIds } } });
-	await db.agentTask.deleteMany({ where: { companyId: { in: companyIds } } });
-	await db.contact.deleteMany({ where: ours });
-	await db.suppressedContact.deleteMany({ where: ours });
-	await db.company.deleteMany({ where: { domain: { endsWith: domain } } });
+	await scopedDb.deal.deleteMany({ where: { companyId: { in: companyIds } } });
+	await scopedDb.activity.deleteMany({
+		where: { companyId: { in: companyIds } },
+	});
+	await scopedDb.agentTask.deleteMany({
+		where: { companyId: { in: companyIds } },
+	});
+	await scopedDb.contact.deleteMany({ where: ours });
+	await scopedDb.suppressedContact.deleteMany({ where: ours });
+	await scopedDb.company.deleteMany({
+		where: { domain: { endsWith: domain } },
+	});
 	await db.user.deleteMany({ where: { id: { in: [ownerId, secondOwnerId] } } });
 }
 
-beforeAll(async () => {
-	await clean();
+beforeAll(() =>
+	runInTenant(organizationId, async () => {
+		await clean();
 
-	await db.user.createMany({
-		data: [
-			{ id: ownerId, name: "First Rep", email: `first@${domain}` },
-			{ id: secondOwnerId, name: "Second Rep", email: `second@${domain}` },
-		],
-	});
+		await db.user.createMany({
+			data: [
+				{ id: ownerId, name: "First Rep", email: `first@${domain}` },
+				{ id: secondOwnerId, name: "Second Rep", email: `second@${domain}` },
+			],
+		});
 
-	const company = await db.company.create({
-		data: { name: `Bulk Co ${suffix}`, domain },
-		select: { id: true },
-	});
-	companyId = company.id;
-});
+		const company = await scopedDb.company.create({
+			data: { organizationId, name: `Bulk Co ${suffix}`, domain },
+			select: { id: true },
+		});
+		companyId = company.id;
+	}),
+);
 
-afterAll(clean);
+afterAll(() => runInTenant(organizationId, clean));
 
 describe("assigning an owner to a selection", () => {
 	it("moves every record it was given", async () => {
@@ -114,7 +151,7 @@ describe("assigning an owner to a selection", () => {
 		});
 
 		expect(
-			await db.contact.count({
+			await scopedDb.contact.count({
 				where: { id: { in: [first.id, second.id] }, ownerId: secondOwnerId },
 			}),
 		).toBe(2);
@@ -158,7 +195,7 @@ describe("assigning an owner to a selection", () => {
 		expect(refused?.message).toMatch(/does not work here/);
 
 		expect(
-			await db.contact.findUnique({
+			await scopedDb.contact.findUnique({
 				where: { id: contact.id },
 				select: { ownerId: true },
 			}),
@@ -186,7 +223,7 @@ describe("purging a selection", () => {
 		});
 
 		expect(
-			await db.suppressedContact.count({
+			await scopedDb.suppressedContact.count({
 				where: { email: { in: [`gone@${domain}`, `also-gone@${domain}`] } },
 			}),
 		).toBe(2);
@@ -204,7 +241,7 @@ describe("purging a selection", () => {
 		expect(result.failed).toBe(1);
 		expect(result.message).toMatch(/No contact with id/);
 		expect(
-			await db.contact.findUnique({ where: { id: survivor.id } }),
+			await scopedDb.contact.findUnique({ where: { id: survivor.id } }),
 		).toBeNull();
 	});
 
@@ -228,13 +265,13 @@ describe("purging a selection", () => {
 		});
 
 		expect(
-			await db.deal.findUnique({
+			await scopedDb.deal.findUnique({
 				where: { id: deal.id },
 				select: { companyId: true },
 			}),
 		).toEqual({ companyId: doomed.id });
-		await db.deal.delete({ where: { id: deal.id } });
-		await db.company.delete({ where: { id: doomed.id } });
+		await scopedDb.deal.delete({ where: { id: deal.id } });
+		await scopedDb.company.delete({ where: { id: doomed.id } });
 	});
 });
 
@@ -258,7 +295,7 @@ describe("moving a selection of deals to a stage", () => {
 		expect(refused?.message).toMatch(/teaches nobody anything/);
 
 		expect(
-			await db.deal.findUnique({
+			await scopedDb.deal.findUnique({
 				where: { id: deal.id },
 				select: { stage: true },
 			}),
@@ -294,7 +331,7 @@ describe("moving a selection of deals to a stage", () => {
 			message: null,
 		});
 
-		const closed = await db.deal.findMany({
+		const closed = await scopedDb.deal.findMany({
 			where: { id: { in: [first.id, second.id] } },
 			select: { stage: true, closedReason: true, closedAt: true },
 		});
@@ -306,7 +343,7 @@ describe("moving a selection of deals to a stage", () => {
 		expect(closed.every((deal) => deal.closedAt !== null)).toBe(true);
 
 		expect(
-			await db.activity.count({
+			await scopedDb.activity.count({
 				where: {
 					dealId: { in: [first.id, second.id] },
 					type: "STAGE_CHANGE",

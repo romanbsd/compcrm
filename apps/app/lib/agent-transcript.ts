@@ -83,6 +83,12 @@ const VERBS: ToolVerbs = {
 	set_field_value: "Filled in a custom field",
 	manage_fields: "Changed what the CRM tracks",
 	archive_field: "Asked to retire a field",
+	project_list: "Reviewed the available projects",
+	task_list: "Reviewed the project tasks",
+	task_read: "Read a project task",
+	task_create: "Created a project task",
+	task_update: "Updated a project task",
+	task_comment: "Added a comment to a project task",
 
 	load_skill: "Read its instructions for this",
 	web_search: "Searched the web",

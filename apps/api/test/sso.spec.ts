@@ -1,8 +1,11 @@
-import { describe, expect, it } from "bun:test";
-import { isGoogleConfigured, WORKSPACE_ID } from "@crm/auth";
-import type { Db } from "@crm/db";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { isGoogleConfigured, ssoProviderName } from "@crm/auth";
+import { db } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedDb } from "@crm/db/tenant-scope";
 import { ForbiddenException } from "@nestjs/common";
 import { SsoService } from "../src/sso/sso.service";
+import { tenantContext } from "@crm/db/test-support";
 
 type Row = {
 	providerId: string;
@@ -19,6 +22,12 @@ const LIST = {
 	page: 1,
 	pageSize: 25,
 };
+const organizationId = "sso-spec-organization";
+const publicSuffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const publicOrganizationId = `sso-public-org-${publicSuffix}`;
+const publicProviderId = `sso-public-provider-${publicSuffix}`;
+
+const inTenant = tenantContext(organizationId);
 
 type Seen = { providerWhere?: unknown };
 
@@ -36,7 +45,7 @@ function service(role: string | null, rows: Row[] = []) {
 			},
 			count: async () => rows.length,
 		},
-	} as unknown as Db;
+	} as unknown as ScopedDb;
 
 	return { sso: new SsoService(db), seen };
 }
@@ -56,40 +65,44 @@ describe("who may configure SSO", () => {
 	it("lets an owner and an admin", async () => {
 		for (const role of ["owner", "admin"]) {
 			const { sso } = service(role);
-			expect((await sso.settings("u1")).canConfigure).toBe(true);
+			expect((await inTenant(() => sso.settings("u1"))).canConfigure).toBe(
+				true,
+			);
 		}
 	});
 
 	it("refuses a member, and refuses them the writes too", async () => {
 		const { sso } = service("member");
 
-		expect((await sso.settings("u1")).canConfigure).toBe(false);
+		expect((await inTenant(() => sso.settings("u1"))).canConfigure).toBe(false);
 
 		expect(
-			sso.remove("u1", new Headers(), { providerId: "okta" }),
+			inTenant(() => sso.remove("u1", new Headers(), { providerId: "okta" })),
 		).rejects.toBeInstanceOf(ForbiddenException);
 
 		expect(
-			sso.register("u1", new Headers(), {
-				providerId: "okta",
-				issuer: "https://acme.okta.com",
-				domain: "acme.com",
-				clientId: "id",
-				clientSecret: "secret",
-			}),
+			inTenant(() =>
+				sso.register("u1", new Headers(), {
+					providerId: "okta",
+					issuer: "https://acme.okta.com",
+					domain: "acme.com",
+					clientId: "id",
+					clientSecret: "secret",
+				}),
+			),
 		).rejects.toBeInstanceOf(ForbiddenException);
 	});
 
 	it("refuses somebody who is not in the workspace at all", async () => {
 		const { sso } = service(null);
-		expect((await sso.settings("u1")).canConfigure).toBe(false);
+		expect((await inTenant(() => sso.settings("u1"))).canConfigure).toBe(false);
 	});
 });
 
 describe("what a provider looks like once it is saved", () => {
 	it("never hands back the client secret", async () => {
 		const { sso } = service("owner", [OKTA]);
-		const [provider] = (await sso.list(LIST)).rows;
+		const [provider] = (await inTenant(() => sso.list(LIST))).rows;
 
 		expect(JSON.stringify(provider)).not.toContain("shhh");
 		expect(provider?.clientIdLastFour).toBe("WXYZ");
@@ -97,7 +110,7 @@ describe("what a provider looks like once it is saved", () => {
 
 	it("splits the domains and names the callback the IdP needs", async () => {
 		const { sso } = service("owner", [OKTA]);
-		const [provider] = (await sso.list(LIST)).rows;
+		const [provider] = (await inTenant(() => sso.list(LIST))).rows;
 
 		expect(provider?.domains).toEqual(["acme.com", "subsidiary.com"]);
 		expect(provider?.type).toBe("oidc");
@@ -107,17 +120,17 @@ describe("what a provider looks like once it is saved", () => {
 
 	it("reads only the one workspace, never an organization it was passed", async () => {
 		const { sso, seen } = service("owner", [OKTA]);
-		await sso.list(LIST);
+		await inTenant(() => sso.list(LIST));
 
-		expect(seen.providerWhere).toEqual({ organizationId: WORKSPACE_ID });
+		expect(seen.providerWhere).toEqual({ organizationId });
 	});
 
 	it("searches the name, the domain and the issuer", async () => {
 		const { sso, seen } = service("owner", [OKTA]);
-		await sso.list({ ...LIST, q: " acme " });
+		await inTenant(() => sso.list({ ...LIST, q: " acme " }));
 
 		expect(seen.providerWhere).toEqual({
-			organizationId: WORKSPACE_ID,
+			organizationId,
 			OR: [
 				{ providerId: { contains: "acme", mode: "insensitive" } },
 				{ domain: { contains: "acme", mode: "insensitive" } },
@@ -128,16 +141,91 @@ describe("what a provider looks like once it is saved", () => {
 });
 
 describe("the sign-in page's read", () => {
-	it("carries the name and nothing else", async () => {
-		const { sso } = service(null, [OKTA]);
+	beforeAll(async () => {
+		await db.organization.create({
+			data: {
+				id: publicOrganizationId,
+				name: `SSO Public ${publicSuffix}`,
+				slug: publicOrganizationId,
+				createdAt: new Date(),
+			},
+		});
+		await runInTenant(publicOrganizationId, () =>
+			scopedDb.ssoProvider.create({
+				data: {
+					id: `sso-public-row-${publicSuffix}`,
+					organizationId: publicOrganizationId,
+					providerId: publicProviderId,
+					issuer: "https://public.example.com",
+					domain: "public.example.com",
+				},
+			}),
+		);
+	});
 
-		expect((await sso.signInOptions()).providers).toEqual([
-			{ providerId: "okta", name: "Okta" },
-		]);
+	afterAll(async () => {
+		await db.organization.delete({ where: { id: publicOrganizationId } });
+	});
+
+	it("carries the name and nothing else", async () => {
+		const { sso } = service(null);
+		const provider = (await sso.signInOptions()).providers.find(
+			(row) => row.providerId === publicProviderId,
+		);
+
+		expect(provider).toEqual({
+			providerId: publicProviderId,
+			name: ssoProviderName(publicProviderId),
+		});
+	});
+
+	it("keeps the public locator synchronized with the protected provider", async () => {
+		const providerId = `${publicProviderId}-trigger`;
+
+		await runInTenant(publicOrganizationId, () =>
+			scopedDb.ssoProvider.create({
+				data: {
+					id: `sso-public-trigger-${publicSuffix}`,
+					organizationId: publicOrganizationId,
+					providerId,
+					issuer: "https://trigger.example.com",
+					domain: "first.example.com",
+				},
+			}),
+		);
+
+		try {
+			expect(
+				await db.ssoProviderLocator.findUnique({ where: { providerId } }),
+			).toMatchObject({
+				providerId,
+				organizationId: publicOrganizationId,
+				domain: "first.example.com",
+			});
+
+			await runInTenant(publicOrganizationId, () =>
+				scopedDb.ssoProvider.update({
+					where: { providerId },
+					data: { domain: "second.example.com" },
+				}),
+			);
+
+			expect(
+				await db.ssoProviderLocator.findUnique({ where: { providerId } }),
+			).toMatchObject({ domain: "second.example.com" });
+		} finally {
+			await runInTenant(publicOrganizationId, () =>
+				scopedDb.ssoProvider.delete({ where: { providerId } }),
+			);
+		}
+
+		expect(
+			await db.ssoProviderLocator.findUnique({ where: { providerId } }),
+		).toBeNull();
 	});
 
 	it("says whether Google is configured, so the page can offer nothing", async () => {
-		const { sso } = service(null, [OKTA]);
+		const { sso } = service(null);
 
 		expect((await sso.signInOptions()).google).toBe(isGoogleConfigured());
 	});

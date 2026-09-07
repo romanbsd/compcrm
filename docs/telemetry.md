@@ -49,6 +49,12 @@ a fork somewhere else by editing that file. Nothing is sent while `NODE_ENV` is
 Once per install per day, from the API itself. Counts and distributions from grouped queries.
 Never a value from a row.
 
+The rollup combines every workspace in the installation. It adds raw counts before computing
+bands, rates, means, and distributions. `members_bucket` counts distinct users across all
+workspace memberships. Capability booleans are true when any workspace enables the capability.
+The model fields report the shared model when every workspace uses one model. They report
+`mixed` and a null context window when workspace model settings differ.
+
 **It runs in-process and needs no cron.** `TelemetryService` rolls up on boot and then hourly,
 and the day claim below makes all but the first of those a no-op. That covers both shapes an
 install comes in: a serverless deployment rolls up on a cold start, a long-running container on
@@ -139,7 +145,6 @@ and the tool name only. `AgentEvent.data` itself is never sent.
 | `facts_by_method` | Counts by the `method` label a tool recorded |
 | `facts_by_evidence_kind` | Counts by evidence kind, from the `WEIGHTS` map in `lib/evidence.ts` |
 | `fact_dismissal_rate` | The share of decided facts a human rejected |
-| `fact_decision_median_hours` | Median hours from `observedAt` to `decidedAt` |
 | `facts_superseded_within_7_days` | Facts the agent changed its mind about |
 
 Evidence kinds are matched against the eleven in `lib/evidence.ts`; anything else is `other`.

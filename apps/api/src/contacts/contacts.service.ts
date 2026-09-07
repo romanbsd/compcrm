@@ -1,6 +1,5 @@
 import {
 	type ContactBriefSections,
-	type Db,
 	type FactEvidence,
 	FactStatus,
 	type Prisma,
@@ -8,6 +7,8 @@ import {
 	type RecordSource,
 } from "@crm/db";
 import type { FieldDefinitionWithOptions } from "@crm/db/fields";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import {
 	ConflictException,
 	Injectable,
@@ -24,7 +25,7 @@ import {
 } from "../crm/activity-stamp.service";
 import { type BulkResult, requireOwner, runBulk } from "../crm/bulk";
 import { blankToNull, normalizeEmail, toCents } from "../crm/values";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { FieldsService } from "../fields/fields.service";
 import {
 	activityFacetCounts,
@@ -95,7 +96,7 @@ export class ContactsService {
 	private readonly logger = new Logger(ContactsService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly companies: CompanyDirectoryService,
 		private readonly agent: AgentTriggerService,
 		private readonly queue: AgentQueueService,
@@ -395,7 +396,7 @@ export class ContactsService {
 		} | null;
 
 		try {
-			deleted = await this.db.$transaction(async (tx) => {
+			deleted = await scopedTransaction(this.db, async (tx) => {
 				const [row] = await tx.$queryRaw<Array<{ archivedAt: Date | null }>>`
 					SELECT "archivedAt" FROM contact WHERE id = ${id} FOR UPDATE
 				`;
@@ -426,7 +427,12 @@ export class ContactsService {
 
 				if (suppress) {
 					await tx.suppressedContact.upsert({
-						where: { email: suppress },
+						where: {
+							organizationId_email: {
+								organizationId: currentOrganizationId(),
+								email: suppress,
+							},
+						},
 						create: {
 							email: suppress,
 							reason: `Deleted from the CRM (${name})`,
@@ -499,7 +505,7 @@ export class ContactsService {
 		}
 
 		try {
-			return await this.db.$transaction(async (tx) => {
+			return await scopedTransaction(this.db, async (tx) => {
 				if (input.fields) {
 					await this.fields.applyValues(tx, "CONTACT", id, input.fields);
 				}
@@ -725,7 +731,7 @@ export class ContactsService {
 		const accepted = input.decision === "accept";
 		const column = FACT_COLUMNS[fact.field];
 
-		await this.db.$transaction(async (tx) => {
+		await scopedTransaction(this.db, async (tx) => {
 			if (accepted) {
 				await tx.contactFact.updateMany({
 					where: {

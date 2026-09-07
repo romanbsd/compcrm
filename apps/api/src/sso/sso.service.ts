@@ -1,4 +1,5 @@
 import {
+	activeWorkspaceRoleOf,
 	auth,
 	canConfigureSso,
 	isGoogleConfigured,
@@ -6,10 +7,10 @@ import {
 	ssoCallbackBase,
 	ssoCallbackURL,
 	ssoProviderName,
-	WORKSPACE_ID,
-	workspaceRoleOf,
 } from "@crm/auth";
-import type { Db, Prisma } from "@crm/db";
+import { db, type Prisma } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import {
 	BadRequestException,
 	ForbiddenException,
@@ -20,7 +21,7 @@ import {
 } from "@nestjs/common";
 import { APIError } from "better-auth/api";
 import { z } from "zod";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import {
 	type ListResult,
 	type OrderByColumns,
@@ -114,11 +115,10 @@ function toProvider(row: ProviderRow): SsoProvider {
 export class SsoService {
 	private readonly logger = new Logger(SsoService.name);
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async signInOptions(): Promise<SignInOptions> {
-		const rows = await this.db.ssoProvider.findMany({
-			where: { organizationId: WORKSPACE_ID },
+		const rows = await db.ssoProviderLocator.findMany({
 			select: { providerId: true },
 			orderBy: { providerId: "asc" },
 		});
@@ -135,7 +135,9 @@ export class SsoService {
 
 	async settings(userId: string): Promise<SsoSettings> {
 		return {
-			canConfigure: canConfigureSso(await workspaceRoleOf(userId, this.db)),
+			canConfigure: canConfigureSso(
+				await activeWorkspaceRoleOf(userId, this.db),
+			),
 			callbackBase: ssoCallbackBase(),
 		};
 	}
@@ -180,7 +182,7 @@ export class SsoService {
 					providerId: input.providerId,
 					issuer: input.issuer,
 					domain: domains.join(","),
-					organizationId: WORKSPACE_ID,
+					organizationId: currentOrganizationId(),
 					oidcConfig: {
 						clientId: input.clientId,
 						clientSecret: input.clientSecret,
@@ -231,7 +233,7 @@ export class SsoService {
 	private searchWhere(q: string): Prisma.SsoProviderWhereInput {
 		const term = q.trim();
 		const where: Prisma.SsoProviderWhereInput = {
-			organizationId: WORKSPACE_ID,
+			organizationId: currentOrganizationId(),
 		};
 
 		if (term) {
@@ -271,7 +273,7 @@ export class SsoService {
 	}
 
 	private async requireConfigurer(userId: string): Promise<void> {
-		if (!canConfigureSso(await workspaceRoleOf(userId, this.db))) {
+		if (!canConfigureSso(await activeWorkspaceRoleOf(userId, this.db))) {
 			throw new ForbiddenException(
 				"Only an owner or an admin can change how people sign in.",
 			);

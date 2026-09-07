@@ -1,9 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { db, EnrichmentStatus } from "@crm/db";
+import { describe, expect } from "bun:test";
+import { EnrichmentStatus } from "@crm/db";
+import { scopedDb as db } from "@crm/db/tenant-scope";
 import { closeTask, taskToken } from "../agent/channels/crm";
+import { tenantAfterEach, tenantBeforeEach, tenantTest } from "@crm/db/test-support";
 
 const kind = "identify";
 const email = `close-task-${crypto.randomUUID()}@example.test`;
+const organizationId = "workspace";
+const it = tenantTest(organizationId);
+const beforeEach = tenantBeforeEach(organizationId);
+const afterEach = tenantAfterEach(organizationId);
 
 const taskIds: string[] = [];
 
@@ -12,6 +18,16 @@ async function clear() {
 		await db.agentTask.deleteMany({ where: { id: { in: taskIds.splice(0) } } });
 	}
 	await db.contact.deleteMany({ where: { email } });
+	await db.organization.upsert({
+		where: { id: organizationId },
+		create: {
+			id: organizationId,
+			name: "Workspace",
+			slug: "workspace",
+			createdAt: new Date(),
+		},
+		update: {},
+	});
 }
 
 beforeEach(clear);
@@ -22,6 +38,7 @@ async function running() {
 		data: {
 			firstName: "Close",
 			email,
+			organizationId,
 			enrichmentStatus: EnrichmentStatus.RUNNING,
 		},
 		select: { id: true },
@@ -29,6 +46,7 @@ async function running() {
 
 	const task = await db.agentTask.create({
 		data: {
+			organizationId,
 			kind,
 			reason: "test",
 			dueAt: new Date(Date.now() - 1000),

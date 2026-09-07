@@ -1,9 +1,5 @@
 import { type Db, db } from "@crm/db";
-import { WORKSPACE_ID, workspaceSlug } from "@crm/db/workspace";
-
-export { WORKSPACE_ID };
-
-export const DEFAULT_WORKSPACE_NAME = "CRM";
+import { currentOrganizationId } from "@crm/db/tenant-context";
 
 export const WORKSPACE_ROLES = ["owner", "admin", "member"] as const;
 
@@ -37,86 +33,37 @@ export function canManageTracking(role: WorkspaceRole | null): boolean {
 	return isWorkspaceAdmin(role);
 }
 
-export async function ensureWorkspaceMembership(
-	userId: string,
-): Promise<string | undefined> {
-	try {
-		return await db.$transaction(async (tx) => {
-			const workspace = await tx.organization.upsert({
-				where: { id: WORKSPACE_ID },
-				create: {
-					id: WORKSPACE_ID,
-					name: DEFAULT_WORKSPACE_NAME,
-					slug: workspaceSlug(DEFAULT_WORKSPACE_NAME),
-					createdAt: new Date(),
-				},
-				update: {},
-				select: { id: true, name: true, slug: true },
-			});
-
-			const slug = workspaceSlug(workspace.name);
-
-			if (workspace.slug !== slug) {
-				await tx.organization.update({
-					where: { id: workspace.id },
-					data: { slug },
-				});
-			}
-
-			const enrolled = await tx.member.count({
-				where: { organizationId: workspace.id },
-			});
-
-			if (enrolled === 0) {
-				const existing = await tx.user.findMany({
-					select: { id: true },
-					orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-				});
-
-				await tx.member.createMany({
-					data: existing.map((user, index) => ({
-						id: crypto.randomUUID(),
-						organizationId: workspace.id,
-						userId: user.id,
-						role: index === 0 ? "owner" : "member",
-						createdAt: new Date(),
-					})),
-					skipDuplicates: true,
-				});
-			}
-
-			await tx.member.upsert({
-				where: {
-					organizationId_userId: { organizationId: workspace.id, userId },
-				},
-				create: {
-					id: crypto.randomUUID(),
-					organizationId: workspace.id,
-					userId,
-					role: "member",
-					createdAt: new Date(),
-				},
-				update: {},
-			});
-
-			return workspace.id;
-		});
-	} catch (error) {
-		console.error(
-			`[auth] could not enrol user ${userId} in workspace ${WORKSPACE_ID}; the next sign-in will retry`,
-			error,
-		);
-		return undefined;
-	} finally {
-		await syncKaneoMembership(userId);
-	}
+export function activeOrganizationIdOf(
+	session: {
+		session: Record<string, unknown>;
+	} | null,
+): string | null {
+	const value = session?.session.activeOrganizationId;
+	return typeof value === "string" && value !== "" ? value : null;
 }
 
-async function syncKaneoMembership(userId: string): Promise<void> {
+export async function resolveActiveOrganization(
+	userId: string,
+): Promise<string | null> {
+	const membership = await db.member.findFirst({
+		where: { userId },
+		orderBy: { createdAt: "asc" },
+		select: { organizationId: true },
+	});
+
+	if (!membership) return null;
+	await syncKaneoMembership(userId, membership.organizationId);
+	return membership.organizationId;
+}
+
+async function syncKaneoMembership(
+	userId: string,
+	organizationId: string,
+): Promise<void> {
 	try {
 		await db.$transaction(async (tx) => {
 			const workspace = await tx.organization.findUnique({
-				where: { id: WORKSPACE_ID },
+				where: { id: organizationId },
 				select: { name: true, slug: true, createdAt: true },
 			});
 			if (!workspace) {
@@ -124,9 +71,9 @@ async function syncKaneoMembership(userId: string): Promise<void> {
 			}
 
 			await tx.workspace.upsert({
-				where: { id: WORKSPACE_ID },
+				where: { id: organizationId },
 				create: {
-					id: WORKSPACE_ID,
+					id: organizationId,
 					name: workspace.name,
 					slug: workspace.slug,
 					createdAt: workspace.createdAt,
@@ -136,14 +83,14 @@ async function syncKaneoMembership(userId: string): Promise<void> {
 
 			const membership = await tx.member.findUnique({
 				where: {
-					organizationId_userId: { organizationId: WORKSPACE_ID, userId },
+					organizationId_userId: { organizationId, userId },
 				},
 				select: { role: true },
 			});
 			const role = toKaneoRole(toWorkspaceRole(membership?.role ?? "member"));
 
 			const existing = await tx.workspaceMember.findFirst({
-				where: { workspaceId: WORKSPACE_ID, userId },
+				where: { workspaceId: organizationId, userId },
 				select: { id: true, role: true },
 			});
 			if (existing) {
@@ -158,7 +105,7 @@ async function syncKaneoMembership(userId: string): Promise<void> {
 			await tx.workspaceMember.create({
 				data: {
 					id: crypto.randomUUID(),
-					workspaceId: WORKSPACE_ID,
+					workspaceId: organizationId,
 					userId,
 					role,
 					joinedAt: new Date(),
@@ -167,7 +114,7 @@ async function syncKaneoMembership(userId: string): Promise<void> {
 		});
 	} catch (error) {
 		console.error(
-			`[auth] could not sync user ${userId} into the kaneo workspace; the next sign-in will retry`,
+			`[auth] could not sync user ${userId} into the kaneo workspace ${organizationId}; the next sign-in will retry`,
 			error,
 		);
 	}
@@ -188,12 +135,20 @@ export type WorkspaceMemberReader = Pick<Db, "member">;
 
 export async function workspaceRoleOf(
 	userId: string,
+	organizationId: string,
 	client: WorkspaceMemberReader = db,
 ): Promise<WorkspaceRole | null> {
 	const member = await client.member.findUnique({
-		where: { organizationId_userId: { organizationId: WORKSPACE_ID, userId } },
+		where: { organizationId_userId: { organizationId, userId } },
 		select: { role: true },
 	});
 
 	return member ? toWorkspaceRole(member.role) : null;
+}
+
+export async function activeWorkspaceRoleOf(
+	userId: string,
+	client: WorkspaceMemberReader = db,
+): Promise<WorkspaceRole | null> {
+	return workspaceRoleOf(userId, currentOrganizationId(), client);
 }

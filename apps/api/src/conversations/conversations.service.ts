@@ -1,5 +1,6 @@
-import { WORKSPACE_ID } from "@crm/auth";
-import { type Db, type Prisma, Prisma as PrismaNamespace } from "@crm/db";
+import { type Prisma, Prisma as PrismaNamespace } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { readAgentManifestSummary } from "@crm/validation/agent-manifest";
 import {
 	type BuilderQuestion,
@@ -13,7 +14,7 @@ import {
 	Optional,
 } from "@nestjs/common";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import {
 	builderMessageWithAttachments,
 	isPreviewableImage,
@@ -46,7 +47,7 @@ export class ConversationsService {
 	private readonly logger = new Logger(ConversationsService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		@Optional() private readonly agent?: AgentTriggerService,
 	) {}
 
@@ -200,8 +201,8 @@ export class ConversationsService {
 					company: { select: { name: true, logoUrl: true } },
 				},
 			}),
-			this.db.account.findFirst({
-				where: { providerId: "slack", accessToken: { not: null } },
+			this.db.slackWorkspaceGrant.findFirst({
+				where: { botToken: { not: null } },
 				select: { id: true },
 			}),
 		]);
@@ -468,27 +469,13 @@ export class ConversationsService {
 				input,
 				userId,
 			);
-			const submission = await this.db.$transaction(async (tx) => {
-				const created = await tx.agentConversationSubmission.create({
-					data: {
-						conversationId: input.id,
-						submittedById: userId,
-						clientRequestId: input.clientRequestId,
-						commandType: input.commandType,
-						message: this.builderMessage(input),
-						attachments: {
-							create: attachmentWrites,
-						},
-					},
-					select: { id: true },
-				});
-
-				await tx.agentConversation.update({
-					where: { id: input.id },
-					data: { lastMessageAt: new Date(), lastReadAt: new Date() },
-				});
-
-				return created;
+			const submission = await this.storeBuilderSubmission(input.id, {
+				conversationId: input.id,
+				submittedById: userId,
+				clientRequestId: input.clientRequestId,
+				commandType: input.commandType,
+				message: this.builderMessage(input),
+				attachments: { create: attachmentWrites },
 			});
 
 			this.agent?.builderConversationQueued();
@@ -574,30 +561,18 @@ export class ConversationsService {
 			? { requestId: input.requestId, optionId: input.optionId }
 			: { requestId: input.requestId, text: input.text };
 		try {
-			const submission = await this.db.$transaction(async (tx) => {
-				const created = await tx.agentConversationSubmission.create({
-					data: {
-						conversationId: input.id,
-						submittedById: userId,
-						clientRequestId: input.clientRequestId,
-						inputRequestId: input.requestId,
-						commandType: "CREATE_AGENT",
-						message: {
-							text: displayText,
-							resources: [],
-							attachments: [],
-							inputResponse,
-						},
-					},
-					select: { id: true },
-				});
-
-				await tx.agentConversation.update({
-					where: { id: input.id },
-					data: { lastMessageAt: new Date(), lastReadAt: new Date() },
-				});
-
-				return created;
+			const submission = await this.storeBuilderSubmission(input.id, {
+				conversationId: input.id,
+				submittedById: userId,
+				clientRequestId: input.clientRequestId,
+				inputRequestId: input.requestId,
+				commandType: "CREATE_AGENT",
+				message: {
+					text: displayText,
+					resources: [],
+					attachments: [],
+					inputResponse,
+				},
 			});
 
 			this.agent?.builderConversationQueued();
@@ -903,7 +878,7 @@ export class ConversationsService {
 			await this.assertWorkspaceMember(userId);
 		}
 
-		await this.db.$transaction(async (tx) => {
+		await scopedTransaction(this.db, async (tx) => {
 			await tx.agentBuilderArtifact.deleteMany({
 				where: { conversationId: id, versionId: null },
 			});
@@ -963,22 +938,70 @@ export class ConversationsService {
 		};
 	}
 
+	private async storeBuilderSubmission(
+		conversationId: string,
+		data: Prisma.AgentConversationSubmissionCreateArgs["data"],
+	): Promise<{ id: string }> {
+		return scopedTransaction(this.db, async (tx) => {
+			const submission = await tx.agentConversationSubmission.create({
+				data,
+				select: { id: true },
+			});
+
+			await tx.agentConversation.update({
+				where: { id: conversationId },
+				data: { lastMessageAt: new Date(), lastReadAt: new Date() },
+			});
+
+			return submission;
+		});
+	}
+
 	private attachmentWrites(
 		attachments: BuilderConversationCreateInput["attachments"],
+	): Prisma.AgentConversationAttachmentUncheckedCreateWithoutSubmissionInput[] {
+		return attachments.map((attachment, position) =>
+			this.attachmentWrite(
+				{
+					name: attachment.name,
+					mediaType: attachment.type,
+					size: attachment.size,
+					content: Buffer.from(attachment.contentBase64, "base64"),
+				},
+				position,
+			),
+		);
+	}
+
+	private attachmentWrite(
+		{
+			name,
+			mediaType,
+			size,
+			content,
+		}: {
+			name: string;
+			mediaType: string;
+			size: number;
+			content: Prisma.AgentConversationAttachmentUncheckedCreateWithoutSubmissionInput["content"];
+		},
+		position: number,
 	) {
-		return attachments.map((attachment, position) => ({
-			name: attachment.name,
-			mediaType: attachment.type,
-			size: attachment.size,
-			content: Buffer.from(attachment.contentBase64, "base64"),
+		return {
+			name,
+			mediaType,
+			size,
+			content,
 			position,
-		}));
+		};
 	}
 
 	private async submissionAttachmentWrites(
 		input: BuilderConversationSubmitInput,
 		userId: string,
-	) {
+	): Promise<
+		Prisma.AgentConversationAttachmentUncheckedCreateWithoutSubmissionInput[]
+	> {
 		const referencedIds = input.attachments.flatMap((attachment) =>
 			"contentBase64" in attachment ? [] : [attachment.id],
 		);
@@ -1010,13 +1033,15 @@ export class ConversationsService {
 
 		return input.attachments.map((attachment, position) => {
 			if ("contentBase64" in attachment) {
-				return {
-					name: attachment.name,
-					mediaType: attachment.type,
-					size: attachment.size,
-					content: Buffer.from(attachment.contentBase64, "base64"),
+				return this.attachmentWrite(
+					{
+						name: attachment.name,
+						mediaType: attachment.type,
+						size: attachment.size,
+						content: Buffer.from(attachment.contentBase64, "base64"),
+					},
 					position,
-				};
+				);
 			}
 
 			const stored = referencedById.get(attachment.id);
@@ -1025,20 +1050,17 @@ export class ConversationsService {
 					"One or more attachments are no longer available.",
 				);
 			}
-			return {
-				name: stored.name,
-				mediaType: stored.mediaType,
-				size: stored.size,
-				content: stored.content,
-				position,
-			};
+			return this.attachmentWrite(stored, position);
 		});
 	}
 
 	private async assertWorkspaceMember(userId: string): Promise<void> {
 		const member = await this.db.member.findUnique({
 			where: {
-				organizationId_userId: { organizationId: WORKSPACE_ID, userId },
+				organizationId_userId: {
+					organizationId: currentOrganizationId(),
+					userId,
+				},
 			},
 			select: { id: true },
 		});

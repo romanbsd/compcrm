@@ -3,6 +3,7 @@ import type { AgentRunStatus } from "@crm/db/enums";
 
 export type LockedAgentRun = {
 	id: string;
+	organizationId: string;
 	agentId: string;
 	versionId: string;
 	status: AgentRunStatus;
@@ -16,7 +17,7 @@ export async function lockAgentRun(
 	runId: string,
 ): Promise<LockedAgentRun> {
 	const [run] = await tx.$queryRaw<LockedAgentRun[]>`
-		SELECT id, "agentId", "versionId", status, "sessionId", "startedAt", "nextEventSequence"
+		SELECT id, "organizationId", "agentId", "versionId", status, "sessionId", "startedAt", "nextEventSequence"
 		FROM "agentRun"
 		WHERE id = ${runId}
 		FOR UPDATE

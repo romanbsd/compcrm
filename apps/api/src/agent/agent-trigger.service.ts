@@ -1,11 +1,12 @@
-import { type Db, type FieldEntity, Prisma } from "@crm/db";
+import { type FieldEntity, Prisma } from "@crm/db";
 import { PRIORITY } from "@crm/db/agent-tasks";
 import { CRM_EVENT_CATALOG, type CrmEventType } from "@crm/db/crm-events";
 import { RECORD_ID_COLUMNS } from "@crm/db/fields";
 import { lockIdempotencyKey } from "@crm/db/idempotency";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { fieldBackfillPayload } from "@crm/validation/field-backfill";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { AGENT_DISPATCH } from "./agent-dispatch.config";
 import { bridge } from "./bridge";
 
@@ -48,7 +49,7 @@ export class AgentTriggerService {
 	private readonly logger = new Logger(AgentTriggerService.name);
 	private readonly cancellationsDelivered = new Set<string>();
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async companyCreated(
 		companyId: string,
@@ -150,7 +151,7 @@ export class AgentTriggerService {
 	): Promise<Result> {
 		let queued = false;
 
-		const result = await this.db.$transaction((tx) =>
+		const result = await scopedTransaction(this.db, (tx) =>
 			work(tx, {
 				slackChannelJoinRequested: async (channelId, channelName) => {
 					const created = await this.queueSlackChannelJoin(
@@ -198,7 +199,7 @@ export class AgentTriggerService {
 		) => Promise<Result>,
 	): Promise<Result> {
 		const queued: CrmEventInput[] = [];
-		const result = await this.db.$transaction((tx) =>
+		const result = await scopedTransaction(this.db, (tx) =>
 			work(tx, async (input) => {
 				await this.createEventTask(tx, input);
 				queued.push(input);
@@ -234,7 +235,7 @@ export class AgentTriggerService {
 
 		const queueOne = async (id: string): Promise<void> => {
 			try {
-				const outcome = await this.db.$transaction(async (tx) => {
+				const outcome = await scopedTransaction(this.db, async (tx) => {
 					await lockIdempotencyKey(
 						tx,
 						`agent-task:field-backfill:${entity}:${id}`,
@@ -494,7 +495,7 @@ export class AgentTriggerService {
 
 			const created = client
 				? await write(client)
-				: await this.db.$transaction(write);
+				: await scopedTransaction(this.db, write);
 			if (!created) return false;
 
 			this.logger.log({

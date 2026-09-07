@@ -1,4 +1,6 @@
 import { EnrichmentStatus } from "@crm/db";
+import { DIRECT_KINDS } from "@crm/db/agent-tasks";
+import { collapsing, runLimited } from "@crm/db/pool";
 import { fieldBackfillPayload } from "@crm/validation/field-backfill";
 import { APP_AUTH, type AppAuth } from "./app-auth";
 import { brandOutcome, runBrand } from "./brand";
@@ -6,7 +8,6 @@ import { queueEventAgentRuns } from "./custom-agent-dispatch";
 import { settledWithin } from "./deadline";
 import { DISPATCH } from "./dispatch-config";
 import { markRunning, settle } from "./enrichment";
-import { collapsing, runLimited } from "./pool";
 import { runPortrait } from "./portrait";
 import { runSlackChannelJoin } from "./slack-join-task";
 import { runSlackPeopleMatch } from "./slack-people";
@@ -14,9 +15,9 @@ import { staleTaskSweep } from "./stale-tasks";
 import {
 	claimDue,
 	completeTask,
-	DIRECT_KINDS,
 	type LeasedTask,
 	noteSession,
+	runTaskInTenant,
 } from "./tasks";
 
 export const VISIBLE_BATCH = DISPATCH.visible.batch;
@@ -54,9 +55,11 @@ export async function runDirect(
 	handle: (task: LeasedTask) => Promise<void> = handleDirect,
 	timeoutMs: number = DISPATCH.sweep.itemTimeoutMs,
 ): Promise<void> {
-	const work: Promise<DirectOutcome> = handle(task).then(
-		() => ({ finished: true }) as const,
-		(error) => ({ finished: false, reason: reasonOf(error) }) as const,
+	const work: Promise<DirectOutcome> = runTaskInTenant(task, () =>
+		handle(task).then(
+			() => ({ finished: true }) as const,
+			(error) => ({ finished: false, reason: reasonOf(error) }) as const,
+		),
 	);
 
 	const outcome = await settledWithin(work, timeoutMs);
@@ -80,7 +83,9 @@ async function reconcileDirect(
 ): Promise<void> {
 	if (outcome.finished) return;
 
-	await settle(task, EnrichmentStatus.FAILED, outcome.reason).catch(() => {});
+	await runTaskInTenant(task, () =>
+		settle(task, EnrichmentStatus.FAILED, outcome.reason).catch(() => {}),
+	);
 }
 
 async function handleDirect(task: LeasedTask): Promise<void> {
@@ -108,12 +113,15 @@ async function handleDirect(task: LeasedTask): Promise<void> {
 	}
 
 	if (task.kind === "slack-people-match") {
-		await completeTask(task.id, await runSlackPeopleMatch());
+		await completeTask(task.id, await runSlackPeopleMatch(task.organizationId));
 		return;
 	}
 
 	if (task.kind === "slack-channel-join") {
-		await completeTask(task.id, await runSlackChannelJoin(task.payload));
+		await completeTask(
+			task.id,
+			await runSlackChannelJoin(task.payload, task.organizationId),
+		);
 		return;
 	}
 
@@ -166,15 +174,17 @@ async function beginResearch(
 	start: (task: LeasedTask) => Promise<{ id: string }>,
 ): Promise<void> {
 	try {
-		await markRunning(task);
+		await runTaskInTenant(task, () => markRunning(task));
 	} catch (error) {
-		await settle(task, EnrichmentStatus.FAILED, reasonOf(error)).catch(
-			() => {},
+		await runTaskInTenant(task, () =>
+			settle(task, EnrichmentStatus.FAILED, reasonOf(error)).catch(() => {}),
 		);
 		return;
 	}
 
-	const send: Promise<StartOutcome> = start(task).then(
+	const send: Promise<StartOutcome> = runTaskInTenant(task, () =>
+		start(task),
+	).then(
 		(session) => ({ accepted: true, sessionId: session.id }) as const,
 		(error) => ({ accepted: false, reason: reasonOf(error) }) as const,
 	);
@@ -203,7 +213,9 @@ async function reconcileStart(
 		return;
 	}
 
-	await settle(task, EnrichmentStatus.FAILED, outcome.reason).catch(() => {});
+	await runTaskInTenant(task, () =>
+		settle(task, EnrichmentStatus.FAILED, outcome.reason).catch(() => {}),
+	);
 }
 
 export async function linkSession(
@@ -214,7 +226,7 @@ export async function linkSession(
 ): Promise<boolean> {
 	for (let attempt = 1; attempt <= link.attempts; attempt += 1) {
 		try {
-			await note(task.id, sessionId);
+			await runTaskInTenant(task, () => note(task.id, sessionId));
 			return true;
 		} catch (error) {
 			if (attempt < link.attempts) {
@@ -239,7 +251,9 @@ function reasonOf(cause: unknown): string {
 }
 
 export function taskAuth(task: LeasedTask, base: AppAuth = APP_AUTH): AppAuth {
-	const records: Record<string, string> = {};
+	const records: Record<string, string> = {
+		organizationId: task.organizationId,
+	};
 	if (task.contactId) records.contactId = task.contactId;
 	if (task.companyId) records.companyId = task.companyId;
 	if (task.dealId) records.dealId = task.dealId;

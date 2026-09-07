@@ -21,6 +21,13 @@ async function handler(request: Request): Promise<Response> {
 	if (!session) {
 		return Response.json({ error: "Not signed in." }, { status: 401 });
 	}
+	const organizationId = session.session.activeOrganizationId;
+	if (!organizationId) {
+		return Response.json(
+			{ error: "No organization is selected." },
+			{ status: 409 },
+		);
+	}
 
 	const url = new URL(request.url);
 	const target = `${AGENT_URL}${url.pathname}${url.search}`;
@@ -57,7 +64,7 @@ async function handler(request: Request): Promise<Response> {
 
 	if (requestedSession) {
 		const conversation = await db.agentConversation.findUnique({
-			where: { sessionId: requestedSession },
+			where: { sessionId: requestedSession, organizationId },
 			select: { userId: true },
 		});
 		if (conversation && conversation.userId !== session.user.id) {
@@ -72,6 +79,7 @@ async function handler(request: Request): Promise<Response> {
 		const conversation = await db.agentConversation.findFirst({
 			where: {
 				id: builderConversationId,
+				organizationId,
 				userId: session.user.id,
 				kind: "BUILDER",
 			},
@@ -96,6 +104,7 @@ async function handler(request: Request): Promise<Response> {
 				email: session.user.email,
 				name: session.user.name,
 			},
+			organizationId,
 			{
 				contactId: cuid(contactId),
 				companyId: cuid(companyId),

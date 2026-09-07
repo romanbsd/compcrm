@@ -1,34 +1,42 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { db } from "@crm/db";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
+import { type Db, db as globalDb } from "@crm/db";
+import { scopedDb } from "@crm/db/tenant-scope";
 import type { AgentTriggerService } from "../src/agent/agent-trigger.service";
 import { ActivityStampService } from "../src/crm/activity-stamp.service";
 import { ConversionService } from "../src/currency/conversion.service";
 import { DealsService } from "../src/deals/deals.service";
 import { FieldsService } from "../src/fields/fields.service";
 import { withDiscardedCrmEvents } from "./agent-trigger.stub";
+import { tenantBound, tenantContext, tenantTest } from "@crm/db/test-support";
 
 const suffix = process.env.TEST_RUN_ID ?? "deal-contacts-spec";
 const userId = `user-${suffix}`;
 const domain = `dealpeople-${suffix}.test`;
 const otherDomain = `elsewhere-${suffix}.test`;
+const organizationId = "workspace";
+const db = scopedDb as unknown as Db;
+const it = tenantTest(organizationId);
 
 const agent = {
 	withCrmEvents: withDiscardedCrmEvents,
 } as unknown as AgentTriggerService;
 
-const deals = new DealsService(
+const rawDeals = new DealsService(
 	db,
 	agent,
 	new ActivityStampService(db),
 	new ConversionService(db),
 	new FieldsService(db, { fieldBackfill: async () => undefined } as never),
 );
+const deals = tenantBound(organizationId, rawDeals);
 
 let companyId: string;
 let dealId: string;
 let championId: string;
 let colleagueId: string;
 let outsiderId: string;
+
+const inTenant = tenantContext(organizationId);
 
 async function clean() {
 	await db.deal.deleteMany({ where: { company: { domain } } });
@@ -38,13 +46,13 @@ async function clean() {
 	await db.company.deleteMany({
 		where: { domain: { in: [domain, otherDomain] } },
 	});
-	await db.user.deleteMany({ where: { id: userId } });
+	await globalDb.user.deleteMany({ where: { id: userId } });
 }
 
-beforeAll(async () => {
+async function seed() {
 	await clean();
 
-	await db.user.create({
+	await globalDb.user.create({
 		data: {
 			id: userId,
 			name: "Deal Rep",
@@ -54,30 +62,45 @@ beforeAll(async () => {
 	});
 
 	const company = await db.company.create({
-		data: { name: `People Co ${suffix}`, domain },
+		data: { organizationId, name: `People Co ${suffix}`, domain },
 		select: { id: true },
 	});
 	companyId = company.id;
 
 	const other = await db.company.create({
-		data: { name: `Other Co ${suffix}`, domain: otherDomain },
+		data: { organizationId, name: `Other Co ${suffix}`, domain: otherDomain },
 		select: { id: true },
 	});
 
 	const champion = await db.contact.create({
-		data: { firstName: "Ada", lastName: "Champion", companyId },
+		data: {
+			organizationId,
+			firstName: "Ada",
+			lastName: "Champion",
+			companyId,
+		},
 		select: { id: true },
 	});
 	championId = champion.id;
 
 	const colleague = await db.contact.create({
-		data: { firstName: "Beau", lastName: "Colleague", companyId },
+		data: {
+			organizationId,
+			firstName: "Beau",
+			lastName: "Colleague",
+			companyId,
+		},
 		select: { id: true },
 	});
 	colleagueId = colleague.id;
 
 	const outsider = await db.contact.create({
-		data: { firstName: "Cass", lastName: "Outsider", companyId: other.id },
+		data: {
+			organizationId,
+			firstName: "Cass",
+			lastName: "Outsider",
+			companyId: other.id,
+		},
 		select: { id: true },
 	});
 	outsiderId = outsider.id;
@@ -88,9 +111,11 @@ beforeAll(async () => {
 		ownerId: userId,
 	});
 	dealId = deal.id;
-});
+}
 
-afterAll(clean);
+beforeAll(() => inTenant(seed));
+
+afterAll(() => inTenant(clean));
 
 describe("bringing a contact onto a deal", () => {
 	it("rejects a database deal without a company", async () => {

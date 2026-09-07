@@ -30,6 +30,7 @@ export const DISPATCH = {
 
 	task: {
 		leaseMs: 10 * MINUTE_MS,
+		tenantConcurrency: 6,
 	},
 
 	reconcile: {

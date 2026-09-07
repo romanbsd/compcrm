@@ -1,11 +1,12 @@
 import {
-	type Db,
 	GoogleSyncStatus,
 	type MailboxSyncModel as MailboxSync,
 	type Prisma,
 } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, Logger } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import type { SyncSource } from "./mailbox.constants";
 
 export const SYNC_LEASE_MS = 300_000;
@@ -14,11 +15,17 @@ export const SYNC_LEASE_MS = 300_000;
 export class SyncStateService {
 	private readonly logger = new Logger(SyncStateService.name);
 
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly db: ScopedDb) {}
 
 	async get(userId: string, source: SyncSource): Promise<MailboxSync | null> {
 		return this.db.mailboxSync.findUnique({
-			where: { userId_source: { userId, source } },
+			where: {
+				organizationId_userId_source: {
+					organizationId: currentOrganizationId(),
+					userId,
+					source,
+				},
+			},
 		});
 	}
 
@@ -64,7 +71,13 @@ export class SyncStateService {
 		options: { autoCreate: boolean },
 	): Promise<MailboxSync> {
 		return this.db.mailboxSync.upsert({
-			where: { userId_source: { userId, source } },
+			where: {
+				organizationId_userId_source: {
+					organizationId: currentOrganizationId(),
+					userId,
+					source,
+				},
+			},
 			create: {
 				userId,
 				source,

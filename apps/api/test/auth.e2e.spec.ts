@@ -19,7 +19,6 @@ fallback("API_URL", "http://localhost:3001");
 fallback("ALLOWED_SIGN_IN", "example.com");
 fallback("GOOGLE_CLIENT_ID", "test-google-client-id");
 fallback("GOOGLE_CLIENT_SECRET", "test-google-client-secret");
-
 describe("Auth (e2e)", () => {
 	let app: INestApplication;
 
@@ -135,7 +134,9 @@ describe("Auth (e2e)", () => {
 
 	it("issues and refreshes OAuth tokens through PKCE", async () => {
 		const { db } = await import("@crm/db");
+		const { OAUTH_ORGANIZATION_CLAIM } = await import("@crm/auth");
 		const userId = `oauth-test-${crypto.randomUUID()}`;
+		const organizationId = `oauth-organization-${crypto.randomUUID()}`;
 		const sessionToken = `oauth-session-${crypto.randomUUID()}`;
 		const verifier = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll(
 			"-",
@@ -154,11 +155,29 @@ describe("Auth (e2e)", () => {
 				updatedAt: new Date(),
 			},
 		});
+		await db.organization.create({
+			data: {
+				id: organizationId,
+				name: "OAuth Test Organization",
+				slug: organizationId,
+				createdAt: new Date(),
+			},
+		});
+		await db.member.create({
+			data: {
+				id: `oauth-member-${crypto.randomUUID()}`,
+				userId,
+				organizationId,
+				role: "owner",
+				createdAt: new Date(),
+			},
+		});
 		await db.session.create({
 			data: {
 				id: sessionToken,
 				token: sessionToken,
 				userId,
+				activeOrganizationId: organizationId,
 				expiresAt: new Date(Date.now() + 60_000),
 				updatedAt: new Date(),
 			},
@@ -216,6 +235,7 @@ describe("Auth (e2e)", () => {
 			if (!encodedPayload) throw new Error("Access token has no payload.");
 			const accessTokenPayload = z
 				.object({ exp: z.number() })
+				.catchall(z.unknown())
 				.parse(
 					JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")),
 				);
@@ -225,6 +245,7 @@ describe("Auth (e2e)", () => {
 			expect(accessTokenPayload.exp).toBeLessThanOrEqual(
 				Math.floor(Date.now() / 1000) + 610,
 			);
+			expect(accessTokenPayload[OAUTH_ORGANIZATION_CLAIM]).toBe(organizationId);
 			const { verifyAccessTokenRequest } = await import("@crm/auth");
 			await verifyAccessTokenRequest(
 				new Request("http://localhost:3001/auth/session", {
@@ -262,8 +283,16 @@ describe("Auth (e2e)", () => {
 				.expect(200);
 			expect(refreshed.body.access_token).toEqual(expect.any(String));
 			expect(refreshed.body.refresh_token).toEqual(expect.any(String));
+			const refreshedPayload = JSON.parse(
+				Buffer.from(
+					refreshed.body.access_token.split(".")[1],
+					"base64url",
+				).toString("utf8"),
+			) as Record<string, unknown>;
+			expect(refreshedPayload[OAUTH_ORGANIZATION_CLAIM]).toBe(organizationId);
 		} finally {
 			await db.user.delete({ where: { id: userId } });
+			await db.organization.delete({ where: { id: organizationId } });
 		}
 	});
 

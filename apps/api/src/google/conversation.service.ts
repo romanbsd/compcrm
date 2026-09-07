@@ -1,7 +1,11 @@
 import type { Db, Prisma } from "@crm/db";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { z } from "zod";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 
 const storedRecipient = z.object({
 	email: z.string(),
@@ -15,10 +19,13 @@ const storedRecipients = z.array(z.json()).catch([]);
 
 @Injectable()
 export class ConversationService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(
+		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
+	) {}
 
 	async thread(threadId: string) {
-		const thread = await this.db.emailThread.findUnique({
+		const thread = await this.scoped.emailThread.findUnique({
 			where: { id: threadId },
 			select: {
 				id: true,
@@ -83,7 +90,7 @@ export class ConversationService {
 		if (emails.length === 0) return new Map();
 
 		const [contacts, users] = await Promise.all([
-			this.db.contact.findMany({
+			this.scoped.contact.findMany({
 				where: { email: { in: emails, mode: "insensitive" } },
 				select: { email: true, imageUrl: true },
 			}),
@@ -107,7 +114,7 @@ export class ConversationService {
 	}
 
 	async event(eventId: string) {
-		const event = await this.db.calendarEvent.findUnique({
+		const event = await this.scoped.calendarEvent.findUnique({
 			where: { id: eventId },
 			select: {
 				id: true,

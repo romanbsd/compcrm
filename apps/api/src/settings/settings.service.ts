@@ -1,4 +1,3 @@
-import type { Db } from "@crm/db";
 import {
 	DEFAULT_AGENT_MODEL,
 	maskKey,
@@ -9,10 +8,11 @@ import {
 	writeArchiveRetentionDays,
 	writeContextDevKey,
 } from "@crm/db/settings";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ResearchKeyService } from "../agent/research-key.service";
 import { BackfillService } from "../backfill/backfill.service";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { ModelCatalogService } from "./model-catalog.service";
 import type {
 	AgentModelSettings,
@@ -26,7 +26,7 @@ export class SettingsService {
 	private readonly logger = new Logger(SettingsService.name);
 
 	constructor(
-		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly db: ScopedDb,
 		private readonly catalog: ModelCatalogService,
 		private readonly researchKeys: ResearchKeyService,
 		private readonly backfill: BackfillService,

@@ -15,6 +15,7 @@ export const createPayload = z.object({
 		.max(80)
 		.regex(/^[a-z0-9-_]+$/, "Use lowercase letters, numbers and dashes."),
 	isPrivate: z.boolean(),
+	organizationId: z.string().trim().min(1).max(120),
 });
 
 export const createReply = z.object({

@@ -1,3 +1,4 @@
+import { workspaceGate } from "@crm/validation/workspace-gate";
 import { Inject } from "@nestjs/common";
 import {
 	Ctx,
@@ -8,8 +9,14 @@ import {
 	UseMiddlewares,
 } from "nestjs-trpc";
 import type { z } from "zod";
-import type { AuthedTrpcContext } from "../trpc/context.types";
-import { AuthMiddleware } from "../trpc/middlewares/auth.middleware";
+import type {
+	AuthedTrpcContext,
+	SessionTrpcContext,
+} from "../trpc/context.types";
+import {
+	AuthMiddleware,
+	SessionMiddleware,
+} from "../trpc/middlewares/auth.middleware";
 import { restMeta } from "../trpc/openapi";
 import {
 	memberListInput,
@@ -22,7 +29,6 @@ import {
 import { WorkspaceService } from "./workspace.service";
 
 @Router({ alias: "workspace" })
-@UseMiddlewares(AuthMiddleware)
 export class WorkspaceRouter {
 	constructor(
 		@Inject(WorkspaceService) private readonly workspace: WorkspaceService,
@@ -32,8 +38,18 @@ export class WorkspaceRouter {
 		output: workspaceOutput,
 		meta: restMeta("GET", "/workspace", ["Workspace"]),
 	})
+	@UseMiddlewares(AuthMiddleware)
 	async get(@Ctx() ctx: AuthedTrpcContext) {
 		return this.workspace.get(ctx.user.id);
+	}
+
+	@Query({ output: workspaceGate })
+	@UseMiddlewares(SessionMiddleware)
+	async gate(@Ctx() ctx: SessionTrpcContext) {
+		return this.workspace.gate(
+			ctx.user.id,
+			ctx.session.session.activeOrganizationId,
+		);
 	}
 
 	@Query({
@@ -41,6 +57,7 @@ export class WorkspaceRouter {
 		output: memberListOutput,
 		meta: restMeta("POST", "/workspace/members/search", ["Workspace"]),
 	})
+	@UseMiddlewares(AuthMiddleware)
 	async members(
 		@Ctx() ctx: AuthedTrpcContext,
 		@Input() input: z.infer<typeof memberListInput>,
@@ -53,6 +70,7 @@ export class WorkspaceRouter {
 		output: workspaceOutput,
 		meta: restMeta("PATCH", "/workspace", ["Workspace"]),
 	})
+	@UseMiddlewares(AuthMiddleware)
 	async update(
 		@Ctx() ctx: AuthedTrpcContext,
 		@Input() input: z.infer<typeof updateWorkspaceInput>,
@@ -67,6 +85,7 @@ export class WorkspaceRouter {
 			"Workspace",
 		]),
 	})
+	@UseMiddlewares(AuthMiddleware)
 	async setMemberRole(
 		@Ctx() ctx: AuthedTrpcContext,
 		@Input() input: z.infer<typeof setMemberRoleInput>,

@@ -1,13 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { db } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { scopedDb } from "@crm/db/tenant-scope";
 import { AgentQueueService } from "../src/agent/agent-queue.service";
+import { tenantBound } from "@crm/db/test-support";
+import { ensureTestWorkspace } from "./workspace.fixture";
 
 const suffix = process.env.TEST_RUN_ID ?? "agent-queue-spec";
 const email = `badge-${suffix}@example.test`;
 const name = `Badge Co ${suffix}`;
 const kind = "test-queue-badge";
+const organizationId = `agent-queue-organization-${suffix}`;
 
-const queue = new AgentQueueService(db);
+const rawQueue = new AgentQueueService(scopedDb as never);
+const queue = tenantBound(organizationId, rawQueue);
 
 const DAY_MS = 86_400_000;
 
@@ -15,44 +21,57 @@ let contactId: string;
 let companyId: string;
 
 async function clean() {
-	await db.agentTask.deleteMany({ where: { kind } });
-	await db.contact.deleteMany({ where: { email } });
-	await db.company.deleteMany({ where: { name } });
+	await runInTenant(organizationId, async () => {
+		await scopedDb.agentTask.deleteMany({ where: { kind } });
+		await scopedDb.contact.deleteMany({ where: { email } });
+		await scopedDb.company.deleteMany({ where: { name } });
+	});
+	await db.organization.deleteMany({ where: { id: organizationId } });
 }
 
 beforeAll(async () => {
 	await clean();
+	await ensureTestWorkspace(organizationId, organizationId);
 
-	const contact = await db.contact.create({
-		data: { firstName: "Badge", lastName: "Later", email },
-		select: { id: true },
-	});
-	const company = await db.company.create({
-		data: { name },
-		select: { id: true },
-	});
+	await runInTenant(organizationId, async () => {
+		const contact = await scopedDb.contact.create({
+			data: {
+				organizationId,
+				firstName: "Badge",
+				lastName: "Later",
+				email,
+			},
+			select: { id: true },
+		});
+		const company = await scopedDb.company.create({
+			data: { organizationId, name },
+			select: { id: true },
+		});
 
-	contactId = contact.id;
-	companyId = company.id;
+		contactId = contact.id;
+		companyId = company.id;
 
-	await db.agentTask.create({
-		data: {
-			kind,
-			reason: "recheck in three months",
-			dueAt: new Date(Date.now() + 90 * DAY_MS),
-			budget: 4,
-			contactId,
-		},
-	});
+		await scopedDb.agentTask.create({
+			data: {
+				organizationId,
+				kind,
+				reason: "recheck in three months",
+				dueAt: new Date(Date.now() + 90 * DAY_MS),
+				budget: 4,
+				contactId,
+			},
+		});
 
-	await db.agentTask.create({
-		data: {
-			kind,
-			reason: "due now",
-			dueAt: new Date(Date.now() - 60_000),
-			budget: 4,
-			companyId,
-		},
+		await scopedDb.agentTask.create({
+			data: {
+				organizationId,
+				kind,
+				reason: "due now",
+				dueAt: new Date(Date.now() - 60_000),
+				budget: 4,
+				companyId,
+			},
+		});
 	});
 });
 

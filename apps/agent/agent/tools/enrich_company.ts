@@ -2,7 +2,10 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { runBrand } from "../lib/brand";
 import { spend } from "../lib/focus";
-import { assertResearchPurpose } from "../lib/session-purpose";
+import {
+	assertResearchPurpose,
+	runInSessionTenant,
+} from "../lib/session-purpose";
 
 export default defineTool({
 	description:
@@ -18,26 +21,28 @@ export default defineTool({
 	}),
 	async execute({ companyId, fresh }, ctx) {
 		assertResearchPurpose(ctx);
-		const result = await runBrand({ companyId, fresh, spend });
+		return runInSessionTenant(ctx, async () => {
+			const result = await runBrand({ companyId, fresh, spend });
 
-		if (!result.enriched) {
+			if (!result.enriched) {
+				return {
+					enriched: false as const,
+					reason: result.reason,
+					retryable: result.retryable,
+				};
+			}
+
+			const filled = result.filled ?? [];
+
 			return {
-				enriched: false as const,
-				reason: result.reason,
-				retryable: result.retryable,
+				enriched: true as const,
+				filled,
+				mirrored: result.mirrored ?? [],
+				note:
+					filled.length === 0
+						? "Everything it returned was already on the record."
+						: undefined,
 			};
-		}
-
-		const filled = result.filled ?? [];
-
-		return {
-			enriched: true as const,
-			filled,
-			mirrored: result.mirrored ?? [],
-			note:
-				filled.length === 0
-					? "Everything it returned was already on the record."
-					: undefined,
-		};
+		});
 	},
 });

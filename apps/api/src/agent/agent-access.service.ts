@@ -1,25 +1,26 @@
 import {
+	activeWorkspaceRoleOf,
 	isWorkspaceAdmin,
 	toWorkspaceRole,
-	WORKSPACE_ID,
 	type WorkspaceRole,
-	workspaceRoleOf,
 } from "@crm/auth";
-import type { Db, Prisma } from "@crm/db";
+import type { Prisma } from "@crm/db";
+import { currentOrganizationId } from "@crm/db/tenant-context";
+import type { ScopedDb } from "@crm/db/tenant-scope";
 import {
 	ForbiddenException,
 	Injectable,
 	NotFoundException,
 } from "@nestjs/common";
-import { InjectDatabase } from "../database/database.constants";
+import { InjectScopedDatabase } from "../database/database.constants";
 import { canReadAgent, isPrivateAgentDraft } from "./agent-visibility";
 
 @Injectable()
 export class AgentAccessService {
-	constructor(@InjectDatabase() private readonly db: Db) {}
+	constructor(@InjectScopedDatabase() private readonly scoped: ScopedDb) {}
 
 	async assertMember(userId: string): Promise<WorkspaceRole> {
-		const role = await workspaceRoleOf(userId);
+		const role = await activeWorkspaceRoleOf(userId);
 
 		if (!role) {
 			throw new ForbiddenException("You are not a member of this workspace.");
@@ -36,7 +37,7 @@ export class AgentAccessService {
 		const [member] = await tx.$queryRaw<Array<{ role: string }>>`
 			SELECT role
 			FROM "member"
-			WHERE "organizationId" = ${WORKSPACE_ID}
+			WHERE "organizationId" = ${currentOrganizationId()}
 				AND "userId" = ${userId}
 			FOR SHARE
 		`;
@@ -76,7 +77,7 @@ export class AgentAccessService {
 
 	async assertCanRead(agentId: string, userId: string) {
 		const role = await this.assertMember(userId);
-		const agent = await this.db.agentDefinition.findFirst({
+		const agent = await this.scoped.agentDefinition.findFirst({
 			where: { id: agentId, status: { not: "DELETED" } },
 			select: {
 				id: true,

@@ -10,7 +10,8 @@ import {
 	FieldType,
 	RateSource,
 } from "../src/generated/prisma/enums";
-import { readReportingCurrency, SETTINGS_ID } from "../src/settings";
+import { runInTenant } from "../src/tenant-context";
+import { scopedDb } from "../src/tenant-scope";
 
 function makeRandom(seed: number): () => number {
 	let a = seed;
@@ -375,9 +376,15 @@ async function seedCompanies(
 	const companies = [];
 
 	for (const company of COMPANIES) {
-		const row = await db.company.upsert({
-			where: { domain: company.domain },
+		const row = await scopedDb.company.upsert({
+			where: {
+				organizationId_domain: {
+					organizationId: SEED_ORGANIZATION_ID,
+					domain: company.domain,
+				},
+			},
 			create: {
+				organizationId: SEED_ORGANIZATION_ID,
 				name: company.name,
 				domain: company.domain,
 				website: `https://${company.domain}`,
@@ -415,7 +422,7 @@ async function seedIcons(
 		const iconUrl =
 			(await mirror(source, `companies/${company.id}/icon`)) ?? source;
 
-		await db.company.updateMany({
+		await scopedDb.company.updateMany({
 			where: { id: company.id, iconUrl: null },
 			data: { iconUrl },
 		});
@@ -461,9 +468,16 @@ async function upsertField(
 	options: readonly string[] = [],
 ): Promise<SeededField> {
 	const key = fieldKeyFromLabel(label);
-	const definition = await db.fieldDefinition.upsert({
-		where: { entity_key: { entity, key } },
+	const definition = await scopedDb.fieldDefinition.upsert({
+		where: {
+			organizationId_entity_key: {
+				organizationId: SEED_ORGANIZATION_ID,
+				entity,
+				key,
+			},
+		},
 		create: {
+			organizationId: SEED_ORGANIZATION_ID,
 			entity,
 			key,
 			label,
@@ -474,6 +488,7 @@ async function upsertField(
 			position,
 			options: {
 				create: options.map((optionLabel, index) => ({
+					organizationId: SEED_ORGANIZATION_ID,
 					label: optionLabel,
 					position: index,
 				})),
@@ -542,7 +557,7 @@ async function seedCompanyFieldValues(
 		const accountType = pick(ACCOUNT_TYPES);
 
 		await Promise.all([
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.accountType.id,
@@ -550,13 +565,14 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.accountType.id,
 					companyId: company.id,
 					optionId: optionIdFor(fields.accountType, accountType),
 				},
 				update: {},
 			}),
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.segment.id,
@@ -564,13 +580,14 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.segment.id,
 					companyId: company.id,
 					optionId: optionIdFor(fields.segment, pick(SEGMENT_TIERS)),
 				},
 				update: {},
 			}),
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.territory.id,
@@ -578,13 +595,14 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.territory.id,
 					companyId: company.id,
 					optionId: optionIdFor(fields.territory, pick(TERRITORIES)),
 				},
 				update: {},
 			}),
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.lifecycleStage.id,
@@ -592,6 +610,7 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.lifecycleStage.id,
 					companyId: company.id,
 					optionId: optionIdFor(
@@ -601,7 +620,7 @@ async function seedCompanyFieldValues(
 				},
 				update: {},
 			}),
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.leadSource.id,
@@ -609,13 +628,14 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.leadSource.id,
 					companyId: company.id,
 					optionId: optionIdFor(fields.leadSource, pick(LEAD_SOURCES)),
 				},
 				update: {},
 			}),
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.icpFitScore.id,
@@ -623,13 +643,14 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.icpFitScore.id,
 					companyId: company.id,
 					number: integer(40, 95),
 				},
 				update: {},
 			}),
-			db.fieldValue.upsert({
+			scopedDb.fieldValue.upsert({
 				where: {
 					fieldId_companyId: {
 						fieldId: fields.bdrOwner.id,
@@ -637,6 +658,7 @@ async function seedCompanyFieldValues(
 					},
 				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					fieldId: fields.bdrOwner.id,
 					companyId: company.id,
 					userId: pick(ownerIds),
@@ -664,9 +686,15 @@ async function seedContacts(
 			if (used.has(email)) continue;
 			used.add(email);
 
-			const contact = await db.contact.upsert({
-				where: { email },
+			const contact = await scopedDb.contact.upsert({
+				where: {
+					organizationId_email: {
+						organizationId: SEED_ORGANIZATION_ID,
+						email,
+					},
+				},
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					firstName,
 					lastName,
 					email,
@@ -687,7 +715,7 @@ async function seedContacts(
 	for (const company of companies) {
 		const first = contacts.find((contact) => contact.companyId === company.id);
 		if (!first) continue;
-		await db.company.update({
+		await scopedDb.company.update({
 			where: { id: company.id },
 			data: { primaryContactId: first.id },
 		});
@@ -714,23 +742,24 @@ const SEED_RATES: SeedRates = {
 };
 
 const DEAL_CURRENCIES = ["USD", "USD", "USD", "EUR", "GBP", "JPY", "CAD"];
+const SEED_ORGANIZATION_ID = "workspace";
 
 let seedBase = "USD";
 
 async function seedRates(): Promise<number> {
 	const asOf = daysFromNow(-1);
 
-	await db.appSetting.upsert({
-		where: { id: SETTINGS_ID },
+	await scopedDb.appSetting.upsert({
+		where: { organizationId: SEED_ORGANIZATION_ID },
 		create: {
-			id: SETTINGS_ID,
+			organizationId: SEED_ORGANIZATION_ID,
 			reportingCurrency: DEFAULT_REPORTING_CURRENCY,
 		},
 		update: {},
-		select: { id: true },
+		select: { organizationId: true },
 	});
 
-	seedBase = await readReportingCurrency(db);
+	seedBase = DEFAULT_REPORTING_CURRENCY;
 
 	if (seedBase !== "USD") {
 		console.log(
@@ -809,9 +838,10 @@ async function seedDeals(
 				12,
 			);
 
-			await db.deal.upsert({
+			await scopedDb.deal.upsert({
 				where: { id },
 				create: {
+					organizationId: SEED_ORGANIZATION_ID,
 					id,
 					name:
 						n === 0
@@ -854,9 +884,10 @@ async function seedDeals(
 				(contact) => contact.companyId === company.id,
 			);
 			for (const contact of companyContacts.slice(0, integer(1, 2))) {
-				await db.dealContact.upsert({
+				await scopedDb.dealContact.upsert({
 					where: { dealId_contactId: { dealId: id, contactId: contact.id } },
 					create: {
+						organizationId: SEED_ORGANIZATION_ID,
 						dealId: id,
 						contactId: contact.id,
 						role: chance(0.5) ? "Champion" : "Decision maker",
@@ -878,13 +909,14 @@ async function seedActivities(
 	deals: SeededDeal[],
 	ownerIds: string[],
 ): Promise<number> {
-	const existing = await db.activity.count();
+	const existing = await scopedDb.activity.count();
 	if (existing > 0) {
 		console.log(`Activities already seeded (${existing}) — skipping.`);
 		return existing;
 	}
 
 	type ActivityRow = {
+		organizationId: string;
 		type: ActivityType;
 		subject: string | null;
 		body: string | null;
@@ -902,6 +934,7 @@ async function seedActivities(
 	const rows: ActivityRow[] = [];
 
 	const base = (companyId: string, createdById: string, createdAt: Date) => ({
+		organizationId: SEED_ORGANIZATION_ID,
 		companyId,
 		contactId: null,
 		dealId: null,
@@ -987,19 +1020,40 @@ async function seedActivities(
 		});
 	}
 
-	await db.activity.createMany({ data: rows });
+	await scopedDb.activity.createMany({ data: rows });
 	return rows.length;
 }
 
 async function main() {
-	const rates = await seedRates();
-	const ownerIds = await seedOwners();
-	const companies = await seedCompanies(ownerIds);
-	const contacts = await seedContacts(companies, ownerIds);
-	const deals = await seedDeals(companies, contacts, ownerIds);
-	const activities = await seedActivities(companies, contacts, deals, ownerIds);
-	const companyFields = await seedCompanyFields();
-	await seedCompanyFieldValues(companyFields, companies, ownerIds);
+	await db.organization.upsert({
+		where: { id: SEED_ORGANIZATION_ID },
+		create: {
+			id: SEED_ORGANIZATION_ID,
+			name: "Workspace",
+			slug: "workspace",
+			createdAt: new Date(),
+		},
+		update: {},
+	});
+	const { activities, companies, contacts, deals, rates } = await runInTenant(
+		SEED_ORGANIZATION_ID,
+		async () => {
+			const rates = await seedRates();
+			const ownerIds = await seedOwners();
+			const companies = await seedCompanies(ownerIds);
+			const contacts = await seedContacts(companies, ownerIds);
+			const deals = await seedDeals(companies, contacts, ownerIds);
+			const activities = await seedActivities(
+				companies,
+				contacts,
+				deals,
+				ownerIds,
+			);
+			const companyFields = await seedCompanyFields();
+			await seedCompanyFieldValues(companyFields, companies, ownerIds);
+			return { activities, companies, contacts, deals, rates };
+		},
+	);
 
 	console.log(
 		`Seeded ${companies.length} companies, ${contacts.length} contacts, ` +

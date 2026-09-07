@@ -1,8 +1,13 @@
 import { isMicrosoftConfigured, signsInWithMicrosoft } from "@crm/auth";
 import type { Db, Prisma } from "@crm/db";
+import { runInTenant } from "@crm/db/tenant-context";
+import { type ScopedDb, scopedTransaction } from "@crm/db/tenant-scope";
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ActivityStampService } from "../crm/activity-stamp.service";
-import { InjectDatabase } from "../database/database.constants";
+import {
+	InjectDatabase,
+	InjectScopedDatabase,
+} from "../database/database.constants";
 import { MailboxTokenService } from "../mailbox/mailbox-token.service";
 import { SyncStateService } from "../mailbox/sync-state.service";
 import {
@@ -26,6 +31,7 @@ export class MicrosoftConnectionService {
 
 	constructor(
 		@InjectDatabase() private readonly db: Db,
+		@InjectScopedDatabase() private readonly scoped: ScopedDb,
 		private readonly tokens: MailboxTokenService,
 		private readonly state: SyncStateService,
 		private readonly stamp: ActivityStampService,
@@ -106,11 +112,18 @@ export class MicrosoftConnectionService {
 					scope: { contains: SCOPE_FOR_SOURCE[source] },
 				})),
 			},
-			select: { userId: true },
+			select: {
+				userId: true,
+				user: { select: { members: { select: { organizationId: true } } } },
+			},
 		});
 
-		for (const userId of new Set(accounts.map((row) => row.userId))) {
-			await this.onConnected(userId);
+		for (const account of accounts) {
+			for (const member of account.user.members) {
+				await runInTenant(member.organizationId, () =>
+					this.onConnected(account.userId),
+				);
+			}
 		}
 	}
 
@@ -120,7 +133,8 @@ export class MicrosoftConnectionService {
 			outlookMessageId: { not: null },
 		};
 
-		const purged = await this.db.$transaction(
+		const purged = await scopedTransaction(
+			this.scoped,
 			async (tx) => {
 				const touched = await tx.emailMessage.findMany({
 					where: mine,
