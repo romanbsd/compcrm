@@ -110,6 +110,22 @@ export class EnvironmentVariables {
 	BLOB_READ_WRITE_TOKEN?: string;
 
 	@IsOptional()
+	@IsString()
+	R2_ACCOUNT_ID?: string;
+
+	@IsOptional()
+	@IsString()
+	R2_ACCESS_KEY_ID?: string;
+
+	@IsOptional()
+	@IsString()
+	R2_SECRET_ACCESS_KEY?: string;
+
+	@IsOptional()
+	@IsString()
+	R2_BUCKET?: string;
+
+	@IsOptional()
 	@IsUrl(
 		{ require_tld: false, require_protocol: true },
 		{

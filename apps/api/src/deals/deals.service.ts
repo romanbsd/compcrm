@@ -21,6 +21,7 @@ import {
 } from "@nestjs/common";
 import { AgentTriggerService } from "../agent/agent-trigger.service";
 import { ARCHIVE } from "../archive/archive-config";
+import { enqueueProjectAssetPurge } from "../assets/asset-purge";
 import {
 	ActivityStampService,
 	type StampTargets,
@@ -462,6 +463,7 @@ export class DealsService {
 
 				const targets = await this.stamp.targetsOf({ dealId: id }, tx);
 				await tx.agentTask.deleteMany({ where: { dealId: id } });
+				await enqueueProjectAssetPurge(tx, id);
 
 				const deal = await tx.deal.delete({
 					where: { id },

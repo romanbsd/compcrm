@@ -6,6 +6,7 @@ import { ActivitiesModule } from "./activities/activities.module";
 import { AgentModule } from "./agent/agent.module";
 import { ApiKeysModule } from "./api-keys/api-keys.module";
 import { ArchiveModule } from "./archive/archive.module";
+import { AssetsModule } from "./assets/assets.module";
 import { AuthModule } from "./auth/auth.module";
 import { BackfillModule } from "./backfill/backfill.module";
 import { AppCacheModule } from "./cache/cache.module";
@@ -83,6 +84,7 @@ import { WorkspaceModule } from "./workspace/workspace.module";
 		TelemetryModule,
 		TrackingModule,
 		ArchiveModule,
+		AssetsModule,
 		SavedViewsModule,
 		PushTokensModule,
 	],

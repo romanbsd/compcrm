@@ -20,6 +20,10 @@
 		{
 			"path": "/internal/archive/prune",
 			"schedule": "0 5 * * *"
+		},
+		{
+			"path": "/internal/assets/process",
+			"schedule": "* * * * *"
 		}
 	]
 }

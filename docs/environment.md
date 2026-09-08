@@ -96,6 +96,15 @@ list fails closed.** Parsed on demand. `packages/auth/src/workspace.ts`.
 
 ## Typed, validated env
 
+### Optional asset storage
+
+`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` configure private file storage.
+All four values must be present to issue upload or download grants.
+Missing values disable storage transfers without preventing API startup.
+Metadata lists and deletion-state reads remain available.
+The existing `CRON_SECRET` also protects the asset storage worker.
+See [asset storage operations](./assets-storage-operations.md) for bucket settings and required R2 checks.
+
 `apps/api/src/config/env.validation.ts` runs via `ConfigModule.forRoot({ validate })`,
 and lists every variable the API reads and nothing else.
 

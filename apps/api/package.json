@@ -23,6 +23,8 @@
 		"clean": "rm -rf .turbo dist node_modules src/generated"
 	},
 	"dependencies": {
+		"@aws-sdk/client-s3": "^3.1127.0",
+		"@aws-sdk/s3-request-presigner": "^3.1127.0",
 		"@crm/auth": "workspace:*",
 		"@crm/db": "workspace:*",
 		"@crm/env": "workspace:*",

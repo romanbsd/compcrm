@@ -13,6 +13,8 @@ type TrpcErrorCode =
 	| "NOT_FOUND"
 	| "CONFLICT"
 	| "TOO_MANY_REQUESTS"
+	| "PAYLOAD_TOO_LARGE"
+	| "SERVICE_UNAVAILABLE"
 	| "INTERNAL_SERVER_ERROR";
 
 function statusToTrpcCode(status: number): TrpcErrorCode {
@@ -29,6 +31,10 @@ function statusToTrpcCode(status: number): TrpcErrorCode {
 			return "CONFLICT";
 		case 429:
 			return "TOO_MANY_REQUESTS";
+		case 413:
+			return "PAYLOAD_TOO_LARGE";
+		case 503:
+			return "SERVICE_UNAVAILABLE";
 		default:
 			return "INTERNAL_SERVER_ERROR";
 	}
@@ -50,6 +56,7 @@ export class DomainErrorMiddleware implements TRPCMiddleware {
 			throw new TRPCError({
 				code: statusToTrpcCode(cause.getStatus()),
 				message: cause.message,
+				cause,
 			});
 		}
 

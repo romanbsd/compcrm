@@ -16,6 +16,7 @@ const publicProcedure = t.procedure;
 import { timelineInput, timelineOutput, timelineCountsInput, timelineCountsOutput, myTasksInput, myTasksOutput, activityCreateInput, activityCreateOutput, completeInput, completeOutput } from "../activities/activities.contracts";
 import { agentListOutput, agentReviseInput, agentReviseOutput, agentIdInput, agentFilesOutput, agentSaveFileInput, agentSaveFileOutput, agentByIdOutput, agentHistoryInput, agentHistoryOutput, agentActivityOutput, agentUpdateInput, agentUpdateOutput, agentDeployInput, agentDeployOutput, agentPauseOutput, agentResumeOutput, agentArchiveOutput, agentRestoreOutput, agentRemoveOutput, agentRunNowInput, agentRunNowOutput, agentRetryRunInput, agentRetryRunOutput, agentCancelRunInput, agentCancelRunOutput } from "../agent/agents.contracts";
 import { apiKeyListInput, apiKeyListOutput, createApiKeyInput, createApiKeyOutput, revokeApiKeyInput, revokeApiKeyOutput } from "../api-keys/api-keys.contracts";
+import { projectUploadCreateInput, uploadGrantSchema, projectUploadInput, uploadStateSchema, uploadConfirmationSchema, uploadCancellationSchema, customerAssetListArgs, assetListSchema, projectAssetListInput, projectAssetInput, assetDetailSchema, assetDownloadSchema, assetDeletionSchema } from "../assets/assets.contracts";
 import { companyListInput, companyListOutput, companyIdInput, companyDetailOutput, companyOptionsInput, companyOptionOutput, companyCreateInput, companySummaryOutput, companyUpdateArgs, companyArchiveResultOutput, companyBulkOwnerInput, companyBulkResultOutput, companyBulkInput, companyEnrichOutput, companyResearchOutput, setPrimaryContactInput, companySetPrimaryContactOutput } from "../companies/companies.contracts";
 import { contactListInput, contactListOutput, contactIdInput, contactByIdOutput, contactCreateInput, contactBasicOutput, contactUpdateArgs, contactNameOutput, contactEnrichOutput, contactBulkOwnerInput, bulkResultOutput, contactBulkCompanyInput, contactBulkInput, factDecisionInput, decideFactOutput } from "../contacts/contacts.contracts";
 import { conversationListInput, conversationListOutput, builderListOutput, builderResourceSearchInput, builderResourcesOutput, conversationIdInput, builderConversationDetailOutput, conversationEventsInput, conversationEventsOutput, conversationSaveInput, conversationIdOutput, builderConversationCreateInput, builderConversationSubmitInput, builderQuestionResponseInput, builderResponseRatingInput, builderResponseRatingOutput, conversationShareStatusOutput, conversationShareTokenOutput, sharedConversationInput, sharedConversationOutput } from "../conversations/conversations.contracts";
@@ -138,6 +139,48 @@ const appRouter = t.router({
     revoke: publicProcedure
       .input(revokeApiKeyInput)
       .output(revokeApiKeyOutput)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
+    }),
+  assets: t.router({
+    createUpload: publicProcedure
+      .input(projectUploadCreateInput)
+      .output(uploadGrantSchema)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    getUpload: publicProcedure
+      .input(projectUploadInput)
+      .output(uploadStateSchema)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    renewUpload: publicProcedure
+      .input(projectUploadInput)
+      .output(uploadGrantSchema)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    confirmUpload: publicProcedure
+      .input(projectUploadInput)
+      .output(uploadConfirmationSchema)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    cancelUpload: publicProcedure
+      .input(projectUploadInput)
+      .output(uploadCancellationSchema)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    listCustomerAssets: publicProcedure
+      .input(customerAssetListArgs)
+      .output(assetListSchema)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    listProjectAssets: publicProcedure
+      .input(projectAssetListInput)
+      .output(assetListSchema)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    getAsset: publicProcedure
+      .input(projectAssetInput)
+      .output(assetDetailSchema)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    downloadAsset: publicProcedure
+      .input(projectAssetInput)
+      .output(assetDownloadSchema)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any),
+    deleteAsset: publicProcedure
+      .input(projectAssetInput)
+      .output(assetDeletionSchema)
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as any)
     }),
   companies: t.router({

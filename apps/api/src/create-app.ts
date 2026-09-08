@@ -14,6 +14,12 @@ import {
 	generateOpenApiDocument,
 } from "trpc-to-openapi";
 import { AppModule } from "./app.module";
+import { describeAssetErrors } from "./assets/asset-openapi";
+import {
+	prepareAssetRestResponse,
+	recordAssetRestError,
+	validateAssetRestRequest,
+} from "./assets/asset-rest";
 import { RequestPrincipalService } from "./auth/request-principal.service";
 import { ContextLogger } from "./logging/context-logger";
 import { REST_BRIDGE_PATH } from "./trpc/openapi";
@@ -44,6 +50,7 @@ export async function createApp(): Promise<NestExpressApplication> {
 				next();
 				return;
 			}
+			prepareAssetRestResponse(req, res);
 			void restBridge(req, res);
 		},
 	);
@@ -82,6 +89,7 @@ export async function createApp(): Promise<NestExpressApplication> {
 					oauth: oauthSecurityScheme,
 				},
 			});
+			describeAssetErrors(trpcDocument);
 
 			const swaggerConfig = new DocumentBuilder()
 				.setTitle("CRM API")
@@ -138,7 +146,12 @@ export async function createApp(): Promise<NestExpressApplication> {
 
 	restBridge = createOpenApiExpressMiddleware({
 		router: appRouter,
-		createContext: ({ req }) => createBaseTrpcContext(req, principals),
+		createContext: async ({ req }) => {
+			const context = await createBaseTrpcContext(req, principals);
+			validateAssetRestRequest(req);
+			return context;
+		},
+		onError: ({ req, error }) => recordAssetRestError(req, error),
 	});
 
 	return app;

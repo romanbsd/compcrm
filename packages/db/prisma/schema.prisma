@@ -1263,17 +1263,166 @@ model DealContact {
   @@map("dealContact")
 }
 
-model Artifact {
-  id         String   @id @default(cuid())
-  dealId     String
-  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  type       String
-  fileName   String
-  storageKey String
-  createdAt  DateTime @default(now())
+enum AssetSource {
+  MANUAL
+  MOBILE_RECORDING
+  EMAIL_ATTACHMENT
+}
 
+enum AssetStatus {
+  UNVERIFIED
+  READY
+  DELETING
+  DELETED
+}
+
+enum AssetUploadStatus {
+  PENDING
+  FINALIZING
+  READY
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
+enum AssetJobOperation {
+  FINALIZE_UPLOAD
+  DELETE_OBJECT
+}
+
+enum AssetJobState {
+  PENDING
+  RUNNING
+  COMPLETE
+}
+
+model Artifact {
+  id                   String       @id @default(cuid())
+  dealId               String
+  deal                 Deal         @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type                 String
+  fileName             String
+  storageKey           String
+  storageBucket        String?
+  kind                 String       @default("file")
+  contentType          String       @default("application/octet-stream")
+  sizeBytes            BigInt?
+  source               AssetSource?
+  activityId           String?
+  uploadedById         String?
+  durationMilliseconds BigInt?
+  capturedAt           DateTime?
+  emailMessageId       String?
+  emailAttachmentId    String?
+  status               AssetStatus  @default(UNVERIFIED)
+  deletedAt            DateTime?
+  createdAt            DateTime     @default(now())
+
+  @@unique([storageBucket, storageKey])
   @@index([dealId, createdAt])
+  @@index([dealId, status, createdAt, id])
   @@map("artifact")
+}
+
+model AssetUpload {
+  id                    String            @id @default(cuid())
+  projectId             String
+  customerId            String
+  actorKey              String
+  uploadedById          String?
+  mailboxOwnerId        String?
+  fileName              String
+  contentType           String
+  sizeBytes             BigInt
+  kind                  String
+  source                AssetSource
+  activityId            String?
+  durationMilliseconds  BigInt?
+  capturedAt            DateTime?
+  emailMessageId        String?
+  emailAttachmentId     String?
+  metadataHash          String
+  bucket                String
+  temporaryKey          String            @unique
+  finalKey              String            @unique
+  sourceEtag            String?
+  status                AssetUploadStatus @default(PENDING)
+  assetId               String?           @unique
+  failureCode           String?
+  failureMessage        String?
+  expiresAt             DateTime
+  grantExpiresAt        DateTime
+  reservationUntil      DateTime
+  reservationReleasedAt DateTime?
+  confirmedAt           DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([actorKey, reservationReleasedAt])
+  @@index([projectId])
+  @@index([status, expiresAt])
+  @@map("assetUpload")
+}
+
+model AssetEmailSource {
+  id             String    @id @default(cuid())
+  messageId      String
+  attachmentId   String
+  projectId      String
+  metadataHash   String
+  uploadId       String
+  assetId        String?
+  deletedAt      DateTime?
+  mailboxOwnerId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([messageId, attachmentId])
+  @@index([projectId])
+  @@map("assetEmailSource")
+}
+
+model AssetStorageJob {
+  id            String            @id @default(cuid())
+  operationKey  String            @unique
+  operation     AssetJobOperation
+  projectId     String
+  uploadId      String?
+  artifactId    String?
+  bucket        String?
+  objectKey     String
+  finalKey      String?
+  temporary     Boolean           @default(false)
+  state         AssetJobState     @default(PENDING)
+  attempts      Int               @default(0)
+  nextAttemptAt DateTime          @default(now())
+  leaseUntil    DateTime?
+  leaseToken    String?
+  lastError     String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([state, nextAttemptAt, leaseUntil])
+  @@index([projectId])
+  @@map("assetStorageJob")
+}
+
+model AssetApiRequest {
+  id             String   @id @default(cuid())
+  actorKey       String
+  operation      String
+  path           String
+  idempotencyKey String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([actorKey, operation, path, idempotencyKey])
+  @@index([expiresAt])
+  @@map("assetApiRequest")
 }
 
 model Document {
