@@ -896,6 +896,40 @@ describe("asset sources and deletion", () => {
 		).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
 	});
 
+	it("rejects a system creation replay from a different message actor", async () => {
+		const firstSource = await email();
+		const secondSource = await email();
+		await db.mailboxSync.create({ data: { userId, source: "gmail" } });
+		const firstActor: AssetActor = {
+			type: "SYSTEM",
+			mailboxOwnerId: userId,
+			messageId: firstSource.messageId,
+		};
+		const secondActor: AssetActor = {
+			type: "SYSTEM",
+			mailboxOwnerId: userId,
+			messageId: secondSource.messageId,
+		};
+		const key = randomUUID();
+		const input = metadata({
+			source: "EMAIL_ATTACHMENT",
+			emailSource: secondSource,
+		});
+		const created = await service.createUpload(
+			secondActor,
+			projectId,
+			input,
+			key,
+		);
+		await expect(
+			service.createUpload(firstActor, projectId, input, key),
+		).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
+		expect(
+			await service.createUpload(secondActor, projectId, input, key),
+		).toEqual(created);
+		expect(await db.assetUpload.count({ where: { projectId } })).toBe(1);
+	});
+
 	it("rejects a revoked source mailbox even when another provider remains connected", async () => {
 		const emailSource = await email();
 		await db.mailboxSync.createMany({

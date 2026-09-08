@@ -425,7 +425,7 @@ There is no `415 UNSUPPORTED_AUDIO_TYPE` response in this asset API.
 
 ## Durable backend work
 
-Add a storage-specific `AssetStorageJob` table in PostgreSQL. This is new work, not an existing asset queue.
+`AssetStorageJob` stores deterministic file work in PostgreSQL.
 Use two operations: `FINALIZE_UPLOAD` and `DELETE_OBJECT`.
 Store a unique operation key, upload reference, bucket and object keys, state, attempts, next-attempt time, and last error.
 Jobs also carry `leaseUntil` and a lease token. Cleanup references survive project and artifact deletion without cascade.
@@ -434,7 +434,7 @@ The next reconciliation deletes that object again. `DELETED` records the last ve
 E4 inserts finalization work in the same transaction as `FINALIZING`.
 E5, E10, and project purge insert cleanup work in their state-change transactions.
 
-Add `GET /internal/assets/process`, protected by `CRON_SECRET`, following the existing internal cron pattern.
+`GET /internal/assets/process` uses `CRON_SECRET` and the existing internal cron pattern.
 Schedule it once per minute in the API deployment. It processes bounded batches within the invocation deadline.
 Claim due jobs with `FOR UPDATE SKIP LOCKED`. Renew leases during active work and reject state writes from expired lease holders.
 After a crash, another invocation reclaims an expired lease and reconciles R2 state before repeating the operation.
@@ -443,7 +443,7 @@ Deletion retries continue with delay capped at one hour. Persistent failure rema
 Delay transient retries with exponential backoff. Store every next-attempt time; never depend on an in-process timer.
 Process-local promises and agent prompts do not own these jobs. Existing deterministic worker code supplies patterns, not an asset implementation.
 
-Add an `AssetApiRequest` result table, unique on actor, operation, canonical path, and idempotency key.
+`AssetApiRequest` stores results, unique on actor, operation, canonical path, and idempotency key.
 Store the request hash, response status and body, and expiry. Commit accepted state changes and their replay record atomically.
 Use transaction locking for simultaneous requests. Uncommitted or transiently failed attempts must remain retryable.
 Delete expired replay records through the same bounded internal sweep. Keep upload and source identities independently.
@@ -467,12 +467,10 @@ R2 quota failures and operational storage metrics remain separate from this API 
 
 Use a shared asset service and typed schemas. Keep public REST paths under `/rest/v1`.
 The repository currently builds REST routes from tRPC metadata and publishes OpenAPI at `/openapi.json`.
-Add asset operations through that mechanism where possible. Do not hand-edit generated router files or commit generated OpenAPI.
-The current error middleware drops domain details and lacks mappings for HTTP 413 and 503.
-Map those statuses to `PAYLOAD_TOO_LARGE` and `SERVICE_UNAVAILABLE`, while preserving structured asset error details.
-The bridge supports `responseMeta.status`; HTTP 410 is not impossible, but this contract uses the simpler 409 state error.
-Status mappings alone do not produce the defined JSON envelope. Add an asset-route error adapter and verify the actual serialized body.
-Scope custom response formatting to versioned asset routes. Preserve existing unversioned route behavior.
+Asset operations use that mechanism. Regenerate router types after changing their schemas. Do not commit generated OpenAPI.
+The error middleware maps HTTP 413 and 503 to `PAYLOAD_TOO_LARGE` and `SERVICE_UNAVAILABLE` and preserves the domain error.
+The asset response adapter supplies the defined JSON envelope for versioned asset routes. Unversioned routes retain their existing format.
+The generated OpenAPI document describes asset request headers and the same error envelope. State conflicts use HTTP 409.
 Keep finalization and deletion durable outside the request lifetime. API success cannot depend on process-local background promises.
 Use the storage jobs and authenticated cron route defined above. This storage feature does not start intelligence or transcription work.
 

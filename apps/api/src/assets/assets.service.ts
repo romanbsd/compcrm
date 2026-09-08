@@ -378,6 +378,12 @@ export class AssetsService {
 				"Upload metadata is invalid.",
 			);
 		const input = parsed.data;
+		if (
+			actor.type === "SYSTEM" &&
+			(input.source !== "EMAIL_ATTACHMENT" ||
+				input.emailSource?.messageId !== actor.messageId)
+		)
+			missing();
 		const metadata = {
 			fileName: input.fileName,
 			contentType: input.contentType,
@@ -409,12 +415,6 @@ export class AssetsService {
 						{ maxBytes: ASSETS.maxSingleUploadBytes },
 					);
 				await this.validateActivity(tx, projectId, input.activityId);
-				if (
-					actor.type === "SYSTEM" &&
-					(input.source !== "EMAIL_ATTACHMENT" ||
-						input.emailSource?.messageId !== actor.messageId)
-				)
-					missing();
 				const metadataHash = hash(metadata);
 				let mailboxOwnerId: string | null = null;
 				if (input.emailSource) {
